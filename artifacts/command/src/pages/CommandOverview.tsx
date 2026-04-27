@@ -10,21 +10,27 @@ import { Skeleton } from '@/components/ui/skeleton';
 export default function CommandOverview() {
   const { data: snapshot, isLoading: snapLoading } = useGetNetworkSnapshot({
     query: {
-      refetchInterval: 5000
-    }
+      queryKey: getGetNetworkSnapshotQueryKey(),
+      refetchInterval: 5000,
+    },
   });
 
   const { data: overview, isLoading: overviewLoading } = useGetDashboardOverview({
     query: {
-      refetchInterval: 10000
-    }
+      queryKey: getGetDashboardOverviewQueryKey(),
+      refetchInterval: 10000,
+    },
   });
 
-  const { data: activity, isLoading: activityLoading } = useListActivity({ limit: 10 }, {
-    query: {
-      refetchInterval: 15000
+  const { data: activity, isLoading: activityLoading } = useListActivity(
+    { limit: 10 },
+    {
+      query: {
+        queryKey: getListActivityQueryKey({ limit: 10 }),
+        refetchInterval: 15000,
+      },
     }
-  });
+  );
 
   return (
     <div className="h-full flex flex-col p-4 gap-4 overflow-y-auto bg-background text-foreground">

@@ -154,7 +154,7 @@ export default function SiteDetail() {
                       </div>
                     </div>
                     {alert.status === 'open' && (
-                      <Button size="sm" variant="outline" onClick={() => ackAlert.mutate({ id: alert.id, data: { acknowledgedBy: 'Current User' } })}>
+                      <Button size="sm" variant="outline" onClick={() => ackAlert.mutate({ alertId: alert.id, data: { acknowledgedBy: 'Current User' } })}>
                         <CheckCircle2 className="h-4 w-4 mr-2" /> Ack
                       </Button>
                     )}
@@ -215,7 +215,7 @@ export default function SiteDetail() {
                     </div>
                     <div className="flex items-center justify-between mt-2 pt-2 border-t border-border/50">
                       <div className="text-sm font-mono">Qty: {rec.quantity}</div>
-                      <Button size="sm" onClick={() => promoteRec.mutate({ id: rec.id })} disabled={!!rec.promotedOrderId}>
+                      <Button size="sm" onClick={() => promoteRec.mutate({ recommendationId: rec.id })} disabled={!!rec.promotedOrderId}>
                         {rec.promotedOrderId ? 'Promoted' : 'Promote to Order'}
                       </Button>
                     </div>

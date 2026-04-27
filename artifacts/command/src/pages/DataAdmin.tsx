@@ -1,5 +1,5 @@
 import React from 'react';
-import { useGetSeedStatus, useReseedDatabase, useListCatalogItems } from '@workspace/api-client-react';
+import { useGetSeedStatus, useReseedDatabase, useListCatalogItems, getGetSeedStatusQueryKey } from '@workspace/api-client-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -8,7 +8,7 @@ import { useToast } from '@/hooks/use-toast';
 
 export default function DataAdmin() {
   const { data: status, isLoading: statusLoading } = useGetSeedStatus({
-    query: { refetchInterval: 10000 }
+    query: { queryKey: getGetSeedStatusQueryKey(), refetchInterval: 10000 },
   });
   
   const { data: catalog, isLoading: catalogLoading } = useListCatalogItems({ limit: 10 });

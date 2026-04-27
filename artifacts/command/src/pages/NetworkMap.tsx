@@ -1,6 +1,6 @@
 import React from 'react';
 import { Card, CardContent } from '@/components/ui/card';
-import { useGetNetworkSnapshot } from '@workspace/api-client-react';
+import { useGetNetworkSnapshot, getGetNetworkSnapshotQueryKey } from '@workspace/api-client-react';
 import NetworkGLMap from '@/components/Map';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label';
 
 export default function NetworkMapPage() {
   const { data: snapshot, isLoading } = useGetNetworkSnapshot({
-    query: { refetchInterval: 10000 }
+    query: { queryKey: getGetNetworkSnapshotQueryKey(), refetchInterval: 10000 },
   });
 
   return (

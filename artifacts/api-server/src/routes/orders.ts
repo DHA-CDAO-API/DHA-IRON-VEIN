@@ -18,7 +18,7 @@ router.get("/orders", async (req, res, next) => {
     const status = typeof req.query.status === "string" ? req.query.status : undefined;
     const nodeId = typeof req.query.nodeId === "string" ? req.query.nodeId : undefined;
     const limit = Math.min(500, Number(req.query.limit ?? 100) || 100);
-    const conds = [];
+    const conds: import("drizzle-orm").SQL[] = [];
     if (status) conds.push(eq(orders.status, status));
     if (nodeId) conds.push(eq(orders.nodeId, nodeId));
     const rows = conds.length

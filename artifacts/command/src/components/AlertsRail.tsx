@@ -1,5 +1,5 @@
 import React from 'react';
-import { useListAlerts, useAcknowledgeAlert } from '@workspace/api-client-react';
+import { useListAlerts, useAcknowledgeAlert, getListAlertsQueryKey } from '@workspace/api-client-react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -7,9 +7,10 @@ import { Bell, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { Link } from 'wouter';
 
 export default function AlertsRail() {
-  const { data: alerts = [] } = useListAlerts({ status: 'open' }, {
-    query: { refetchInterval: 10000 }
-  });
+  const { data: alerts = [] } = useListAlerts(
+    { status: 'open' },
+    { query: { queryKey: getListAlertsQueryKey({ status: 'open' }), refetchInterval: 10000 } }
+  );
 
   const ackAlert = useAcknowledgeAlert();
 
@@ -77,7 +78,7 @@ export default function AlertsRail() {
                     </Link>
                   )}
                 </div>
-                <Button size="sm" variant="outline" className="h-6 text-xs" onClick={() => ackAlert.mutate({ id: alert.id, data: { acknowledgedBy: 'Current User' } })}>
+                <Button size="sm" variant="outline" className="h-6 text-xs" onClick={() => ackAlert.mutate({ alertId: alert.id, data: { acknowledgedBy: 'Current User' } })}>
                   Acknowledge
                 </Button>
               </div>

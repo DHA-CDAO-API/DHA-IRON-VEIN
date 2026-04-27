@@ -8,7 +8,7 @@ router.get("/alerts", async (req, res, next) => {
   try {
     const status = typeof req.query.status === "string" ? req.query.status : undefined;
     const severity = typeof req.query.severity === "string" ? req.query.severity : undefined;
-    const conds = [];
+    const conds: import("drizzle-orm").SQL[] = [];
     if (status) conds.push(eq(alerts.status, status));
     if (severity) conds.push(eq(alerts.severity, severity));
     const rows = conds.length

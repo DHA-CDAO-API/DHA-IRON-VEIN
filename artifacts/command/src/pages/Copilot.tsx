@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { useListConversations, useCreateConversation, useGetConversation } from '@workspace/api-client-react';
+import { useListConversations, useCreateConversation, useGetConversation, getGetConversationQueryKey } from '@workspace/api-client-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -20,7 +20,7 @@ export default function Copilot() {
 
   const { data: convos, isLoading: convosLoading } = useListConversations();
   const { data: activeDetail, isLoading: detailLoading } = useGetConversation(activeConvId || '', {
-    query: { enabled: !!activeConvId }
+    query: { queryKey: getGetConversationQueryKey(activeConvId || ''), enabled: !!activeConvId },
   });
   
   const createConv = useCreateConversation();

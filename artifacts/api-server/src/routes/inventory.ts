@@ -10,7 +10,7 @@ router.get("/inventory/balances", async (req, res, next) => {
   try {
     const nodeId = typeof req.query.nodeId === "string" ? req.query.nodeId : undefined;
     const itemId = typeof req.query.itemId === "string" ? req.query.itemId : undefined;
-    const conds = [];
+    const conds: import("drizzle-orm").SQL[] = [];
     if (nodeId) conds.push(eq(inventoryBalances.nodeId, nodeId));
     if (itemId) conds.push(eq(inventoryBalances.itemId, itemId));
     const rows = conds.length

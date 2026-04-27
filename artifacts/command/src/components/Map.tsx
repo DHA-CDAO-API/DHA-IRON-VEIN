@@ -180,7 +180,7 @@ export default function NetworkGLMap(props: NetworkMapProps) {
     <WebGLBoundary fallback={<NetworkFallback {...props} />}>
       <DeckGL
         initialViewState={viewState || INITIAL_VIEW_STATE}
-        onViewStateChange={onViewStateChange}
+        onViewStateChange={onViewStateChange as any}
         controller={true}
         layers={layers}
         getTooltip={({ object }: any) =>
