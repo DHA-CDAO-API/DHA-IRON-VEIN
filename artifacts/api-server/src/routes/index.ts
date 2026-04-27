@@ -1,8 +1,40 @@
 import { Router, type IRouter } from "express";
 import healthRouter from "./health";
+import adminRouter from "./admin";
+import catalogRouter from "./catalog";
+import networkRouter from "./network";
+import sitesRouter from "./sites";
+import itemsRouter from "./items";
+import inventoryRouter from "./inventory";
+import suppliersRouter from "./suppliers";
+import ordersRouter from "./orders";
+import alertsRouter from "./alerts";
+import scenariosRouter from "./scenarios";
+import predictiveRouter from "./predictive";
+import copilotRouter from "./copilot";
+import settingsRouter from "./settings";
+import profileRouter from "./profile";
+import dashboardRouter from "./dashboard";
+import activityRouter from "./activity";
 
 const router: IRouter = Router();
 
 router.use(healthRouter);
+router.use(adminRouter);
+router.use(catalogRouter);
+router.use(networkRouter);
+router.use(sitesRouter);
+router.use(itemsRouter);
+router.use(inventoryRouter);
+router.use(suppliersRouter);
+router.use(ordersRouter);
+router.use(alertsRouter);
+router.use(scenariosRouter);
+router.use(predictiveRouter);
+router.use(copilotRouter);
+router.use(settingsRouter);
+router.use(profileRouter);
+router.use(dashboardRouter);
+router.use(activityRouter);
 
 export default router;

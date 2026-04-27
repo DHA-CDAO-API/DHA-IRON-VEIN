@@ -1,0 +1,205 @@
+import { Router, type IRouter } from "express";
+import { db, recommendations as recsTable, orders, orderLines, activityEntries } from "@workspace/db";
+import { desc, eq } from "drizzle-orm";
+import { loadSimContext } from "../lib/ctx";
+import {
+  computeDailyDemand,
+  generateRecommendations,
+  projectDaysOfSupply,
+} from "@workspace/sim";
+import { invalidateSimCache } from "../lib/ctx";
+
+const router: IRouter = Router();
+
+router.post("/predictive/forecast", async (req, res, next) => {
+  try {
+    const body = req.body as {
+      nodeId: string;
+      itemId?: string;
+      horizonDays?: number;
+    };
+    const horizon = Math.max(1, Math.min(45, body.horizonDays ?? 14));
+    const ctx = await loadSimContext();
+    const profile = ctx.ctx.profiles.get(body.nodeId);
+    if (!profile) return res.status(404).json({ error: "node not found" });
+
+    const items = body.itemId
+      ? ctx.ctx.items.filter((i) => i.id === body.itemId)
+      : ctx.ctx.items;
+    const dailyDemand = computeDailyDemand({
+      profile,
+      items,
+      operationalState: ctx.ctx.states.get(profile.operationalState),
+      itemSkew: ctx.ctx.itemSkew,
+    });
+    const balanceMap = new Map<string, number>();
+    for (const b of ctx.ctx.balances) {
+      if (b.nodeId === body.nodeId) balanceMap.set(b.itemId, b.onHand);
+    }
+
+    const series = items.map((it) => {
+      const onHand0 = balanceMap.get(it.id) ?? 0;
+      const burn = dailyDemand.find((d) => d.itemId === it.id)?.quantity ?? 0;
+      const points: Array<{ day: number; onHand: number; demand: number; daysOfSupply: number }> = [];
+      let onHand = onHand0;
+      for (let d = 0; d <= horizon; d++) {
+        points.push({
+          day: d,
+          onHand: Math.max(0, Number(onHand.toFixed(1))),
+          demand: Number(burn.toFixed(1)),
+          daysOfSupply: Number(projectDaysOfSupply(Math.max(0, onHand), burn).toFixed(1)),
+        });
+        onHand -= burn;
+      }
+      return { itemId: it.id, itemName: it.name, points };
+    });
+
+    res.json({
+      nodeId: body.nodeId,
+      horizonDays: horizon,
+      generatedAt: new Date().toISOString(),
+      series,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get("/predictive/recommendations", async (req, res, next) => {
+  try {
+    const nodeId = typeof req.query.nodeId === "string" ? req.query.nodeId : undefined;
+    const limit = Math.min(200, Number(req.query.limit ?? 50) || 50);
+    const ctx = await loadSimContext();
+    const filteredNodes = nodeId
+      ? ctx.ctx.nodes.filter((n) => n.id === nodeId)
+      : ctx.ctx.nodes;
+    const recs = generateRecommendations({
+      nodes: filteredNodes,
+      routes: ctx.ctx.routes,
+      items: ctx.ctx.items,
+      balances: ctx.ctx.balances,
+      profiles: ctx.ctx.profiles,
+      states: ctx.ctx.states,
+      suppliers: ctx.suppliers,
+      itemSkew: ctx.ctx.itemSkew,
+      watchDays: ctx.ctx.watchDays,
+      criticalDays: ctx.ctx.criticalDays,
+      paddingDays: ctx.paddingDays,
+    }).slice(0, limit);
+
+    const promoted = await db.select().from(recsTable);
+    const promotedByLogicalId = new Map(
+      promoted.filter((p) => p.promotedOrderId).map((p) => [p.id, p]),
+    );
+
+    res.json(
+      recs.map((r) => {
+        const persisted = promotedByLogicalId.get(r.id);
+        return {
+          ...r,
+          status: persisted ? "PROMOTED" : "OPEN",
+          promotedOrderId: persisted?.promotedOrderId ?? null,
+          createdAt: new Date().toISOString(),
+        };
+      }),
+    );
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post(
+  "/predictive/recommendations/:recommendationId/promote",
+  async (req, res, next) => {
+    try {
+      const recId = req.params.recommendationId;
+      const ctx = await loadSimContext();
+      const allRecs = generateRecommendations({
+        nodes: ctx.ctx.nodes,
+        routes: ctx.ctx.routes,
+        items: ctx.ctx.items,
+        balances: ctx.ctx.balances,
+        profiles: ctx.ctx.profiles,
+        states: ctx.ctx.states,
+        suppliers: ctx.suppliers,
+        itemSkew: ctx.ctx.itemSkew,
+        watchDays: ctx.ctx.watchDays,
+        criticalDays: ctx.ctx.criticalDays,
+        paddingDays: ctx.paddingDays,
+      });
+      const rec = allRecs.find((r) => r.id === recId);
+      if (!rec) return res.status(404).json({ error: "recommendation not found" });
+
+      const orderId = `o-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+      const orderNo = `PO-${new Date().getFullYear()}-${Math.floor(Math.random() * 90000 + 10000)}`;
+      const requested = new Date(Date.now() + Math.max(1, rec.etaDays) * 86400_000);
+      const supplierId = rec.sourceSupplierId ?? "supplier";
+      await db.insert(orders).values({
+        id: orderId,
+        orderNo,
+        nodeId: rec.nodeId,
+        supplierId,
+        status: "SUBMITTED",
+        priority: rec.kind === "ESCALATE" ? "FLASH" : rec.kind === "REROUTE" ? "URGENT" : "ROUTINE",
+        requestedDeliveryAt: requested,
+        totalUsd: rec.suggestedQty * 1.5,
+        promotedFromRecommendationId: rec.id,
+        notes: rec.reason,
+      });
+      await db.insert(orderLines).values({
+        orderId,
+        itemId: rec.itemId,
+        quantity: rec.suggestedQty,
+        unitPriceUsd: 1.5,
+        lineTotalUsd: rec.suggestedQty * 1.5,
+      });
+
+      await db
+        .insert(recsTable)
+        .values({
+          id: rec.id,
+          nodeId: rec.nodeId,
+          itemId: rec.itemId,
+          kind: rec.kind,
+          suggestedQty: rec.suggestedQty,
+          reason: rec.reason,
+          expectedRiskReduction: rec.expectedRiskReduction,
+          sourceSupplierId: rec.sourceSupplierId,
+          etaDays: rec.etaDays,
+          status: "PROMOTED",
+          promotedOrderId: orderId,
+        })
+        .onConflictDoUpdate({
+          target: recsTable.id,
+          set: { status: "PROMOTED", promotedOrderId: orderId },
+        });
+
+      await db.insert(activityEntries).values({
+        kind: "RECOMMENDATION_PROMOTED",
+        actor: "operator",
+        message: `Recommendation ${rec.id} promoted to ${orderNo}`,
+        refType: "order",
+        refId: orderId,
+        meta: { recommendationId: rec.id, suggestedQty: rec.suggestedQty },
+      });
+
+      invalidateSimCache();
+      res.status(201).json({
+        id: orderId,
+        orderNo,
+        nodeId: rec.nodeId,
+        supplierId,
+        status: "SUBMITTED",
+        priority: rec.kind === "ESCALATE" ? "FLASH" : rec.kind === "REROUTE" ? "URGENT" : "ROUTINE",
+        createdAt: new Date().toISOString(),
+        requestedDeliveryAt: requested.toISOString(),
+        totalUsd: rec.suggestedQty * 1.5,
+        lineCount: 1,
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+export default router;

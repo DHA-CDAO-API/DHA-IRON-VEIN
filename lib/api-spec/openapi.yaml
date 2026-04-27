@@ -1,36 +1,1294 @@
 openapi: 3.1.0
 info:
-  # Do not change the title, if the title changes, the import paths will be broken
   title: Api
-  version: 0.1.0
-  description: API specification
+  version: 1.0.0
+  description: Predictive Sustainment Platform API for INDOPACOM medical logistics decision support.
 servers:
   - url: /api
-    description: Base API path
 tags:
   - name: health
-    description: Health operations
+  - name: catalog
+  - name: network
+  - name: sites
+  - name: items
+  - name: inventory
+  - name: suppliers
+  - name: orders
+  - name: alerts
+  - name: scenarios
+  - name: predictive
+  - name: copilot
+  - name: settings
+  - name: profile
+  - name: dashboard
+  - name: admin
+  - name: activity
+
 paths:
   /healthz:
     get:
-      operationId: healthCheck
+      operationId: getHealth
       tags: [health]
-      summary: Health check
-      description: Returns server health status
       responses:
         "200":
-          description: Healthy
+          description: ok
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/HealthStatus"
+                $ref: "#/components/schemas/HealthCheckResponse"
+
+  /admin/seed-status:
+    get:
+      operationId: getSeedStatus
+      tags: [admin]
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SeedStatus" }
+  /admin/reseed:
+    post:
+      operationId: reseedDatabase
+      tags: [admin]
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SeedStatus" }
+
+  /catalog/items:
+    get:
+      operationId: listCatalogItems
+      tags: [catalog]
+      parameters:
+        - in: query
+          name: search
+          schema: { type: string }
+        - in: query
+          name: limit
+          schema: { type: integer, default: 50 }
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CatalogPage" }
+
+  /network/nodes:
+    get:
+      operationId: listNodes
+      tags: [network]
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Node" }
+  /network/routes:
+    get:
+      operationId: listRoutes
+      tags: [network]
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Route" }
+  /network/snapshot:
+    get:
+      operationId: getNetworkSnapshot
+      tags: [network]
+      description: Live network snapshot — nodes, routes, in-flight shipments, threat overlays, and per-node risk score.
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NetworkSnapshot" }
+
+  /sites:
+    get:
+      operationId: listSites
+      tags: [sites]
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/SiteSummary" }
+  /sites/{nodeId}:
+    get:
+      operationId: getSiteDetail
+      tags: [sites]
+      parameters:
+        - in: path
+          name: nodeId
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SiteDetail" }
+
+  /items:
+    get:
+      operationId: listItems
+      tags: [items]
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Item" }
+  /items/{itemId}:
+    get:
+      operationId: getItemDetail
+      tags: [items]
+      parameters:
+        - in: path
+          name: itemId
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ItemDetail" }
+
+  /inventory/balances:
+    get:
+      operationId: listInventoryBalances
+      tags: [inventory]
+      parameters:
+        - in: query
+          name: nodeId
+          schema: { type: string }
+        - in: query
+          name: itemId
+          schema: { type: string }
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/InventoryBalance" }
+
+  /suppliers:
+    get:
+      operationId: listSuppliers
+      tags: [suppliers]
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Supplier" }
+
+  /orders:
+    get:
+      operationId: listOrders
+      tags: [orders]
+      parameters:
+        - in: query
+          name: status
+          schema: { type: string }
+        - in: query
+          name: nodeId
+          schema: { type: string }
+        - in: query
+          name: limit
+          schema: { type: integer, default: 100 }
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Order" }
+    post:
+      operationId: createOrder
+      tags: [orders]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateOrderInput" }
+      responses:
+        "201":
+          description: created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Order" }
+  /orders/{orderId}:
+    get:
+      operationId: getOrder
+      tags: [orders]
+      parameters:
+        - in: path
+          name: orderId
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrderDetail" }
+    patch:
+      operationId: updateOrderStatus
+      tags: [orders]
+      parameters:
+        - in: path
+          name: orderId
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateOrderStatusInput" }
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Order" }
+
+  /alerts:
+    get:
+      operationId: listAlerts
+      tags: [alerts]
+      parameters:
+        - in: query
+          name: status
+          schema: { type: string }
+        - in: query
+          name: severity
+          schema: { type: string }
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Alert" }
+  /alerts/{alertId}/ack:
+    post:
+      operationId: acknowledgeAlert
+      tags: [alerts]
+      parameters:
+        - in: path
+          name: alertId
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AcknowledgeAlertInput" }
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Alert" }
+
+  /scenarios:
+    get:
+      operationId: listScenarios
+      tags: [scenarios]
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Scenario" }
+    post:
+      operationId: runScenario
+      tags: [scenarios]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RunScenarioInput" }
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ScenarioResult" }
+  /scenarios/{scenarioId}:
+    get:
+      operationId: getScenario
+      tags: [scenarios]
+      parameters:
+        - in: path
+          name: scenarioId
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ScenarioResult" }
+  /scenarios/preset-events:
+    get:
+      operationId: listPresetEvents
+      tags: [scenarios]
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/PresetEvent" }
+
+  /predictive/forecast:
+    post:
+      operationId: forecastDemand
+      tags: [predictive]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ForecastInput" }
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ForecastResult" }
+  /predictive/recommendations:
+    get:
+      operationId: getRecommendations
+      tags: [predictive]
+      parameters:
+        - in: query
+          name: nodeId
+          schema: { type: string }
+        - in: query
+          name: limit
+          schema: { type: integer, default: 50 }
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Recommendation" }
+  /predictive/recommendations/{recommendationId}/promote:
+    post:
+      operationId: promoteRecommendationToOrder
+      tags: [predictive]
+      parameters:
+        - in: path
+          name: recommendationId
+          required: true
+          schema: { type: string }
+      responses:
+        "201":
+          description: created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Order" }
+
+  /copilot/conversations:
+    get:
+      operationId: listConversations
+      tags: [copilot]
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Conversation" }
+    post:
+      operationId: createConversation
+      tags: [copilot]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateConversationInput" }
+      responses:
+        "201":
+          description: created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Conversation" }
+  /copilot/conversations/{conversationId}:
+    get:
+      operationId: getConversation
+      tags: [copilot]
+      parameters:
+        - in: path
+          name: conversationId
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ConversationDetail" }
+  /copilot/conversations/{conversationId}/messages:
+    post:
+      operationId: sendCopilotMessage
+      tags: [copilot]
+      parameters:
+        - in: path
+          name: conversationId
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SendCopilotMessageInput" }
+      responses:
+        "200":
+          description: SSE stream of tokens
+          content:
+            text/event-stream:
+              schema: { type: string }
+
+  /settings:
+    get:
+      operationId: getSettings
+      tags: [settings]
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AppSettings" }
+    patch:
+      operationId: updateSettings
+      tags: [settings]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateSettingsInput" }
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AppSettings" }
+
+  /profile:
+    get:
+      operationId: getProfile
+      tags: [profile]
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Profile" }
+    patch:
+      operationId: updateProfile
+      tags: [profile]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateProfileInput" }
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Profile" }
+  /profile/roles:
+    get:
+      operationId: listRoles
+      tags: [profile]
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/RoleDefinition" }
+
+  /dashboard/overview:
+    get:
+      operationId: getDashboardOverview
+      tags: [dashboard]
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DashboardOverview" }
+  /dashboard/risk:
+    get:
+      operationId: getRiskBoard
+      tags: [dashboard]
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RiskBoard" }
+
+  /activity:
+    get:
+      operationId: listActivity
+      tags: [activity]
+      parameters:
+        - in: query
+          name: limit
+          schema: { type: integer, default: 30 }
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/ActivityEntry" }
+
 components:
   schemas:
-    HealthStatus:
+    HealthCheckResponse:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string, enum: [ok] }
+
+    SeedStatus:
+      type: object
+      required: [seeded, items, nodes, routes, balances, orders]
+      properties:
+        seeded: { type: boolean }
+        items: { type: integer }
+        nodes: { type: integer }
+        routes: { type: integer }
+        balances: { type: integer }
+        orders: { type: integer }
+        suppliers: { type: integer }
+        catalogEntries: { type: integer }
+        startedAt: { type: ["string", "null"], format: date-time }
+        completedAt: { type: ["string", "null"], format: date-time }
+
+    CatalogEntry:
+      type: object
+      required: [mfrCatNo, description, manufacturer, productNoun, productType]
+      properties:
+        mfrCatNo: { type: string }
+        appItemId: { type: ["string", "null"] }
+        mapped: { type: boolean }
+        orderLines: { type: integer }
+        totalQty: { type: number }
+        description: { type: string }
+        manufacturer: { type: string }
+        productNoun: { type: string }
+        productType: { type: string }
+        unspscCommodity: { type: ["string", "null"] }
+        productSize: { type: ["string", "null"] }
+        ghxCommodityType: { type: ["string", "null"] }
+        fullDescription: { type: ["string", "null"] }
+
+    CatalogPage:
+      type: object
+      required: [total, items]
+      properties:
+        total: { type: integer }
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/CatalogEntry" }
+
+    Node:
+      type: object
+      required: [id, name, type, latitude, longitude, population, optempo, stockDays]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        type: { type: string }
+        latitude: { type: number }
+        longitude: { type: number }
+        population: { type: integer }
+        optempo: { type: string }
+        stockDays: { type: integer }
+        regionalHub: { type: ["string", "null"] }
+        upstreamNode: { type: ["string", "null"] }
+        countryCode: { type: ["string", "null"] }
+
+    Route:
+      type: object
+      required: [id, fromNode, toNode, priority, days, reliability]
+      properties:
+        id: { type: string }
+        fromNode: { type: string }
+        toNode: { type: string }
+        priority: { type: string, enum: [primary, secondary, tertiary] }
+        days: { type: number }
+        reliability: { type: number }
+        modality: { type: string }
+
+    InFlightShipment:
+      type: object
+      required: [id, fromNode, toNode, itemId, quantity, etaDays, progress]
+      properties:
+        id: { type: string }
+        fromNode: { type: string }
+        toNode: { type: string }
+        itemId: { type: string }
+        itemName: { type: string }
+        quantity: { type: number }
+        etaDays: { type: number }
+        progress: { type: number, description: "0..1" }
+        priority: { type: string }
+
+    ThreatOverlay:
+      type: object
+      required: [id, label, severity, polygon]
+      properties:
+        id: { type: string }
+        label: { type: string }
+        severity: { type: string }
+        polygon:
+          type: array
+          items:
+            type: array
+            items: { type: number }
+
+    NetworkSnapshot:
+      type: object
+      required: [nodes, routes, shipments, riskByNode, threats, generatedAt, focusedHubId]
+      properties:
+        generatedAt: { type: string, format: date-time }
+        nodes:
+          type: array
+          items: { $ref: "#/components/schemas/Node" }
+        routes:
+          type: array
+          items: { $ref: "#/components/schemas/Route" }
+        shipments:
+          type: array
+          items: { $ref: "#/components/schemas/InFlightShipment" }
+        riskByNode:
+          type: array
+          items:
+            type: object
+            required: [nodeId, riskScore, daysOfSupply, openAlerts]
+            properties:
+              nodeId: { type: string }
+              riskScore: { type: number }
+              daysOfSupply: { type: number }
+              openAlerts: { type: integer }
+              criticalShortItems: { type: integer }
+        threats:
+          type: array
+          items: { $ref: "#/components/schemas/ThreatOverlay" }
+        focusedHubId: { type: ["string", "null"] }
+        operationalState: { type: string }
+
+    SiteSummary:
+      type: object
+      required: [nodeId, name, type, daysOfSupply, openAlerts, riskScore]
+      properties:
+        nodeId: { type: string }
+        name: { type: string }
+        type: { type: string }
+        regionalHub: { type: ["string", "null"] }
+        daysOfSupply: { type: number }
+        openAlerts: { type: integer }
+        riskScore: { type: number }
+        criticalShortItems: { type: integer }
+        latitude: { type: number }
+        longitude: { type: number }
+
+    SiteDetail:
+      type: object
+      required: [node, balances, alerts, recentOrders, demandProfile, dosByItem, recommendations]
+      properties:
+        node: { $ref: "#/components/schemas/Node" }
+        demandProfile: { $ref: "#/components/schemas/DemandProfile" }
+        balances:
+          type: array
+          items: { $ref: "#/components/schemas/InventoryBalance" }
+        dosByItem:
+          type: array
+          items: { $ref: "#/components/schemas/DaysOfSupplyEntry" }
+        alerts:
+          type: array
+          items: { $ref: "#/components/schemas/Alert" }
+        recentOrders:
+          type: array
+          items: { $ref: "#/components/schemas/Order" }
+        recommendations:
+          type: array
+          items: { $ref: "#/components/schemas/Recommendation" }
+        history:
+          type: array
+          items: { $ref: "#/components/schemas/HistoryPoint" }
+
+    DemandProfile:
+      type: object
+      required: [nodeId, activeSupportedPopulation, dailyEncounterRate, phlebotomyProbability, specimensPerPhlebotomy, operationalState, wasteFactor]
+      properties:
+        nodeId: { type: string }
+        activeSupportedPopulation: { type: integer }
+        dailyEncounterRate: { type: number }
+        phlebotomyProbability: { type: number }
+        specimensPerPhlebotomy: { type: number }
+        operationalState: { type: string }
+        wasteFactor: { type: number }
+
+    Item:
+      type: object
+      required: [id, name, unit, criticality, usagePerDraw, usageRate, demandBasis]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        unit: { type: string }
+        criticality: { type: string }
+        usagePerDraw: { type: number }
+        usageRate: { type: number }
+        demandBasis: { type: string }
+        skewFactor: { type: number }
+
+    ItemDetail:
+      type: object
+      required: [item, totalOnHand, networkDaysOfSupply, perNode, suppliers, alerts, recommendations]
+      properties:
+        item: { $ref: "#/components/schemas/Item" }
+        totalOnHand: { type: number }
+        networkDaysOfSupply: { type: number }
+        perNode:
+          type: array
+          items: { $ref: "#/components/schemas/InventoryBalance" }
+        suppliers:
+          type: array
+          items: { $ref: "#/components/schemas/Supplier" }
+        alerts:
+          type: array
+          items: { $ref: "#/components/schemas/Alert" }
+        recommendations:
+          type: array
+          items: { $ref: "#/components/schemas/Recommendation" }
+        history:
+          type: array
+          items: { $ref: "#/components/schemas/HistoryPoint" }
+
+    InventoryBalance:
+      type: object
+      required: [nodeId, itemId, itemName, unit, criticality, quantityOnHand]
+      properties:
+        nodeId: { type: string }
+        nodeName: { type: string }
+        itemId: { type: string }
+        itemName: { type: string }
+        unit: { type: string }
+        criticality: { type: string }
+        quantityOnHand: { type: number }
+        dailyBurn: { type: number }
+        daysOfSupply: { type: number }
+        reorderPoint: { type: number }
+
+    DaysOfSupplyEntry:
+      type: object
+      required: [itemId, itemName, daysOfSupply, status]
+      properties:
+        itemId: { type: string }
+        itemName: { type: string }
+        unit: { type: string }
+        criticality: { type: string }
+        quantityOnHand: { type: number }
+        dailyBurn: { type: number }
+        daysOfSupply: { type: number }
+        status: { type: string, enum: [healthy, watch, warn, critical] }
+
+    Supplier:
+      type: object
+      required: [id, name, region, leadTimeDays, reliability, costIndex, channel]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        region: { type: string }
+        countryCode: { type: string }
+        leadTimeDays: { type: number }
+        reliability: { type: number }
+        costIndex: { type: number }
+        channel: { type: string }
+        items:
+          type: array
+          items: { type: string }
+        notes: { type: ["string", "null"] }
+
+    Order:
+      type: object
+      required: [id, orderNumber, status, fromNodeId, toNodeId, supplierId, itemId, quantity, priority, etaDays, totalCost, createdAt]
+      properties:
+        id: { type: string }
+        orderNumber: { type: string }
+        status: { type: string }
+        fromNodeId: { type: string }
+        toNodeId: { type: string }
+        supplierId: { type: ["string", "null"] }
+        itemId: { type: string }
+        itemName: { type: string }
+        quantity: { type: number }
+        priority: { type: string }
+        etaDays: { type: number }
+        totalCost: { type: number }
+        rationale: { type: ["string", "null"] }
+        createdAt: { type: string, format: date-time }
+        createdByRole: { type: ["string", "null"] }
+        sourceRecommendationId: { type: ["string", "null"] }
+
+    OrderDetail:
+      type: object
+      required: [order, fromNode, toNode, item]
+      properties:
+        order: { $ref: "#/components/schemas/Order" }
+        fromNode: { $ref: "#/components/schemas/Node" }
+        toNode: { $ref: "#/components/schemas/Node" }
+        item: { $ref: "#/components/schemas/Item" }
+        supplier: { $ref: "#/components/schemas/Supplier" }
+
+    CreateOrderInput:
+      type: object
+      required: [toNodeId, itemId, quantity, priority]
+      properties:
+        toNodeId: { type: string }
+        fromNodeId: { type: ["string", "null"] }
+        supplierId: { type: ["string", "null"] }
+        itemId: { type: string }
+        quantity: { type: number }
+        priority: { type: string }
+        rationale: { type: ["string", "null"] }
+        sourceRecommendationId: { type: ["string", "null"] }
+
+    UpdateOrderStatusInput:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string }
+        note: { type: ["string", "null"] }
+
+    Alert:
+      type: object
+      required: [id, severity, status, title, body, nodeId, itemId, createdAt]
+      properties:
+        id: { type: string }
+        severity: { type: string, enum: [info, watch, warn, critical] }
+        status: { type: string, enum: [open, acknowledged, resolved] }
+        title: { type: string }
+        body: { type: string }
+        nodeId: { type: ["string", "null"] }
+        nodeName: { type: ["string", "null"] }
+        itemId: { type: ["string", "null"] }
+        itemName: { type: ["string", "null"] }
+        category: { type: string }
+        createdAt: { type: string, format: date-time }
+        acknowledgedAt: { type: ["string", "null"], format: date-time }
+        acknowledgedBy: { type: ["string", "null"] }
+
+    AcknowledgeAlertInput:
+      type: object
+      required: [acknowledgedBy]
+      properties:
+        acknowledgedBy: { type: string }
+        note: { type: ["string", "null"] }
+
+    PresetEvent:
+      type: object
+      required: [id, label, description, severity, parameters]
+      properties:
+        id: { type: string }
+        label: { type: string }
+        description: { type: string }
+        severity: { type: string }
+        parameters: { $ref: "#/components/schemas/EventParameters" }
+
+    EventParameters:
+      type: object
+      required: [mascalPeak, mascalSustain, fpconDemand, fpconLatency, latencyMultiplier, reliabilityPenalty, inventoryRetained]
+      properties:
+        mascalPeak: { type: number }
+        mascalSustain: { type: number }
+        fpconDemand: { type: number }
+        fpconLatency: { type: number }
+        latencyMultiplier: { type: number }
+        reliabilityPenalty: { type: number }
+        inventoryRetained: { type: number }
+
+    Scenario:
+      type: object
+      required: [id, name, status, createdAt]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        description: { type: ["string", "null"] }
+        status: { type: string }
+        createdAt: { type: string, format: date-time }
+        completedAt: { type: ["string", "null"], format: date-time }
+        createdByRole: { type: ["string", "null"] }
+
+    RunScenarioInput:
+      type: object
+      required: [name, eventId, focusNodeIds, horizonDays]
+      properties:
+        name: { type: string }
+        description: { type: ["string", "null"] }
+        eventId: { type: string }
+        focusNodeIds:
+          type: array
+          items: { type: string }
+        horizonDays: { type: integer }
+        operationalState: { type: ["string", "null"] }
+        eventParameters: { $ref: "#/components/schemas/EventParameters" }
+
+    ScenarioResult:
+      type: object
+      required: [scenario, summary, perNode, perItem, recommendations, timeline]
+      properties:
+        scenario: { $ref: "#/components/schemas/Scenario" }
+        summary: { $ref: "#/components/schemas/ScenarioSummary" }
+        perNode:
+          type: array
+          items: { $ref: "#/components/schemas/ScenarioNodeOutcome" }
+        perItem:
+          type: array
+          items: { $ref: "#/components/schemas/ScenarioItemOutcome" }
+        recommendations:
+          type: array
+          items: { $ref: "#/components/schemas/Recommendation" }
+        timeline:
+          type: array
+          items: { $ref: "#/components/schemas/ScenarioTimelinePoint" }
+        narrative: { type: ["string", "null"] }
+
+    ScenarioSummary:
+      type: object
+      required: [estimatedShortageEvents, peakRiskNodeId, networkDaysOfSupplyAfter, peakDemandMultiplier]
+      properties:
+        estimatedShortageEvents: { type: integer }
+        peakRiskNodeId: { type: ["string", "null"] }
+        peakRiskNodeName: { type: ["string", "null"] }
+        networkDaysOfSupplyBefore: { type: number }
+        networkDaysOfSupplyAfter: { type: number }
+        peakDemandMultiplier: { type: number }
+        avgRoutingLatency: { type: number }
+        confidenceScore: { type: number }
+
+    ScenarioNodeOutcome:
+      type: object
+      required: [nodeId, nodeName, daysOfSupplyBefore, daysOfSupplyAfter, peakShortageDay, criticalItemIds]
+      properties:
+        nodeId: { type: string }
+        nodeName: { type: string }
+        daysOfSupplyBefore: { type: number }
+        daysOfSupplyAfter: { type: number }
+        peakShortageDay: { type: ["integer", "null"] }
+        criticalItemIds:
+          type: array
+          items: { type: string }
+        riskScore: { type: number }
+
+    ScenarioItemOutcome:
+      type: object
+      required: [itemId, itemName, peakDemandPerDay, totalShortfall, recommendedReorder]
+      properties:
+        itemId: { type: string }
+        itemName: { type: string }
+        peakDemandPerDay: { type: number }
+        totalShortfall: { type: number }
+        recommendedReorder: { type: number }
+
+    ScenarioTimelinePoint:
+      type: object
+      required: [day, networkDaysOfSupply, openShortages, demandIndex]
+      properties:
+        day: { type: integer }
+        networkDaysOfSupply: { type: number }
+        openShortages: { type: integer }
+        demandIndex: { type: number }
+
+    Recommendation:
+      type: object
+      required: [id, kind, nodeId, itemId, quantity, priority, rationale, suggestedSupplierId, etaDays, generatedAt]
+      properties:
+        id: { type: string }
+        kind: { type: string }
+        nodeId: { type: string }
+        nodeName: { type: string }
+        itemId: { type: string }
+        itemName: { type: string }
+        quantity: { type: number }
+        priority: { type: string }
+        rationale: { type: string }
+        suggestedSupplierId: { type: ["string", "null"] }
+        suggestedSupplierName: { type: ["string", "null"] }
+        suggestedFromNodeId: { type: ["string", "null"] }
+        etaDays: { type: number }
+        estimatedCost: { type: number }
+        generatedAt: { type: string, format: date-time }
+        confidenceScore: { type: number }
+        scenarioId: { type: ["string", "null"] }
+        promotedOrderId: { type: ["string", "null"] }
+
+    ForecastInput:
+      type: object
+      required: [itemIds, nodeIds, horizonDays]
+      properties:
+        itemIds:
+          type: array
+          items: { type: string }
+        nodeIds:
+          type: array
+          items: { type: string }
+        horizonDays: { type: integer }
+        operationalState: { type: ["string", "null"] }
+
+    ForecastResult:
+      type: object
+      required: [series]
+      properties:
+        series:
+          type: array
+          items:
+            type: object
+            required: [nodeId, itemId, points]
+            properties:
+              nodeId: { type: string }
+              itemId: { type: string }
+              itemName: { type: string }
+              points:
+                type: array
+                items: { $ref: "#/components/schemas/HistoryPoint" }
+
+    HistoryPoint:
+      type: object
+      required: [day, value]
+      properties:
+        day: { type: integer }
+        value: { type: number }
+        label: { type: ["string", "null"] }
+
+    Conversation:
+      type: object
+      required: [id, title, model, provider, createdAt]
+      properties:
+        id: { type: string }
+        title: { type: string }
+        model: { type: string }
+        provider: { type: string }
+        createdAt: { type: string, format: date-time }
+        messageCount: { type: integer }
+
+    ConversationDetail:
+      type: object
+      required: [conversation, messages]
+      properties:
+        conversation: { $ref: "#/components/schemas/Conversation" }
+        messages:
+          type: array
+          items: { $ref: "#/components/schemas/CopilotMessage" }
+
+    CopilotMessage:
+      type: object
+      required: [id, role, content, createdAt]
+      properties:
+        id: { type: string }
+        role: { type: string, enum: [user, assistant, system] }
+        content: { type: string }
+        createdAt: { type: string, format: date-time }
+        groundingRefs:
+          type: array
+          items: { type: string }
+
+    CreateConversationInput:
+      type: object
+      required: [title]
+      properties:
+        title: { type: string }
+        provider: { type: ["string", "null"] }
+        model: { type: ["string", "null"] }
+
+    SendCopilotMessageInput:
+      type: object
+      required: [content]
+      properties:
+        content: { type: string }
+        provider: { type: ["string", "null"] }
+        model: { type: ["string", "null"] }
+        contextNodeId: { type: ["string", "null"] }
+        contextItemId: { type: ["string", "null"] }
+        contextScenarioId: { type: ["string", "null"] }
+
+    AppSettings:
+      type: object
+      required: [provider, model, autoFlyEnabled, autoFlyIntervalSec, riskThresholds, dmlssCompatible]
+      properties:
+        provider: { type: string, enum: [openai, anthropic] }
+        model: { type: string }
+        autoFlyEnabled: { type: boolean }
+        autoFlyIntervalSec: { type: integer }
+        operationalState: { type: string }
+        riskThresholds:
+          type: object
+          required: [warnDays, criticalDays]
+          properties:
+            warnDays: { type: number }
+            criticalDays: { type: number }
+        dmlssCompatible: { type: boolean }
+        dmlssEndpoint: { type: ["string", "null"] }
+        dmlssApiKey: { type: ["string", "null"] }
+        timezone: { type: string }
+
+    UpdateSettingsInput:
       type: object
       properties:
-        status:
-          type: string
-      required:
-        - status
+        provider: { type: ["string", "null"], enum: [openai, anthropic, null] }
+        model: { type: ["string", "null"] }
+        autoFlyEnabled: { type: ["boolean", "null"] }
+        autoFlyIntervalSec: { type: ["integer", "null"] }
+        operationalState: { type: ["string", "null"] }
+        warnDays: { type: ["number", "null"] }
+        criticalDays: { type: ["number", "null"] }
+        dmlssCompatible: { type: ["boolean", "null"] }
+        dmlssEndpoint: { type: ["string", "null"] }
+        dmlssApiKey: { type: ["string", "null"] }
+        timezone: { type: ["string", "null"] }
 
+    Profile:
+      type: object
+      required: [name, role, base, lastActiveAt]
+      properties:
+        name: { type: string }
+        role: { type: string, enum: [commander, logistician, medical_planner, analyst] }
+        base: { type: string }
+        avatar: { type: ["string", "null"] }
+        lastActiveAt: { type: string, format: date-time }
+
+    UpdateProfileInput:
+      type: object
+      properties:
+        name: { type: ["string", "null"] }
+        role: { type: ["string", "null"], enum: [commander, logistician, medical_planner, analyst, null] }
+        base: { type: ["string", "null"] }
+
+    RoleDefinition:
+      type: object
+      required: [id, label, description, focus]
+      properties:
+        id: { type: string }
+        label: { type: string }
+        description: { type: string }
+        focus:
+          type: array
+          items: { type: string }
+        primaryColor: { type: string }
+
+    DashboardOverview:
+      type: object
+      required: [networkDaysOfSupply, openCriticalAlerts, openWarnAlerts, totalNodes, inFlightShipments, openOrders, pendingRecommendations, kpis, dosTrend, alertCountsBySeverity]
+      properties:
+        networkDaysOfSupply: { type: number }
+        openCriticalAlerts: { type: integer }
+        openWarnAlerts: { type: integer }
+        totalNodes: { type: integer }
+        inFlightShipments: { type: integer }
+        openOrders: { type: integer }
+        pendingRecommendations: { type: integer }
+        kpis:
+          type: array
+          items:
+            type: object
+            required: [id, label, value, unit, deltaPct]
+            properties:
+              id: { type: string }
+              label: { type: string }
+              value: { type: number }
+              unit: { type: string }
+              deltaPct: { type: number }
+              trend: { type: string }
+        dosTrend:
+          type: array
+          items: { $ref: "#/components/schemas/HistoryPoint" }
+        alertCountsBySeverity:
+          type: array
+          items:
+            type: object
+            required: [severity, count]
+            properties:
+              severity: { type: string }
+              count: { type: integer }
+
+    RiskBoard:
+      type: object
+      required: [topRiskNodes, topRiskItems, predictedShortagesNext7d, byHub]
+      properties:
+        topRiskNodes:
+          type: array
+          items: { $ref: "#/components/schemas/SiteSummary" }
+        topRiskItems:
+          type: array
+          items:
+            type: object
+            required: [itemId, itemName, networkDaysOfSupply, criticality, atRiskNodeCount]
+            properties:
+              itemId: { type: string }
+              itemName: { type: string }
+              networkDaysOfSupply: { type: number }
+              criticality: { type: string }
+              atRiskNodeCount: { type: integer }
+        predictedShortagesNext7d: { type: integer }
+        byHub:
+          type: array
+          items:
+            type: object
+            required: [hubId, hubName, daysOfSupply, siteCount]
+            properties:
+              hubId: { type: string }
+              hubName: { type: string }
+              daysOfSupply: { type: number }
+              siteCount: { type: integer }
+              atRiskSiteCount: { type: integer }
+
+    ActivityEntry:
+      type: object
+      required: [id, kind, summary, createdAt]
+      properties:
+        id: { type: string }
+        kind: { type: string }
+        summary: { type: string }
+        nodeId: { type: ["string", "null"] }
+        itemId: { type: ["string", "null"] }
+        orderId: { type: ["string", "null"] }
+        scenarioId: { type: ["string", "null"] }
+        actorRole: { type: ["string", "null"] }
+        createdAt: { type: string, format: date-time }

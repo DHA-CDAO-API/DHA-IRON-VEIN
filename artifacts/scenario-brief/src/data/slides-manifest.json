@@ -1,0 +1,114 @@
+[
+  {
+    "id": "11111111-1111-4111-a111-111111111101",
+    "position": 1,
+    "filepath": "src/pages/slides/Title.tsx",
+    "title": "Title",
+    "description": "INDOPACOM Predictive Medical Sustainment - operational scenario brief title slide",
+    "speakerNotes": ""
+  },
+  {
+    "id": "11111111-1111-4111-a111-111111111102",
+    "position": 2,
+    "filepath": "src/pages/slides/Problem.tsx",
+    "title": "The Gap",
+    "description": "Why current medical sustainment workflows lag the operating tempo",
+    "speakerNotes": ""
+  },
+  {
+    "id": "11111111-1111-4111-a111-111111111103",
+    "position": 3,
+    "filepath": "src/pages/slides/Mission.tsx",
+    "title": "The Mission",
+    "description": "What the platform exists to deliver, in four capability tags",
+    "speakerNotes": ""
+  },
+  {
+    "id": "11111111-1111-4111-a111-111111111104",
+    "position": 4,
+    "filepath": "src/pages/slides/Architecture.tsx",
+    "title": "Architecture",
+    "description": "Hub-and-spoke topology of the seeded INDOPACOM medical network",
+    "speakerNotes": ""
+  },
+  {
+    "id": "11111111-1111-4111-a111-111111111105",
+    "position": 5,
+    "filepath": "src/pages/slides/DataModel.tsx",
+    "title": "Data Model",
+    "description": "Fourteen typed entities, DMLSS-compatible by design",
+    "speakerNotes": ""
+  },
+  {
+    "id": "11111111-1111-4111-a111-111111111106",
+    "position": 6,
+    "filepath": "src/pages/slides/LiveOps.tsx",
+    "title": "Operating Picture",
+    "description": "Live theater map, KPIs, and alerts rail in the dashboard",
+    "speakerNotes": ""
+  },
+  {
+    "id": "11111111-1111-4111-a111-111111111107",
+    "position": 7,
+    "filepath": "src/pages/slides/Engine.tsx",
+    "title": "Predictive Engine",
+    "description": "Risk scoring formula and engine properties",
+    "speakerNotes": ""
+  },
+  {
+    "id": "11111111-1111-4111-a111-111111111108",
+    "position": 8,
+    "filepath": "src/pages/slides/Scenarios.tsx",
+    "title": "Scenario Console",
+    "description": "Five preset scenarios plus the compose/simulate/recommend loop",
+    "speakerNotes": ""
+  },
+  {
+    "id": "11111111-1111-4111-a111-111111111109",
+    "position": 9,
+    "filepath": "src/pages/slides/Walkthrough.tsx",
+    "title": "Walkthrough",
+    "description": "Typhoon Hagibis scenario - baseline vs scenario over 30 days",
+    "speakerNotes": ""
+  },
+  {
+    "id": "11111111-1111-4111-a111-111111111110",
+    "position": 10,
+    "filepath": "src/pages/slides/Copilot.tsx",
+    "title": "AI Co-Pilot",
+    "description": "Switchable OpenAI and Anthropic providers with grounded prompts",
+    "speakerNotes": ""
+  },
+  {
+    "id": "11111111-1111-4111-a111-111111111111",
+    "position": 11,
+    "filepath": "src/pages/slides/Decisions.tsx",
+    "title": "Decisions",
+    "description": "Recommendation to PO to export - one decision path",
+    "speakerNotes": ""
+  },
+  {
+    "id": "11111111-1111-4111-a111-111111111112",
+    "position": 12,
+    "filepath": "src/pages/slides/Roles.tsx",
+    "title": "Roles",
+    "description": "Commander, Logistician, Medical Planner, and Analyst lenses",
+    "speakerNotes": ""
+  },
+  {
+    "id": "11111111-1111-4111-a111-111111111113",
+    "position": 13,
+    "filepath": "src/pages/slides/Compare.tsx",
+    "title": "Comparison",
+    "description": "Capability comparison vs DMLSS and spreadsheet workflows",
+    "speakerNotes": ""
+  },
+  {
+    "id": "11111111-1111-4111-a111-111111111114",
+    "position": 14,
+    "filepath": "src/pages/slides/Demo.tsx",
+    "title": "Demo Flow",
+    "description": "Seven-minute walkthrough of the live application and deliverables list",
+    "speakerNotes": ""
+  }
+]

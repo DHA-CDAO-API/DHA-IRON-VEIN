@@ -12,6 +12,15 @@
     },
     {
       "path": "../../lib/api-zod"
+    },
+    {
+      "path": "../../lib/sim"
+    },
+    {
+      "path": "../../lib/ai-orchestrator"
+    },
+    {
+      "path": "../../lib/exports"
     }
   ]
 }

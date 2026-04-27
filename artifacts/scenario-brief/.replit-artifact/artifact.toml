@@ -1,0 +1,31 @@
+kind = "slides"
+previewPath = "/scenario-brief/"
+title = "INDOPACOM Scenario Brief"
+version = "1.0.0"
+id = "artifacts/scenario-brief"
+router = "path"
+
+[[integratedSkills]]
+name = "slides"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/scenario-brief/" ]
+localPort = 25508
+
+[services.development]
+run = "pnpm --filter @workspace/scenario-brief run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/scenario-brief", "run", "build" ]
+publicDir = "artifacts/scenario-brief/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "25508"
+BASE_PATH = "/scenario-brief/"
