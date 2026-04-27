@@ -156,6 +156,16 @@ export interface DemandProfile {
   wasteFactor: number;
 }
 
+export type InventoryBalanceStatus =
+  (typeof InventoryBalanceStatus)[keyof typeof InventoryBalanceStatus];
+
+export const InventoryBalanceStatus = {
+  healthy: "healthy",
+  watch: "watch",
+  warn: "warn",
+  critical: "critical",
+} as const;
+
 export interface InventoryBalance {
   nodeId: string;
   nodeName?: string;
@@ -167,6 +177,7 @@ export interface InventoryBalance {
   dailyBurn?: number;
   daysOfSupply?: number;
   reorderPoint?: number;
+  status?: InventoryBalanceStatus;
 }
 
 export type DaysOfSupplyEntryStatus =
@@ -296,15 +307,36 @@ export interface SiteDetail {
   history?: HistoryPoint[];
 }
 
+/**
+ * Top-level grouping for medical-logistics catalog
+ */
+export type ItemCategory = (typeof ItemCategory)[keyof typeof ItemCategory];
+
+export const ItemCategory = {
+  blood_products: "blood_products",
+  supplies: "supplies",
+  other: "other",
+} as const;
+
 export interface Item {
   id: string;
   name: string;
   unit: string;
+  unitOfIssue?: string;
+  /** Top-level grouping for medical-logistics catalog */
+  category?: ItemCategory;
+  classOfSupply?: string;
   criticality: string;
   usagePerDraw: number;
   usageRate: number;
   demandBasis: string;
   skewFactor?: number;
+  leadTimeDays?: number;
+  shelfLifeDays?: number;
+  baseDemandPerEvent?: number;
+  wasteAdjustedDemand?: number;
+  trigger?: string;
+  niinOrSku?: string;
 }
 
 export interface Supplier {

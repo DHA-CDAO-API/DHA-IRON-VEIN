@@ -6,6 +6,7 @@ export const items = pgTable("items", {
   niinOrSku: text("niin_or_sku").notNull().default(""),
   unitOfIssue: text("unit_of_issue").notNull(),
   classOfSupply: text("class_of_supply").notNull().default("VIII"),
+  category: text("category").notNull().default("other"),
   mandatory: boolean("mandatory").notNull().default(true),
   criticality: text("criticality").notNull().default("medium"),
   leadTimeDays: integer("lead_time_days").notNull().default(7),

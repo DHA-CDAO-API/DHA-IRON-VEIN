@@ -32,7 +32,7 @@ export default function Demo() {
         </div>
         <div className="flex items-baseline gap-[1.5vw]">
           <span className="font-mono text-[1.2vw] text-amber w-[3vw] shrink-0">04</span>
-          <span className="font-body text-[1.25vw] text-text leading-snug">Open Scenario Console &mdash; load Typhoon Strike preset, run 30-day horizon, inspect recommended actions</span>
+          <span className="font-body text-[1.25vw] text-text leading-snug">Open Scenario Console &mdash; load PRC Contingency preset, run 30-day horizon, inspect recommended whole-blood &amp; PRBC actions</span>
         </div>
         <div className="flex items-baseline gap-[1.5vw]">
           <span className="font-mono text-[1.2vw] text-amber w-[3vw] shrink-0">05</span>

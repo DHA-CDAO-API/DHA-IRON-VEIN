@@ -15,30 +15,30 @@ export default function Scenarios() {
       </div>
 
       <div className="absolute left-[5vw] top-[34vh] right-[5vw] grid grid-cols-5 gap-[1.2vw]">
-        <div className="bg-bg2 border border-edge p-[2vh_1.2vw]">
-          <div className="font-mono text-[0.85vw] text-amber tracking-widest uppercase">Preset 01</div>
-          <div className="font-display font-bold text-[1.5vw] text-text mt-[1vh] leading-tight">Typhoon Strike</div>
-          <div className="font-body text-[0.95vw] text-muted mt-[1vh] leading-snug">Route closure on south corridor, demand spike at coastal MTFs</div>
+        <div className="bg-bg2 border-2 border-amber p-[2vh_1.2vw]">
+          <div className="font-mono text-[0.85vw] text-amber tracking-widest uppercase">Preset 01 &middot; Primary</div>
+          <div className="font-display font-bold text-[1.5vw] text-text mt-[1vh] leading-tight">PRC Contingency</div>
+          <div className="font-body text-[0.95vw] text-muted mt-[1vh] leading-snug">First Island Chain conflict &mdash; SLOC closures, mass-cas, walking blood bank surge across Okinawa, Luzon, Guam</div>
         </div>
         <div className="bg-bg2 border border-edge p-[2vh_1.2vw]">
           <div className="font-mono text-[0.85vw] text-amber tracking-widest uppercase">Preset 02</div>
-          <div className="font-display font-bold text-[1.5vw] text-text mt-[1vh] leading-tight">MTF Surge</div>
-          <div className="font-body text-[0.95vw] text-muted mt-[1vh] leading-snug">Mass-cas event drives 3x demand at two MTFs for 7 days</div>
+          <div className="font-display font-bold text-[1.5vw] text-text mt-[1vh] leading-tight">Mass-Cas Surge</div>
+          <div className="font-body text-[0.95vw] text-muted mt-[1vh] leading-snug">3x whole-blood + PRBC + FFP demand at two MTFs for 7 days</div>
         </div>
         <div className="bg-bg2 border border-edge p-[2vh_1.2vw]">
           <div className="font-mono text-[0.85vw] text-amber tracking-widest uppercase">Preset 03</div>
-          <div className="font-display font-bold text-[1.5vw] text-text mt-[1vh] leading-tight">Supplier Disruption</div>
-          <div className="font-body text-[0.95vw] text-muted mt-[1vh] leading-snug">DLA prime vendor lead time grows 2x for 14 days</div>
+          <div className="font-display font-bold text-[1.5vw] text-text mt-[1vh] leading-tight">Cold-Chain Break</div>
+          <div className="font-body text-[0.95vw] text-muted mt-[1vh] leading-snug">Refrigeration outage at hub: platelets &amp; liquid plasma waste spikes for 72h</div>
         </div>
         <div className="bg-bg2 border border-edge p-[2vh_1.2vw]">
           <div className="font-mono text-[0.85vw] text-amber tracking-widest uppercase">Preset 04</div>
-          <div className="font-display font-bold text-[1.5vw] text-text mt-[1vh] leading-tight">Route Closure</div>
-          <div className="font-body text-[0.95vw] text-muted mt-[1vh] leading-snug">Air corridor down; reroute through surface lanes only</div>
+          <div className="font-display font-bold text-[1.5vw] text-text mt-[1vh] leading-tight">Typhoon Strike</div>
+          <div className="font-body text-[0.95vw] text-muted mt-[1vh] leading-snug">Secondary scenario &mdash; Hagibis-class storm, south corridor closure, coastal MTF demand spike</div>
         </div>
         <div className="bg-bg2 border border-edge p-[2vh_1.2vw]">
           <div className="font-mono text-[0.85vw] text-amber tracking-widest uppercase">Preset 05</div>
           <div className="font-display font-bold text-[1.5vw] text-text mt-[1vh] leading-tight">Forward BAS Push</div>
-          <div className="font-body text-[0.95vw] text-muted mt-[1vh] leading-snug">Operational state escalates to CONFLICT &mdash; baseline demand +60%</div>
+          <div className="font-body text-[0.95vw] text-muted mt-[1vh] leading-snug">Operational state escalates to CONFLICT &mdash; transfusion-set demand +60%, FDP push to BAS</div>
         </div>
       </div>
 

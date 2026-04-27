@@ -5,6 +5,7 @@
  * Predictive Sustainment Platform API for INDOPACOM medical logistics decision support.
  * OpenAPI spec version: 1.0.0
  */
+import type { InventoryBalanceStatus } from "./inventoryBalanceStatus";
 
 export interface InventoryBalance {
   nodeId: string;
@@ -17,4 +18,5 @@ export interface InventoryBalance {
   dailyBurn?: number;
   daysOfSupply?: number;
   reorderPoint?: number;
+  status?: InventoryBalanceStatus;
 }

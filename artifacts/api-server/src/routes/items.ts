@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
-import { db, items, inventoryBalances, suppliers, orders, orderLines } from "@workspace/db";
-import { eq, sql } from "drizzle-orm";
+import { db, items, inventoryBalances, suppliers, orders, orderLines, alerts } from "@workspace/db";
+import { eq, sql, and } from "drizzle-orm";
 import { loadSimContext } from "../lib/ctx";
 import { computeDailyDemand, projectDaysOfSupply, statusFromDOS } from "@workspace/sim";
 
@@ -71,10 +71,48 @@ router.get("/items/:itemId", async (req, res, next) => {
       .orderBy(sql`${orders.createdAt} DESC`)
       .limit(20);
 
+    // Aggregates (match OpenAPI ItemDetail contract)
+    const totalOnHand = dosByNode.reduce((s, n) => s + n.onHand, 0);
+    const totalDailyBurn = dosByNode.reduce((s, n) => s + n.dailyBurn, 0);
+    const networkDaysOfSupply = totalDailyBurn > 0.0001
+      ? Number((totalOnHand / totalDailyBurn).toFixed(1))
+      : 999;
+    const perNode = dosByNode.map((n) => ({
+      nodeId: n.nodeId,
+      nodeName: n.nodeName,
+      itemId,
+      itemName: item.name,
+      unit: item.unitOfIssue,
+      criticality: item.criticality,
+      quantityOnHand: n.onHand,
+      dailyBurn: n.dailyBurn,
+      daysOfSupply: n.daysOfSupply,
+      status: n.status,
+    }));
+    const itemAlerts = await db
+      .select()
+      .from(alerts)
+      .where(and(eq(alerts.itemId, itemId), eq(alerts.status, "OPEN")))
+      .limit(50);
+
+    // Synthesize a flat usage rate for the OpenAPI Item shape consumers
+    const itemEnvelope = {
+      ...item,
+      unit: item.unitOfIssue,
+      usagePerDraw: item.baseDemandPerEvent,
+      usageRate: Number(totalDailyBurn.toFixed(2)),
+      demandBasis: item.trigger,
+    };
+
     res.json({
-      item,
+      item: itemEnvelope,
+      totalOnHand,
+      networkDaysOfSupply,
+      perNode,
       dosByNode,
       suppliers: supplierRows,
+      alerts: itemAlerts,
+      recommendations: [],
       recentOrders: recentOrderRows.map((o) => ({
         ...o,
         createdAt: o.createdAt.toISOString(),

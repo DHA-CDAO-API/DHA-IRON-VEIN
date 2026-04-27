@@ -209,6 +209,7 @@ export const GetSiteDetailResponse = zod.object({
       dailyBurn: zod.number().optional(),
       daysOfSupply: zod.number().optional(),
       reorderPoint: zod.number().optional(),
+      status: zod.enum(["healthy", "watch", "warn", "critical"]).optional(),
     }),
   ),
   dosByItem: zod.array(
@@ -297,11 +298,23 @@ export const ListItemsResponseItem = zod.object({
   id: zod.string(),
   name: zod.string(),
   unit: zod.string(),
+  unitOfIssue: zod.string().optional(),
+  category: zod
+    .enum(["blood_products", "supplies", "other"])
+    .optional()
+    .describe("Top-level grouping for medical-logistics catalog"),
+  classOfSupply: zod.string().optional(),
   criticality: zod.string(),
   usagePerDraw: zod.number(),
   usageRate: zod.number(),
   demandBasis: zod.string(),
   skewFactor: zod.number().optional(),
+  leadTimeDays: zod.number().optional(),
+  shelfLifeDays: zod.number().optional(),
+  baseDemandPerEvent: zod.number().optional(),
+  wasteAdjustedDemand: zod.number().optional(),
+  trigger: zod.string().optional(),
+  niinOrSku: zod.string().optional(),
 });
 export const ListItemsResponse = zod.array(ListItemsResponseItem);
 
@@ -314,11 +327,23 @@ export const GetItemDetailResponse = zod.object({
     id: zod.string(),
     name: zod.string(),
     unit: zod.string(),
+    unitOfIssue: zod.string().optional(),
+    category: zod
+      .enum(["blood_products", "supplies", "other"])
+      .optional()
+      .describe("Top-level grouping for medical-logistics catalog"),
+    classOfSupply: zod.string().optional(),
     criticality: zod.string(),
     usagePerDraw: zod.number(),
     usageRate: zod.number(),
     demandBasis: zod.string(),
     skewFactor: zod.number().optional(),
+    leadTimeDays: zod.number().optional(),
+    shelfLifeDays: zod.number().optional(),
+    baseDemandPerEvent: zod.number().optional(),
+    wasteAdjustedDemand: zod.number().optional(),
+    trigger: zod.string().optional(),
+    niinOrSku: zod.string().optional(),
   }),
   totalOnHand: zod.number(),
   networkDaysOfSupply: zod.number(),
@@ -334,6 +359,7 @@ export const GetItemDetailResponse = zod.object({
       dailyBurn: zod.number().optional(),
       daysOfSupply: zod.number().optional(),
       reorderPoint: zod.number().optional(),
+      status: zod.enum(["healthy", "watch", "warn", "critical"]).optional(),
     }),
   ),
   suppliers: zod.array(
@@ -416,6 +442,7 @@ export const ListInventoryBalancesResponseItem = zod.object({
   dailyBurn: zod.number().optional(),
   daysOfSupply: zod.number().optional(),
   reorderPoint: zod.number().optional(),
+  status: zod.enum(["healthy", "watch", "warn", "critical"]).optional(),
 });
 export const ListInventoryBalancesResponse = zod.array(
   ListInventoryBalancesResponseItem,
@@ -527,11 +554,23 @@ export const GetOrderResponse = zod.object({
     id: zod.string(),
     name: zod.string(),
     unit: zod.string(),
+    unitOfIssue: zod.string().optional(),
+    category: zod
+      .enum(["blood_products", "supplies", "other"])
+      .optional()
+      .describe("Top-level grouping for medical-logistics catalog"),
+    classOfSupply: zod.string().optional(),
     criticality: zod.string(),
     usagePerDraw: zod.number(),
     usageRate: zod.number(),
     demandBasis: zod.string(),
     skewFactor: zod.number().optional(),
+    leadTimeDays: zod.number().optional(),
+    shelfLifeDays: zod.number().optional(),
+    baseDemandPerEvent: zod.number().optional(),
+    wasteAdjustedDemand: zod.number().optional(),
+    trigger: zod.string().optional(),
+    niinOrSku: zod.string().optional(),
   }),
   supplier: zod
     .object({

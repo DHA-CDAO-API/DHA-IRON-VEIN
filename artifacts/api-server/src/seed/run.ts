@@ -194,30 +194,83 @@ export async function runSeed(opts: SeedOptions = {}): Promise<void> {
       RESTART IDENTITY`);
   }
 
-  // ---- Items ----
-  const itemRows = readSheetAsObjects(wb, "Items", [
-    "id",
-    "name",
-    "unit",
-    "base_demand_per_event",
-    "waste_adjusted_demand",
-    "trigger",
-    "criticality",
-  ]);
+  // ---- Items (hand-curated, blood-products-first) ----
+  // category: blood_products | supplies | other
+  const ITEM_CATALOG: Array<{
+    id: string;
+    name: string;
+    unit: string;
+    category: "blood_products" | "supplies" | "other";
+    criticality: "critical" | "high" | "medium" | "low";
+    baseDemand: number;
+    waste: number;
+    trigger: string;
+    leadTimeDays: number;
+    shelfLifeDays: number;
+    classOfSupply: string;
+  }> = [
+    // ---- Blood products (USMC Walking Blood Bank + frozen/liquid components) ----
+    { id: "ltow_pos",   name: "Whole Blood Low-Titer O Pos",        unit: "units", category: "blood_products", criticality: "critical", baseDemand: 1.0, waste: 1.10, trigger: "transfusion_event", leadTimeDays: 2, shelfLifeDays: 21,  classOfSupply: "VIII" },
+    { id: "ltow_neg",   name: "Whole Blood Low-Titer O Neg",        unit: "units", category: "blood_products", criticality: "critical", baseDemand: 0.5, waste: 1.10, trigger: "transfusion_event", leadTimeDays: 2, shelfLifeDays: 21,  classOfSupply: "VIII" },
+    { id: "prbc_o",     name: "Packed Red Blood Cells (PRBC) O",    unit: "units", category: "blood_products", criticality: "critical", baseDemand: 1.5, waste: 1.08, trigger: "transfusion_event", leadTimeDays: 3, shelfLifeDays: 42,  classOfSupply: "VIII" },
+    { id: "ffp_ab",     name: "Fresh Frozen Plasma AB (Universal)", unit: "units", category: "blood_products", criticality: "critical", baseDemand: 1.0, waste: 1.05, trigger: "transfusion_event", leadTimeDays: 4, shelfLifeDays: 365, classOfSupply: "VIII" },
+    { id: "plasma_a",   name: "Liquid Plasma Group A",              unit: "units", category: "blood_products", criticality: "high",     baseDemand: 0.6, waste: 1.05, trigger: "transfusion_event", leadTimeDays: 3, shelfLifeDays: 26,  classOfSupply: "VIII" },
+    { id: "platelets",  name: "Apheresis Platelets",                unit: "units", category: "blood_products", criticality: "critical", baseDemand: 0.4, waste: 1.20, trigger: "transfusion_event", leadTimeDays: 2, shelfLifeDays: 5,   classOfSupply: "VIII" },
+    { id: "cryo",       name: "Cryoprecipitate",                    unit: "units", category: "blood_products", criticality: "high",     baseDemand: 0.3, waste: 1.10, trigger: "transfusion_event", leadTimeDays: 4, shelfLifeDays: 365, classOfSupply: "VIII" },
+    { id: "fdp",        name: "Freeze-Dried Plasma (FDP)",          unit: "units", category: "blood_products", criticality: "critical", baseDemand: 0.8, waste: 1.02, trigger: "transfusion_event", leadTimeDays: 5, shelfLifeDays: 730, classOfSupply: "VIII" },
+
+    // ---- Collection / phlebotomy supplies (existing IDs preserved) ----
+    { id: "tubes",      name: "Blood Collection Tubes",             unit: "tubes",  category: "supplies", criticality: "high",   baseDemand: 4.0, waste: 1.15, trigger: "phlebotomy_event", leadTimeDays: 7, shelfLifeDays: 730, classOfSupply: "VIII" },
+    { id: "butterfly",  name: "Butterfly Needle Sets",              unit: "sets",   category: "supplies", criticality: "high",   baseDemand: 1.0, waste: 1.10, trigger: "phlebotomy_event", leadTimeDays: 7, shelfLifeDays: 1825, classOfSupply: "VIII" },
+    { id: "alcohol",    name: "Alcohol Prep Pads",                  unit: "pads",   category: "supplies", criticality: "medium", baseDemand: 2.0, waste: 1.20, trigger: "phlebotomy_event", leadTimeDays: 7, shelfLifeDays: 1095, classOfSupply: "VIII" },
+    { id: "gauze",      name: "Gauze Pads",                         unit: "pads",   category: "supplies", criticality: "medium", baseDemand: 2.0, waste: 1.15, trigger: "phlebotomy_event", leadTimeDays: 7, shelfLifeDays: 1825, classOfSupply: "VIII" },
+    { id: "tourniquet", name: "Tourniquets",                        unit: "each",   category: "supplies", criticality: "medium", baseDemand: 0.2, waste: 1.05, trigger: "phlebotomy_event", leadTimeDays: 7, shelfLifeDays: 1825, classOfSupply: "VIII" },
+    { id: "bags",       name: "Specimen Transport Bags",            unit: "bags",   category: "supplies", criticality: "medium", baseDemand: 1.0, waste: 1.10, trigger: "phlebotomy_event", leadTimeDays: 7, shelfLifeDays: 1825, classOfSupply: "VIII" },
+    { id: "labels",     name: "Donor Barcode Labels",               unit: "labels", category: "supplies", criticality: "low",    baseDemand: 4.0, waste: 1.05, trigger: "phlebotomy_event", leadTimeDays: 5, shelfLifeDays: 1825, classOfSupply: "VIII" },
+    { id: "collection_bag", name: "Blood Collection Bag CPD-A1 450mL", unit: "bags", category: "supplies", criticality: "critical", baseDemand: 1.0, waste: 1.05, trigger: "phlebotomy_event", leadTimeDays: 10, shelfLifeDays: 730, classOfSupply: "VIII" },
+    { id: "antiseptic", name: "Skin Antiseptic Chlorhexidine",      unit: "ea",    category: "supplies", criticality: "medium", baseDemand: 1.5, waste: 1.10, trigger: "phlebotomy_event", leadTimeDays: 7, shelfLifeDays: 1095, classOfSupply: "VIII" },
+
+    // ---- Storage / cold-chain transport ----
+    { id: "cooler",      name: "Insulated Blood Transport Cooler 24h", unit: "ea", category: "supplies", criticality: "high", baseDemand: 0.05, waste: 1.02, trigger: "shipment_event", leadTimeDays: 21, shelfLifeDays: 3650, classOfSupply: "VIII" },
+    { id: "coolant",     name: "Refrigerator Coolant Pack",            unit: "ea", category: "supplies", criticality: "medium", baseDemand: 0.5, waste: 1.05, trigger: "shipment_event", leadTimeDays: 14, shelfLifeDays: 3650, classOfSupply: "VIII" },
+    { id: "chain_log",   name: "Cold-Chain Temperature Logger",        unit: "ea", category: "supplies", criticality: "high",   baseDemand: 0.1, waste: 1.02, trigger: "shipment_event", leadTimeDays: 21, shelfLifeDays: 1825, classOfSupply: "VIII" },
+
+    // ---- Testing / typing ----
+    { id: "abo_kit",     name: "ABO/Rh Typing Kit",                    unit: "kit", category: "supplies", criticality: "critical", baseDemand: 0.3, waste: 1.05, trigger: "transfusion_event", leadTimeDays: 14, shelfLifeDays: 540, classOfSupply: "VIII" },
+    { id: "crossmatch",  name: "Crossmatch Test Kit",                  unit: "kit", category: "supplies", criticality: "critical", baseDemand: 0.4, waste: 1.05, trigger: "transfusion_event", leadTimeDays: 14, shelfLifeDays: 540, classOfSupply: "VIII" },
+    { id: "id_screen",   name: "Infectious Disease Screen (HIV/HBV/HCV)", unit: "kit", category: "supplies", criticality: "high", baseDemand: 0.2, waste: 1.05, trigger: "phlebotomy_event", leadTimeDays: 14, shelfLifeDays: 540, classOfSupply: "VIII" },
+
+    // ---- Transfusion administration ----
+    { id: "iv_set",         name: "IV Tubing Set w/ 170μm Blood Filter", unit: "ea", category: "supplies", criticality: "critical", baseDemand: 1.0, waste: 1.10, trigger: "transfusion_event", leadTimeDays: 10, shelfLifeDays: 1825, classOfSupply: "VIII" },
+    { id: "pressure_inf",   name: "Pressure Infusor Bag 500mL",          unit: "ea", category: "supplies", criticality: "high",     baseDemand: 0.4, waste: 1.05, trigger: "transfusion_event", leadTimeDays: 14, shelfLifeDays: 1825, classOfSupply: "VIII" },
+    { id: "warmer",         name: "Single-Use Blood Warmer (Buddy Lite)", unit: "ea", category: "supplies", criticality: "high",    baseDemand: 0.5, waste: 1.10, trigger: "transfusion_event", leadTimeDays: 21, shelfLifeDays: 730,  classOfSupply: "VIII" },
+    { id: "transfusion_band", name: "Transfusion Recipient Wristband",   unit: "ea", category: "supplies", criticality: "medium",   baseDemand: 1.0, waste: 1.05, trigger: "transfusion_event", leadTimeDays: 7, shelfLifeDays: 1825, classOfSupply: "VIII" },
+
+    // ---- PPE (supplies) ----
+    { id: "gloves",  name: "Nitrile Exam Gloves",  unit: "pairs", category: "supplies", criticality: "high",   baseDemand: 4.0, waste: 1.15, trigger: "phlebotomy_event", leadTimeDays: 7, shelfLifeDays: 1095, classOfSupply: "VIII" },
+    { id: "mask",    name: "Surgical Mask",        unit: "ea",    category: "supplies", criticality: "medium", baseDemand: 1.5, waste: 1.10, trigger: "phlebotomy_event", leadTimeDays: 7, shelfLifeDays: 1825, classOfSupply: "VIII" },
+    { id: "shield",  name: "Disposable Face Shield", unit: "ea",  category: "supplies", criticality: "medium", baseDemand: 0.5, waste: 1.05, trigger: "phlebotomy_event", leadTimeDays: 14, shelfLifeDays: 1825, classOfSupply: "VIII" },
+
+    // ---- Other lab consumables / admin ----
+    { id: "sharps",          name: "Sharps Container 2L",         unit: "ea", category: "other", criticality: "medium", baseDemand: 0.1, waste: 1.05, trigger: "phlebotomy_event", leadTimeDays: 14, shelfLifeDays: 3650, classOfSupply: "VIII" },
+    { id: "centrifuge_tube", name: "Lab Centrifuge Tubes 15mL",   unit: "ea", category: "other", criticality: "low",    baseDemand: 1.0, waste: 1.05, trigger: "phlebotomy_event", leadTimeDays: 14, shelfLifeDays: 1825, classOfSupply: "VIII" },
+    { id: "biohazard_bag",   name: "Biohazard Disposal Bags",     unit: "ea", category: "other", criticality: "low",    baseDemand: 0.6, waste: 1.05, trigger: "phlebotomy_event", leadTimeDays: 14, shelfLifeDays: 1825, classOfSupply: "VIII" },
+  ];
   await db.insert(items).values(
-    itemRows.map((r) => ({
-      id: asString(r.id),
-      name: asString(r.name),
-      niinOrSku: "",
-      unitOfIssue: asString(r.unit, "ea"),
-      classOfSupply: "VIII",
+    ITEM_CATALOG.map((r) => ({
+      id: r.id,
+      name: r.name,
+      niinOrSku: r.id.toUpperCase(),
+      unitOfIssue: r.unit,
+      classOfSupply: r.classOfSupply,
+      category: r.category,
       mandatory: true,
-      criticality: asString(r.criticality, "medium"),
-      leadTimeDays: 7,
-      shelfLifeDays: 365,
-      baseDemandPerEvent: asNumber(r.base_demand_per_event, 1),
-      wasteAdjustedDemand: asNumber(r.waste_adjusted_demand, 1),
-      trigger: asString(r.trigger, "phlebotomy_event"),
+      criticality: r.criticality,
+      leadTimeDays: r.leadTimeDays,
+      shelfLifeDays: r.shelfLifeDays,
+      baseDemandPerEvent: r.baseDemand,
+      wasteAdjustedDemand: r.baseDemand * r.waste,
+      trigger: r.trigger,
     })),
   );
 
@@ -384,25 +437,57 @@ export async function runSeed(opts: SeedOptions = {}): Promise<void> {
       optempo: asString(r.optempo, "garrison"),
     });
   }
-  await db.insert(inventoryBalances).values(
-    balanceRows.map((r) => {
-      const nodeId = asString(r.node_id);
-      const itemId = asString(r.item_id);
-      const meta = nodeMetaForBalance.get(nodeId) ?? { type: "Site", optempo: "garrison" };
-      const baseQty = asNumber(r.quantity_on_hand);
-      const scale = operationalStressScale(meta.type, meta.optempo);
+  // existing IDs covered by sheet rows
+  const sheetItemIds = new Set(balanceRows.map((r) => asString(r.item_id)));
+  const sheetBalances = balanceRows.map((r) => {
+    const nodeId = asString(r.node_id);
+    const itemId = asString(r.item_id);
+    const meta = nodeMetaForBalance.get(nodeId) ?? { type: "Site", optempo: "garrison" };
+    const baseQty = asNumber(r.quantity_on_hand);
+    const scale = operationalStressScale(meta.type, meta.optempo);
+    const jitter = deterministicJitter(`${nodeId}:${itemId}`);
+    const onHand = Math.max(0, Math.round(baseQty * scale * jitter));
+    return {
+      nodeId,
+      itemId,
+      onHand,
+      dueIn: 0,
+      dueOut: 0,
+      allocated: 0,
+    };
+  });
+
+  // synthesize balances for newly added (blood-products + transfusion) items
+  // baseStockByCategory: target days-of-supply * baseDemand (rough)
+  const stockTargetByItem: Record<string, number> = {
+    // blood products: keep limited stock at MTFs, deeper at hubs/theater
+    ltow_pos: 18, ltow_neg: 8, prbc_o: 24, ffp_ab: 16, plasma_a: 10,
+    platelets: 6, cryo: 8, fdp: 14,
+    // collection / cold-chain / testing / transfusion supplies
+    collection_bag: 80, antiseptic: 120, cooler: 6, coolant: 24, chain_log: 8,
+    abo_kit: 24, crossmatch: 30, id_screen: 20,
+    iv_set: 80, pressure_inf: 24, warmer: 16, transfusion_band: 80,
+    mask: 200, shield: 60, sharps: 8, centrifuge_tube: 80, biohazard_bag: 60,
+  };
+  // Hub/theater/supplier carry deeper stock (multiplier)
+  const depthByType: Record<string, number> = {
+    Strategic: 12, Theater: 6, Hub: 3, MTF: 1, BAS: 0.5, Clinic: 0.4,
+  };
+  const newBalances: typeof sheetBalances = [];
+  for (const node of nodeRows) {
+    const nodeId = asString(node.id);
+    const type = asString(node.type, "Site");
+    const optempo = asString(node.optempo, "garrison");
+    const depth = depthByType[type] ?? 1;
+    const stress = operationalStressScale(type, optempo);
+    for (const [itemId, base] of Object.entries(stockTargetByItem)) {
+      if (sheetItemIds.has(itemId)) continue; // already covered by sheet
       const jitter = deterministicJitter(`${nodeId}:${itemId}`);
-      const onHand = Math.max(0, Math.round(baseQty * scale * jitter));
-      return {
-        nodeId,
-        itemId,
-        onHand,
-        dueIn: 0,
-        dueOut: 0,
-        allocated: 0,
-      };
-    }),
-  );
+      const onHand = Math.max(0, Math.round(base * depth * stress * jitter));
+      newBalances.push({ nodeId, itemId, onHand, dueIn: 0, dueOut: 0, allocated: 0 });
+    }
+  }
+  await db.insert(inventoryBalances).values([...sheetBalances, ...newBalances]);
 
   // ---- Suppliers ----
   await db.insert(suppliers).values(

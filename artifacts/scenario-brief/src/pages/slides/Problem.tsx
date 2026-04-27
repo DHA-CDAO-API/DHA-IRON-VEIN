@@ -31,7 +31,7 @@ export default function Problem() {
         <div className="border-l-2 border-rose pl-[1.5vw] pr-[1vw] py-[1vh]">
           <div className="font-display font-bold text-[3.6vw] text-text leading-none">0</div>
           <div className="font-body text-[1.2vw] text-muted mt-[1.5vh] leading-snug" style={{ textWrap: "pretty" }}>
-            Native scenario rehearsal for typhoon, surge, or supplier disruption events
+            Native scenario rehearsal for PRC contingency, mass-cas surge, cold-chain break, typhoon, or supplier disruption events
           </div>
         </div>
       </div>

@@ -38,16 +38,34 @@ export default function ItemDetail() {
     <div className="h-full flex flex-col p-4 gap-4 overflow-y-auto bg-background text-foreground">
       <div className="flex items-start justify-between shrink-0 border-b border-border pb-4">
         <div>
-          <div className="flex items-center gap-3 mb-1">
+          <div className="flex items-center gap-3 mb-1 flex-wrap">
             <h1 className="text-2xl font-bold tracking-wide">{item.name}</h1>
-            <Badge variant="outline" className={item.criticality === 'LIFE_SAVING' ? 'border-destructive text-destructive' : 'border-primary text-primary'}>
-              {item.criticality}
+            {(() => {
+              const cat = (item as { category?: string }).category;
+              if (!cat) return null;
+              const label = cat === 'blood_products' ? 'Blood Product' : cat === 'supplies' ? 'Supplies' : 'Other';
+              const klass =
+                cat === 'blood_products'
+                  ? 'border-destructive/70 text-destructive bg-destructive/10'
+                  : cat === 'supplies'
+                  ? 'border-primary/70 text-primary bg-primary/10'
+                  : 'border-muted-foreground/40 text-muted-foreground bg-muted/30';
+              return <Badge variant="outline" className={klass}>{label}</Badge>;
+            })()}
+            <Badge variant="outline" className={item.criticality === 'critical' ? 'border-destructive text-destructive' : 'border-primary text-primary'}>
+              {String(item.criticality).toUpperCase()}
             </Badge>
           </div>
-          <div className="flex items-center text-sm text-muted-foreground gap-4">
+          <div className="flex items-center text-sm text-muted-foreground gap-4 flex-wrap">
             <span className="font-mono">ID: {item.id}</span>
             <span>UoM: {item.unit}</span>
             <span>Usage Rate: {item.usageRate}/day</span>
+            {(item as { shelfLifeDays?: number }).shelfLifeDays !== undefined && (
+              <span>Shelf life: {(item as { shelfLifeDays?: number }).shelfLifeDays}d</span>
+            )}
+            {(item as { leadTimeDays?: number }).leadTimeDays !== undefined && (
+              <span>Lead time: {(item as { leadTimeDays?: number }).leadTimeDays}d</span>
+            )}
           </div>
         </div>
       </div>

@@ -773,11 +773,23 @@ components:
         id: { type: string }
         name: { type: string }
         unit: { type: string }
+        unitOfIssue: { type: string }
+        category:
+          type: string
+          enum: [blood_products, supplies, other]
+          description: Top-level grouping for medical-logistics catalog
+        classOfSupply: { type: string }
         criticality: { type: string }
         usagePerDraw: { type: number }
         usageRate: { type: number }
         demandBasis: { type: string }
         skewFactor: { type: number }
+        leadTimeDays: { type: number }
+        shelfLifeDays: { type: number }
+        baseDemandPerEvent: { type: number }
+        wasteAdjustedDemand: { type: number }
+        trigger: { type: string }
+        niinOrSku: { type: string }
 
     ItemDetail:
       type: object
@@ -816,6 +828,9 @@ components:
         dailyBurn: { type: number }
         daysOfSupply: { type: number }
         reorderPoint: { type: number }
+        status:
+          type: string
+          enum: [healthy, watch, warn, critical]
 
     DaysOfSupplyEntry:
       type: object

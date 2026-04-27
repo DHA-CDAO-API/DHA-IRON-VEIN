@@ -32,6 +32,14 @@ export function computeDailyDemand(args: {
     args.profile.specimensPerPhlebotomy *
     (args.specimensMultiplier ?? 1);
 
+  // Transfusion events are a small fraction of encounters (emergency
+  // surgery / mass-cas casualty volume). Scales up with operational tempo
+  // because the encounter multiplier already reflects optempo.
+  // Garrison ~0.5%, conflict ramps via stateMult.
+  const transfusionEvents = dailyEncounters * 0.005;
+  // Cold-chain shipments per day at the node (1 per ~50 transfusion events)
+  const shipmentEvents = transfusionEvents * 0.02 + 0.05;
+
   return args.items.map((it) => {
     const skew = args.itemSkew[it.id] ?? 1;
     let qty = 0;
@@ -47,6 +55,12 @@ export function computeDailyDemand(args: {
         break;
       case "population":
         qty = effectivePop * it.wasteAdjustedDemand * skew * waste;
+        break;
+      case "transfusion_event":
+        qty = transfusionEvents * it.wasteAdjustedDemand * skew * waste;
+        break;
+      case "shipment_event":
+        qty = shipmentEvents * it.wasteAdjustedDemand * skew * waste;
         break;
       default:
         qty = phlebotomyEvents * it.wasteAdjustedDemand * skew * waste;

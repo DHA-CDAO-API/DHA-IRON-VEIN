@@ -5,14 +5,25 @@
  * Predictive Sustainment Platform API for INDOPACOM medical logistics decision support.
  * OpenAPI spec version: 1.0.0
  */
+import type { ItemCategory } from "./itemCategory";
 
 export interface Item {
   id: string;
   name: string;
   unit: string;
+  unitOfIssue?: string;
+  /** Top-level grouping for medical-logistics catalog */
+  category?: ItemCategory;
+  classOfSupply?: string;
   criticality: string;
   usagePerDraw: number;
   usageRate: number;
   demandBasis: string;
   skewFactor?: number;
+  leadTimeDays?: number;
+  shelfLifeDays?: number;
+  baseDemandPerEvent?: number;
+  wasteAdjustedDemand?: number;
+  trigger?: string;
+  niinOrSku?: string;
 }
