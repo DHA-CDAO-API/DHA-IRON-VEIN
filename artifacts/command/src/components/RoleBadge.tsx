@@ -1,7 +1,7 @@
 import React from 'react';
 import { useGetProfile } from '@workspace/api-client-react';
 import { Badge } from '@/components/ui/badge';
-import { Shield, Activity, Map, Database } from 'lucide-react';
+import { Shield, Activity, Map, Database, Box } from 'lucide-react';
 import { Link } from 'wouter';
 
 export default function RoleBadge() {
@@ -36,5 +36,3 @@ export default function RoleBadge() {
   );
 }
 
-// Add local Box import since we didn't import Box from lucide-react above.
-import { Box } from 'lucide-react';

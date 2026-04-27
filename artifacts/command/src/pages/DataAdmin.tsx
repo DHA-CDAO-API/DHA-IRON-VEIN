@@ -3,7 +3,7 @@ import { useGetSeedStatus, useReseedDatabase, useListCatalogItems, getGetSeedSta
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Database, RefreshCw, Download, FileSpreadsheet, FileText } from 'lucide-react';
+import { Database, RefreshCw, Download, FileSpreadsheet, FileText, Box } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 export default function DataAdmin() {
@@ -117,5 +117,3 @@ export default function DataAdmin() {
   );
 }
 
-// Ensure Box is imported
-import { Box } from 'lucide-react';
