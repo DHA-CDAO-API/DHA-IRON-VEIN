@@ -1,0 +1,37 @@
+I am an AI and software developer, developing a solution at a Modern Marine hackathon. I need you to build for me a state of the art, full blown solution, end-to-end, that follows the attached use case to the letter.
+
+Please read these requirements in its entirety FIRST and ask questions BEFORE you create the solution. 
+
+This needs to be a single solution that contains the following modules:
+1.	Functional Prototype (MVP) A working software prototype of the decision support tool featuring an interactive user interface tailored for commanders and logisticians. - Hub-and-spoke network visualization map.- Dashboard displaying Days of Supply (DOS) and projected stock-out dates.- Alerts for cascading failures and critical supply thresholds.
+2.	Predictive Sustainment Model The underlying computational logic or algorithm that processes the fused data to predict risk and recommend mitigations. - Logic simulating secondary logistics failures (e.g., cold-chain loss, transport delays).- Automated triggers for market-aware contingency sourcing (buy-on-market).- Dynamic recalculation based on injected constraints.
+3.	Data Architecture & Schema Documentation outlining how the tool ingests, structures, and fuses disparate data streams to create a common decision picture. - Data flow diagram showing integration of DHA inventory, operational demand, and casualty data.- Synthetic dataset or schema used to power the prototype (ensuring no real PII/PHI is used).
+4.	Operational Scenario Brief A pitch deck or operational briefing that walks through the USINDOPACOM distributed maritime operations (DMO) scenario using the prototype. - Demonstration of a specific hub constraint (e.g., loss of airlift).- Walkthrough of how the tool identifies the most fragile spoke locations.- Explanation of the recommended mitigation actions presented by the tool.
+5.	Technical Documentation A standard repository (e.g., GitHub/GitLab README) containing instructions for deployment, dependencies, and future scalability. - Source code.- Setup and execution instructions.- Assumptions made regarding data availability or operational constraints.
+The data for this solution is contained in the dataset files that I provided. You need to create multiple SQL databases, as needed, and upload all the content of the files therein, to provide the backend of the solution. The SQL databases need to be highly performant due to the nature of the interactivity required in this solution. Choose the best format (Postgre or better comes to mind).
+
+The solution needs to contain and leverage the latest and greatest software libraries to ensure a beautiful, driven UX/UI that is highly interactive. It needs to include map overlays where necessary, geolocated according to the data that is provided. 
+
+The solution needs to contain the ability for an AI model to perform predictive analysis to determine if a supply’s burndown rate is high, or if on-hand inventory is low, to automatically create purchase orders from the vendor with the lowest lead time and cost, and provide it to logistics and supply commanders so that they may approve purchases immediately. 
+
+The solution needs to use an AI model, either the latest OpenAI or Claude Sonnet model, with the ability to choose between the two, to perform any predictive analysis on the fly. Any analytics capabilities must RENDER the changes on the fly, with or without user interaction, as applicable.
+
+The solution must be fast, make sense, and be rich with color and icons. No icon or color for it should repeat itself for use in other sections unless context calls for it. The solution must be cohesive. 
+The solution must provide a logistics analyst or commander with the ability to choose and manipulate parameters in an easy and user friendly way to determine outcomes on the fly. The solution must be clear about what analytical ruleset it’s applying and what factors/variables affect the outcome. 
+
+The solution’s highlight must be a wholly interactive map. By interactive, the map should be “alive”. This should not be stagnant map which just integrates the Google Maps API so the user must manipulate it in order for it to “move”, it should do that by default. The solution’s geolocation overlay/map MUST be interactive. The routes should be “alive” and show changes as they are made in the system. Interactivity is what is going to win this hackathon. Simulate burn down rates for supplies in the INDOPACOM contested environment (assume that there is a war) IN REAL TIME according to the data, and for where there is no data, simulate that data. The data must be in a format compatible with the Defense Medical Logistics Standard Support (DMLSS) system, to allow API access to and from DMLSS. Maps need to show assets/transportation AS they are transporting supplies, and provide the ability to reroute while in transit. Maps need to provide controls to allow a logistician/commander to show/hide overlays on the fly and filter according to transportation type, supply type, blood supply type, etc., as provided in the dataset and per the details of the use case. 
+
+For an example of how an interactive map foundation should look like, look here:
+
+https://themeselection.com/blog/logistics-dashboard-templates/
+Specifically, Fastbox and Logistics Website Admin Dashboard: Analytics UX UI. 
+
+The solution must be geared and towards US Marines LIVE logistics. This isn’t a UPS or an Amazon logistics dashboard, it must be geared toward a contested environment (war).
+
+The solution must have icons and glyphs that are meaningful according to the function that is being provided. The solution must provide the ability to export reports to Excel/CSV/text where applicable. The solution must provide the ability to print user friendly purchase orders when they are generated. The solution must be “modularized” so that one section does not break the other when it is maintained. 
+
+The solution must integrate AI at its very core. It must contain a settings page which shows the status of the AI that is integrated, and show whether or not it is operational at the time of the page load. It should show the status of the SQL databases, and the integrity of the databases. It should have a user account page, and the ability for a user to change their profile settings.
+
+The solution must make sense, and must be compatible with DMLSS. It must be verifiable, defendable, and easy to deploy. It must be platform agnostic and only require a host and database connections. It must provide an easy way, in its settings, to integrate DMLSS. It should provide the ability to ingest data from the field, whether it be supply, targeting, logistics, or anything else that would aid in the delivery of supplies to the warfighter. The solution must be highly responsive and able to be used on a computer, tablet, or mobile device. The solution must be able to identify and reroute supplies ON THE FLY, interactively from one point to another, using the data provided. 
+
+
