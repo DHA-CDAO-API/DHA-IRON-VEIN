@@ -134,6 +134,9 @@ router.get("/scenarios/:scenarioId", async (req, res, next) => {
       coaBrief: row.coaBrief,
       aiProvider: row.aiProvider,
       aiModel: row.aiModel,
+      // The original perturbation payload so the UI can re-load it into
+      // the custom builder and trigger a re-run.
+      inputs: row.inputs,
       // OpenAPI ScenarioResult last so its `summary` object + `scenario` win
       ...envelope,
     });
@@ -153,6 +156,56 @@ const RunScenarioInput = z.object({
   perturbation: z.record(z.unknown()).optional(),
   horizonDays: z.number().int().positive().max(45).optional(),
   generateBrief: z.boolean().optional(),
+});
+
+router.post("/scenarios/preview", async (req, res, next) => {
+  try {
+    const parsed = RunScenarioInput.safeParse(req.body);
+    if (!parsed.success) {
+      return res
+        .status(400)
+        .json({ error: "invalid scenario payload", details: parsed.error.flatten() });
+    }
+    const raw = parsed.data;
+    const ctx = await loadSimContext();
+    let perturbation = (raw.perturbation as ScenarioRunInput["perturbation"]) ?? {};
+    let summary = raw.summary ?? raw.description ?? "";
+    const presetEventId = raw.presetEventId ?? raw.eventId;
+    if (presetEventId) {
+      const [preset] = await db
+        .select()
+        .from(presetEvents)
+        .where(eq(presetEvents.id, presetEventId));
+      if (preset) {
+        const params = preset.parameters as ScenarioRunInput["perturbation"];
+        perturbation = { ...params, ...(raw.perturbation ?? {}) };
+        summary = summary || preset.summary;
+      }
+    }
+    const horizonDays = Math.max(1, Math.min(45, raw.horizonDays ?? 21));
+    const result = runScenario(ctx.ctx, { horizonDays, perturbation });
+    const envelope = buildScenarioResultEnvelope({
+      id: "preview",
+      name: raw.name,
+      summary,
+      kind: raw.kind ?? "GENERIC",
+      runAt: new Date(),
+      result,
+      coaBrief: "",
+      ctx: ctx.ctx,
+    });
+    res.json({
+      id: "preview",
+      name: raw.name,
+      runAt: new Date().toISOString(),
+      result,
+      coaBrief: "",
+      ...envelope,
+    });
+  } catch (err) {
+    req.log?.error({ err }, "scenario preview failed");
+    next(err);
+  }
 });
 
 router.post("/scenarios", async (req, res, next) => {

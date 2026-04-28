@@ -1720,6 +1720,92 @@ export function useGetScenario<
   return { ...query, queryKey: queryOptions.queryKey };
 }
 
+/**
+ * @summary Run a scenario simulation without persisting it (used for live custom-builder preview).
+ */
+export const getPreviewScenarioUrl = () => {
+  return `/api/scenarios/preview`;
+};
+
+export const previewScenario = async (
+  runScenarioInput: RunScenarioInput,
+  options?: RequestInit,
+): Promise<ScenarioResult> => {
+  return customFetch<ScenarioResult>(getPreviewScenarioUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(runScenarioInput),
+  });
+};
+
+export const getPreviewScenarioMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof previewScenario>>,
+    TError,
+    { data: BodyType<RunScenarioInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof previewScenario>>,
+  TError,
+  { data: BodyType<RunScenarioInput> },
+  TContext
+> => {
+  const mutationKey = ["previewScenario"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof previewScenario>>,
+    { data: BodyType<RunScenarioInput> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return previewScenario(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type PreviewScenarioMutationResult = NonNullable<
+  Awaited<ReturnType<typeof previewScenario>>
+>;
+export type PreviewScenarioMutationBody = BodyType<RunScenarioInput>;
+export type PreviewScenarioMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Run a scenario simulation without persisting it (used for live custom-builder preview).
+ */
+export const usePreviewScenario = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof previewScenario>>,
+    TError,
+    { data: BodyType<RunScenarioInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof previewScenario>>,
+  TError,
+  { data: BodyType<RunScenarioInput> },
+  TContext
+> => {
+  return useMutation(getPreviewScenarioMutationOptions(options));
+};
+
 export const getListPresetEventsUrl = () => {
   return `/api/scenarios/preset-events`;
 };

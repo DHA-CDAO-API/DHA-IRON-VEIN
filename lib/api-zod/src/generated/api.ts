@@ -978,6 +978,109 @@ export const GetScenarioResponse = zod.object({
   kind: zod.string().optional(),
 });
 
+/**
+ * @summary Run a scenario simulation without persisting it (used for live custom-builder preview).
+ */
+export const PreviewScenarioBody = zod.object({
+  name: zod.string(),
+  description: zod.string().nullish(),
+  kind: zod.string().optional(),
+  presetEventId: zod.string().optional(),
+  eventId: zod.string().optional(),
+  focusNodeIds: zod.array(zod.string()).optional(),
+  horizonDays: zod.number().optional(),
+  summary: zod.string().optional(),
+  operationalState: zod.string().nullish(),
+  perturbation: zod
+    .object({
+      affectedNodes: zod.array(zod.string()).optional(),
+      encounterMultiplier: zod.number().optional(),
+      populationMultiplier: zod.number().optional(),
+      wasteMultiplier: zod.number().optional(),
+      routeReliabilityDelta: zod.number().optional(),
+      routeDelayDays: zod.number().optional(),
+      specimensMultiplier: zod.number().optional(),
+      itemSkew: zod.record(zod.string(), zod.number()).optional(),
+    })
+    .optional()
+    .describe("Perturbation parameters applied by the simulation engine."),
+  generateBrief: zod.boolean().optional(),
+});
+
+export const PreviewScenarioResponse = zod.object({
+  scenario: zod.object({
+    id: zod.string(),
+    name: zod.string(),
+    description: zod.string().nullish(),
+    status: zod.string(),
+    createdAt: zod.coerce.date(),
+    completedAt: zod.coerce.date().nullish(),
+    createdByRole: zod.string().nullish(),
+  }),
+  summary: zod.object({
+    estimatedShortageEvents: zod.number(),
+    peakRiskNodeId: zod.string().nullable(),
+    peakRiskNodeName: zod.string().nullish(),
+    networkDaysOfSupplyBefore: zod.number().optional(),
+    networkDaysOfSupplyAfter: zod.number(),
+    peakDemandMultiplier: zod.number(),
+    avgRoutingLatency: zod.number().optional(),
+    confidenceScore: zod.number().optional(),
+  }),
+  perNode: zod.array(
+    zod.object({
+      nodeId: zod.string(),
+      nodeName: zod.string(),
+      daysOfSupplyBefore: zod.number(),
+      daysOfSupplyAfter: zod.number(),
+      peakShortageDay: zod.number().nullable(),
+      criticalItemIds: zod.array(zod.string()),
+      riskScore: zod.number().optional(),
+    }),
+  ),
+  perItem: zod.array(
+    zod.object({
+      itemId: zod.string(),
+      itemName: zod.string(),
+      peakDemandPerDay: zod.number(),
+      totalShortfall: zod.number(),
+      recommendedReorder: zod.number(),
+    }),
+  ),
+  recommendations: zod.array(
+    zod.object({
+      id: zod.string(),
+      kind: zod.string(),
+      nodeId: zod.string(),
+      nodeName: zod.string().optional(),
+      itemId: zod.string(),
+      itemName: zod.string().optional(),
+      quantity: zod.number(),
+      priority: zod.string(),
+      rationale: zod.string(),
+      suggestedSupplierId: zod.string().nullable(),
+      suggestedSupplierName: zod.string().nullish(),
+      suggestedFromNodeId: zod.string().nullish(),
+      etaDays: zod.number(),
+      estimatedCost: zod.number().optional(),
+      generatedAt: zod.coerce.date(),
+      confidenceScore: zod.number().optional(),
+      scenarioId: zod.string().nullish(),
+      promotedOrderId: zod.string().nullish(),
+    }),
+  ),
+  timeline: zod.array(
+    zod.object({
+      day: zod.number(),
+      networkDaysOfSupply: zod.number(),
+      openShortages: zod.number(),
+      demandIndex: zod.number(),
+    }),
+  ),
+  narrative: zod.string().nullish(),
+  kind: zod.string().optional(),
+});
+
 export const ListPresetEventsResponseItem = zod.object({
   id: zod.string(),
   label: zod.string(),

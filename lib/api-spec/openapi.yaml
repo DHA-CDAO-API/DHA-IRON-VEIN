@@ -353,6 +353,22 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ScenarioResult" }
+  /scenarios/preview:
+    post:
+      operationId: previewScenario
+      tags: [scenarios]
+      summary: Run a scenario simulation without persisting it (used for live custom-builder preview).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RunScenarioInput" }
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ScenarioResult" }
   /scenarios/preset-events:
     get:
       operationId: listPresetEvents

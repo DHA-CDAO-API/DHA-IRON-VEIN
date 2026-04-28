@@ -3,13 +3,17 @@ import {
   useListPresetEvents,
   useListScenarios,
   useRunScenario,
+  usePreviewScenario,
   useListNodes,
   usePromoteRecommendationToOrder,
+  getGetScenarioQueryOptions,
+  getListScenariosQueryKey,
   type PresetEvent,
   type Recommendation,
   type ScenarioResult,
   type Node as NetworkNode,
 } from "@workspace/api-client-react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -35,6 +39,9 @@ import {
   X,
   CheckCircle2,
   Truck,
+  RotateCw,
+  Upload,
+  Save,
 } from "lucide-react";
 import {
   CartesianGrid,
@@ -109,15 +116,53 @@ function kindLabel(kind: string | undefined): string {
   return found?.label ?? kind.replace(/_/g, " ").toUpperCase();
 }
 
+type SavedScenarioDetail = ScenarioResult & {
+  inputs?: {
+    perturbation?: Perturbation;
+    horizonDays?: number;
+    presetEventId?: string;
+    presetName?: string;
+  };
+  kind?: string;
+};
+
+function builderFromSavedDetail(
+  detail: SavedScenarioDetail,
+  prev: CustomBuilderState,
+): CustomBuilderState {
+  const p = detail.inputs?.perturbation ?? {};
+  return {
+    name: detail.scenario?.name ?? prev.name,
+    kind: detail.kind ?? prev.kind,
+    summary: detail.scenario?.description ?? prev.summary,
+    affectedNodes: p.affectedNodes ?? prev.affectedNodes,
+    populationMultiplier: p.populationMultiplier ?? prev.populationMultiplier,
+    encounterMultiplier: p.encounterMultiplier ?? prev.encounterMultiplier,
+    wasteMultiplier: p.wasteMultiplier ?? prev.wasteMultiplier,
+    routeDelayDays: p.routeDelayDays ?? prev.routeDelayDays,
+    routeReliabilityDelta: p.routeReliabilityDelta ?? prev.routeReliabilityDelta,
+    horizonDays: detail.inputs?.horizonDays ?? prev.horizonDays,
+  };
+}
+
 export default function Scenarios() {
   const { data: presets, isLoading: presetsLoading } = useListPresetEvents();
   const { data: scenarios, isLoading: scenariosLoading } = useListScenarios();
   const { data: nodes } = useListNodes();
   const runScenario = useRunScenario();
+  const previewScenario = usePreviewScenario();
+  const queryClient = useQueryClient();
 
   const [builder, setBuilder] = React.useState<CustomBuilderState>(DEFAULT_BUILDER);
   const [result, setResult] = React.useState<ScenarioResult | null>(null);
   const [error, setError] = React.useState<string | null>(null);
+  const [loadingSavedId, setLoadingSavedId] = React.useState<string | null>(null);
+  const [rerunningSavedId, setRerunningSavedId] = React.useState<string | null>(null);
+  const [savedAt, setSavedAt] = React.useState<number | null>(null);
+  // When the builder state is replaced programmatically (load a saved run,
+  // re-run, etc.) we don't want the live-preview effect to fire and
+  // overwrite the freshly fetched/computed result.
+  const skipNextPreviewRef = React.useRef(false);
 
   const focusableNodes: NetworkNode[] = React.useMemo(
     () =>
@@ -151,10 +196,71 @@ export default function Scenarios() {
     [runScenario],
   );
 
-  const handleRunCustom = React.useCallback(async () => {
+  const fetchSavedDetail = React.useCallback(
+    async (scenarioId: string): Promise<SavedScenarioDetail> => {
+      const opts = getGetScenarioQueryOptions(scenarioId);
+      return queryClient.fetchQuery(opts) as Promise<SavedScenarioDetail>;
+    },
+    [queryClient],
+  );
+
+  const handleLoadSaved = React.useCallback(
+    async (scenarioId: string) => {
+      setError(null);
+      setLoadingSavedId(scenarioId);
+      try {
+        const detail = await fetchSavedDetail(scenarioId);
+        skipNextPreviewRef.current = true;
+        setResult(detail);
+        setBuilder((prev) => builderFromSavedDetail(detail, prev));
+      } catch (e) {
+        setError((e as Error)?.message ?? "Failed to load saved scenario");
+      } finally {
+        setLoadingSavedId(null);
+      }
+    },
+    [fetchSavedDetail],
+  );
+
+  const handleRerunSaved = React.useCallback(
+    async (scenarioId: string) => {
+      setError(null);
+      setRerunningSavedId(scenarioId);
+      try {
+        const detail = await fetchSavedDetail(scenarioId);
+        const inputs = detail.inputs ?? {};
+        const perturbation = inputs.perturbation;
+        const presetEventId = inputs.presetEventId;
+        const horizonDays = inputs.horizonDays ?? 21;
+        skipNextPreviewRef.current = true;
+        setBuilder((prev) => builderFromSavedDetail(detail, prev));
+        const res = (await runScenario.mutateAsync({
+          data: {
+            name: detail.scenario?.name ?? "Re-run scenario",
+            kind: detail.kind ?? "custom",
+            summary: detail.scenario?.description ?? undefined,
+            horizonDays,
+            ...(presetEventId ? { presetEventId } : {}),
+            ...(perturbation ? { perturbation } : {}),
+            generateBrief: true,
+          } as Parameters<typeof runScenario.mutateAsync>[0]["data"],
+        })) as ScenarioResult;
+        skipNextPreviewRef.current = true;
+        setResult(res);
+        await queryClient.invalidateQueries({ queryKey: getListScenariosQueryKey() });
+      } catch (e) {
+        setError((e as Error)?.message ?? "Re-run failed");
+      } finally {
+        setRerunningSavedId(null);
+      }
+    },
+    [fetchSavedDetail, runScenario, queryClient],
+  );
+
+  const handleSaveCustom = React.useCallback(async () => {
     setError(null);
     if (!builder.name.trim()) {
-      setError("Name your scenario before running.");
+      setError("Name your scenario before saving.");
       return;
     }
     if (builder.affectedNodes.length === 0) {
@@ -180,11 +286,64 @@ export default function Scenarios() {
           generateBrief: true,
         } as Parameters<typeof runScenario.mutateAsync>[0]["data"],
       })) as ScenarioResult;
+      skipNextPreviewRef.current = true;
       setResult(res);
+      setSavedAt(Date.now());
+      await queryClient.invalidateQueries({ queryKey: getListScenariosQueryKey() });
     } catch (e) {
-      setError((e as Error)?.message ?? "Scenario run failed");
+      setError((e as Error)?.message ?? "Scenario save failed");
     }
-  }, [builder, runScenario]);
+  }, [builder, runScenario, queryClient]);
+
+  // ---------- Live preview ----------
+  // Whenever the builder changes, debounce-call the preview endpoint so the
+  // operator can see the simulation update without clicking a button.
+  // We skip the call when the change came from a programmatic load/re-run.
+  const previewMutate = previewScenario.mutateAsync;
+  React.useEffect(() => {
+    if (skipNextPreviewRef.current) {
+      skipNextPreviewRef.current = false;
+      return;
+    }
+    if (builder.affectedNodes.length === 0 || !builder.name.trim()) {
+      return;
+    }
+    let cancelled = false;
+    const handle = window.setTimeout(async () => {
+      const perturbation: Perturbation = {
+        affectedNodes: builder.affectedNodes,
+        populationMultiplier: builder.populationMultiplier,
+        encounterMultiplier: builder.encounterMultiplier,
+        wasteMultiplier: builder.wasteMultiplier,
+        routeDelayDays: builder.routeDelayDays,
+        routeReliabilityDelta: builder.routeReliabilityDelta,
+      };
+      try {
+        const res = (await previewMutate({
+          data: {
+            name: builder.name.trim(),
+            kind: builder.kind,
+            summary: builder.summary.trim() || undefined,
+            horizonDays: builder.horizonDays,
+            perturbation,
+            generateBrief: false,
+          } as Parameters<typeof previewMutate>[0]["data"],
+        })) as ScenarioResult;
+        if (!cancelled) {
+          setResult(res);
+          setSavedAt(null);
+        }
+      } catch (e) {
+        if (!cancelled) {
+          setError((e as Error)?.message ?? "Preview failed");
+        }
+      }
+    }, 350);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(handle);
+    };
+  }, [builder, previewMutate]);
 
   return (
     <div className="h-full flex p-4 gap-4 bg-background text-foreground overflow-hidden">
@@ -218,19 +377,27 @@ export default function Scenarios() {
           state={builder}
           onChange={setBuilder}
           nodes={focusableNodes}
-          isRunning={
+          isSaving={
             runScenario.isPending &&
             !runScenario.variables?.data?.presetEventId
           }
-          onRun={handleRunCustom}
+          isPreviewing={previewScenario.isPending}
+          savedAt={savedAt}
+          onSave={handleSaveCustom}
         />
       </div>
 
       {/* Center - Output Panel */}
       <div className="flex-1 flex flex-col gap-3 min-w-0 overflow-hidden">
-        <div className="flex items-center justify-between px-1">
-          <div className="text-sm font-bold uppercase tracking-wider text-muted-foreground">
+        <div className="flex items-center justify-between px-1 gap-2">
+          <div className="text-sm font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
             Simulation Output
+            {previewScenario.isPending ? (
+              <span className="inline-flex items-center gap-1 text-[10px] font-normal normal-case tracking-normal text-primary">
+                <Loader2 className="h-3 w-3 animate-spin" />
+                live preview…
+              </span>
+            ) : null}
           </div>
           {result ? <AiBadge label="Powered by AI" /> : null}
         </div>
@@ -248,7 +415,7 @@ export default function Scenarios() {
                 </button>
               </div>
             ) : null}
-            {runScenario.isPending && !result ? (
+            {(runScenario.isPending || previewScenario.isPending) && !result ? (
               <RunningPlaceholder />
             ) : result ? (
               <ResultPanel result={result} />
@@ -267,21 +434,77 @@ export default function Scenarios() {
         {scenariosLoading ? (
           <Skeleton className="h-48" />
         ) : (
-          scenarios?.map((scenario) => (
-            <Card key={scenario.id} className="bg-card/50 border-border">
-              <CardContent className="p-3">
-                <div className="font-medium text-sm mb-1 line-clamp-2">
-                  {scenario.name}
-                </div>
-                <div className="flex justify-between text-xs text-muted-foreground">
-                  <span>
-                    {new Date(scenario.createdAt).toLocaleDateString()}
-                  </span>
-                  <span className="uppercase">{scenario.status}</span>
-                </div>
-              </CardContent>
-            </Card>
-          ))
+          scenarios?.map((scenario) => {
+            const isLoadingThis = loadingSavedId === scenario.id;
+            const isRerunningThis = rerunningSavedId === scenario.id;
+            const anyBusy = !!loadingSavedId || !!rerunningSavedId || runScenario.isPending;
+            return (
+              <Card
+                key={scenario.id}
+                className="bg-card/50 border-border hover:border-primary/40 transition-colors"
+              >
+                <CardContent className="p-3">
+                  <button
+                    type="button"
+                    onClick={() => handleLoadSaved(scenario.id)}
+                    disabled={anyBusy}
+                    className="w-full text-left disabled:opacity-70 disabled:cursor-not-allowed"
+                    title="Load this scenario back into the builder"
+                  >
+                    <div className="font-medium text-sm mb-1 line-clamp-2">
+                      {scenario.name}
+                    </div>
+                    <div className="flex justify-between text-xs text-muted-foreground">
+                      <span>
+                        {new Date(scenario.createdAt).toLocaleDateString()}
+                      </span>
+                      <span className="uppercase">{scenario.status}</span>
+                    </div>
+                  </button>
+                  <div className="mt-2 flex gap-1">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={anyBusy}
+                      onClick={() => handleLoadSaved(scenario.id)}
+                      className="h-7 px-2 text-[11px] flex-1"
+                    >
+                      {isLoadingThis ? (
+                        <>
+                          <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                          Loading…
+                        </>
+                      ) : (
+                        <>
+                          <Upload className="h-3 w-3 mr-1" />
+                          Load
+                        </>
+                      )}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={anyBusy}
+                      onClick={() => handleRerunSaved(scenario.id)}
+                      className="h-7 px-2 text-[11px] flex-1 border-primary/40 text-primary hover:bg-primary/10"
+                    >
+                      {isRerunningThis ? (
+                        <>
+                          <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                          Re-running…
+                        </>
+                      ) : (
+                        <>
+                          <RotateCw className="h-3 w-3 mr-1" />
+                          Re-run
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })
         )}
         {scenarios && scenarios.length === 0 ? (
           <div className="text-center text-sm text-muted-foreground py-4">
@@ -353,14 +576,18 @@ function CustomBuilder({
   state,
   onChange,
   nodes,
-  onRun,
-  isRunning,
+  onSave,
+  isSaving,
+  isPreviewing,
+  savedAt,
 }: {
   state: CustomBuilderState;
   onChange: (next: CustomBuilderState) => void;
   nodes: NetworkNode[];
-  onRun: () => void;
-  isRunning: boolean;
+  onSave: () => void;
+  isSaving: boolean;
+  isPreviewing: boolean;
+  savedAt: number | null;
 }) {
   const update = <K extends keyof CustomBuilderState>(
     key: K,
@@ -508,20 +735,35 @@ function CustomBuilder({
 
         <Button
           size="sm"
-          disabled={isRunning}
-          onClick={onRun}
+          disabled={isSaving || state.affectedNodes.length === 0 || !state.name.trim()}
+          onClick={onSave}
           className="w-full"
         >
-          {isRunning ? (
+          {isSaving ? (
             <>
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Running…
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Saving…
             </>
           ) : (
             <>
-              <PlayCircle className="h-4 w-4 mr-2" /> Run Custom Scenario
+              <Save className="h-4 w-4 mr-2" /> Save Custom Scenario
             </>
           )}
         </Button>
+        <div className="text-[10px] text-muted-foreground text-center px-1 leading-tight">
+          {isPreviewing ? (
+            <span className="inline-flex items-center gap-1 text-primary">
+              <Loader2 className="h-3 w-3 animate-spin" /> Updating live preview…
+            </span>
+          ) : savedAt ? (
+            <span className="text-emerald-400">
+              Saved to library · {new Date(savedAt).toLocaleTimeString()}
+            </span>
+          ) : state.affectedNodes.length === 0 ? (
+            "Select at least one affected node to see a live preview."
+          ) : (
+            "Adjust any parameter — the simulation updates automatically."
+          )}
+        </div>
       </CardContent>
     </Card>
   );
