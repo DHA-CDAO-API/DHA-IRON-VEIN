@@ -193,6 +193,8 @@ router.post("/scenarios/preview", async (req, res, next) => {
       result,
       coaBrief: "",
       ctx: ctx.ctx,
+      suppliers: ctx.suppliers,
+      promotedByRecId: new Map(),
     });
     res.json({
       id: "preview",

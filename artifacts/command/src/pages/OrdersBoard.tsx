@@ -1,16 +1,18 @@
-import React from "react";
+import React, { useState } from "react";
 import {
   useListOrders,
   getListOrdersQueryKey,
   type Order,
 } from "@workspace/api-client-react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Link, useLocation } from "wouter";
-import { Clock, Printer, Sparkles, MapPin, Building2, Calendar } from "lucide-react";
+import { Clock, Plus, Printer, Sparkles, MapPin, Building2, Calendar } from "lucide-react";
 import { AiBadge } from "@/components/ui/ai-badge";
 import { formatNumber, formatShortDate } from "@/lib/format";
+import { NewOrderDialog } from "@/components/orders/NewOrderDialog";
 
 type EnrichedOrder = Order & {
   toNodeName?: string | null;
@@ -176,6 +178,7 @@ export default function OrdersBoard() {
       query: { queryKey: getListOrdersQueryKey() },
     },
   );
+  const [newOrderOpen, setNewOrderOpen] = useState(false);
 
   if (isLoading || !orders) {
     return (
@@ -192,14 +195,18 @@ export default function OrdersBoard() {
           Orders Board
         </h1>
         <div className="flex gap-2">
-          <Badge
+          <Button
             variant="outline"
-            className="px-4 py-2 cursor-pointer hover:bg-primary/20 transition-colors border-primary text-primary"
+            size="sm"
+            onClick={() => setNewOrderOpen(true)}
+            className="border-primary text-primary hover:bg-primary/15 hover:text-primary"
           >
-            + New Order
-          </Badge>
+            <Plus className="h-4 w-4 mr-1" />
+            New Order
+          </Button>
         </div>
       </div>
+      <NewOrderDialog open={newOrderOpen} onOpenChange={setNewOrderOpen} />
 
       <div className="flex-1 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 overflow-y-auto pb-4 min-h-0 auto-rows-min content-start">
         {COLUMNS.map(({ status, label }) => {

@@ -154,6 +154,7 @@ const CreateOrderInput = z.union([
     priority: z.string(),
     rationale: z.string().nullish(),
     sourceRecommendationId: z.string().nullish(),
+    requestedDeliveryAt: z.string().optional(),
   }),
 ]);
 
@@ -173,9 +174,18 @@ router.post("/orders", async (req, res, next) => {
     const supplierId = isLegacy ? body.supplierId : (body.supplierId ?? body.fromNodeId ?? "");
     const priority = body.priority ?? "ROUTINE";
     const notes = isLegacy ? body.notes : (body.rationale ?? undefined);
-    const requested = isLegacy && body.requestedDeliveryAt
-      ? new Date(body.requestedDeliveryAt)
-      : new Date(Date.now() + 7 * 86400_000);
+    const requestedRaw = body.requestedDeliveryAt;
+    let requested: Date;
+    if (requestedRaw) {
+      requested = new Date(requestedRaw);
+      if (Number.isNaN(requested.getTime())) {
+        return res
+          .status(400)
+          .json({ error: "requestedDeliveryAt must be a valid date" });
+      }
+    } else {
+      requested = new Date(Date.now() + 7 * 86400_000);
+    }
     const lineInputs = isLegacy
       ? body.lines
       : [{ itemId: body.itemId, quantity: body.quantity, unitPriceUsd: 0 }];

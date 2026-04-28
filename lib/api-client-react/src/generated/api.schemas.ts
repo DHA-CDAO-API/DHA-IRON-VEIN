@@ -502,6 +502,8 @@ export interface CreateOrderInput {
   rationale?: string | null;
   /** @nullable */
   sourceRecommendationId?: string | null;
+  /** ISO timestamp for the requested delivery date. Defaults to 7 days from creation if omitted. */
+  requestedDeliveryAt?: string;
 }
 
 export type UpdateOrderStatusInputStatus =

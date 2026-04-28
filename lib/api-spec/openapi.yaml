@@ -986,6 +986,10 @@ components:
         priority: { type: string }
         rationale: { type: ["string", "null"] }
         sourceRecommendationId: { type: ["string", "null"] }
+        requestedDeliveryAt:
+          type: string
+          format: date-time
+          description: ISO timestamp for the requested delivery date. Defaults to 7 days from creation if omitted.
 
     UpdateOrderStatusInput:
       type: object

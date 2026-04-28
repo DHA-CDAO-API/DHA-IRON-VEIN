@@ -561,6 +561,12 @@ export const CreateOrderBody = zod.object({
   priority: zod.string(),
   rationale: zod.string().nullish(),
   sourceRecommendationId: zod.string().nullish(),
+  requestedDeliveryAt: zod.coerce
+    .date()
+    .optional()
+    .describe(
+      "ISO timestamp for the requested delivery date. Defaults to 7 days from creation if omitted.",
+    ),
 });
 
 export const GetOrderParams = zod.object({
