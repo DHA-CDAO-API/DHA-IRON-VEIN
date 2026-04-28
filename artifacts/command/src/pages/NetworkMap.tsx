@@ -257,6 +257,24 @@ export default function NetworkMapPage() {
     );
   }, [alerts, selectedNodeId]);
 
+  // In-flight shipment counts by category (drives the Layers panel badges).
+  // Shipments are already on the snapshot, so this stays free of extra API calls.
+  const shipmentCountsByCategory = useMemo(() => {
+    const counts: Record<SupplyCategory, number> = {
+      blood_products: 0,
+      supplies: 0,
+      ppe: 0,
+      other: 0,
+    };
+    for (const s of shipmentsList) {
+      const c = (s?.category as SupplyCategory | undefined) ?? 'other';
+      if (c in counts) counts[c]++;
+      else counts.other++;
+    }
+    return counts;
+  }, [shipmentsList]);
+  const totalInFlight = shipmentsList.length;
+
   // Tier counts for the summary row
   const tierCounts = useMemo(() => {
     const counts: Record<ThreatTier, number> = { nominal: 0, heightened: 0, critical: 0 };
@@ -371,31 +389,57 @@ export default function NetworkMapPage() {
             </div>
 
             {!layersCollapsed && (
-            <div id="network-layers-body" className="flex flex-col gap-1.5">
-              {PRIMARY_CATEGORIES.map((c) => {
-                const meta = CATEGORY_META[c];
-                const checked = selectedCats.has(c);
-                return (
-                  <label
-                    key={c}
-                    htmlFor={`layer-${c}`}
-                    className={`flex items-center gap-2.5 rounded px-2 py-1.5 cursor-pointer transition border ${
-                      checked
-                        ? 'border-primary/40 bg-primary/5'
-                        : 'border-transparent hover:bg-muted/40'
-                    }`}
-                  >
-                    <Checkbox
-                      id={`layer-${c}`}
-                      checked={checked}
-                      onCheckedChange={() => toggleCat(c)}
-                    />
-                    <span className={meta.tint}>{meta.icon}</span>
-                    <span className="text-sm flex-1">{meta.label}</span>
-                  </label>
-                );
-              })}
-            </div>
+              <div id="network-layers-body" className="flex flex-col gap-3">
+                <div
+                  className="flex items-center justify-between rounded border border-border/60 bg-muted/30 px-2 py-1"
+                  data-testid="in-flight-total"
+                >
+                  <div className="flex items-center gap-1.5 text-[10px] font-mono uppercase tracking-widest text-muted-foreground">
+                    <Plane className="h-3 w-3 text-primary" />
+                    In flight
+                  </div>
+                  <span className="font-mono text-xs text-foreground tabular-nums">
+                    {totalInFlight}
+                  </span>
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  {PRIMARY_CATEGORIES.map((c) => {
+                    const meta = CATEGORY_META[c];
+                    const checked = selectedCats.has(c);
+                    const count = shipmentCountsByCategory[c];
+                    return (
+                      <label
+                        key={c}
+                        htmlFor={`layer-${c}`}
+                        className={`flex items-center gap-2.5 rounded px-2 py-1.5 cursor-pointer transition border ${
+                          checked
+                            ? 'border-primary/40 bg-primary/5'
+                            : 'border-transparent hover:bg-muted/40'
+                        }`}
+                      >
+                        <Checkbox
+                          id={`layer-${c}`}
+                          checked={checked}
+                          onCheckedChange={() => toggleCat(c)}
+                        />
+                        <span className={meta.tint}>{meta.icon}</span>
+                        <span className="text-sm flex-1">{meta.label}</span>
+                        <span
+                          className="font-mono text-[10px] tabular-nums px-1.5 py-0.5 rounded border border-border/60 bg-background/60 text-muted-foreground min-w-[2.25rem] text-center"
+                          data-testid={`in-flight-count-${c}`}
+                          title={`${count} ${meta.label.toLowerCase()} in flight`}
+                        >
+                          {count}
+                          <span className="ml-1 text-[8px] uppercase tracking-widest opacity-70">
+                            in flt
+                          </span>
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
             )}
 
             {!layersCollapsed && (
