@@ -34,7 +34,7 @@ async function* streamOpenAI(req: AIRequest): AsyncGenerator<StreamChunk> {
       { role: "system", content: req.system },
       ...req.messages.map((m) => ({ role: m.role, content: m.content })),
     ],
-    max_tokens: req.maxOutputTokens ?? 1024,
+    max_completion_tokens: req.maxOutputTokens ?? 1024,
   });
   for await (const part of stream) {
     const delta = part.choices?.[0]?.delta?.content;
