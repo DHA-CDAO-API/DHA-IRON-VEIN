@@ -78,6 +78,12 @@ function defaultDeliveryDate(): string {
   return d.toISOString().slice(0, 10);
 }
 
+function formatSupplierMeta(s: Supplier): string {
+  const lt = `${Math.round(s.leadTimeDays)}d lead`;
+  const rel = `${Math.round((s.reliability ?? 0) * 100)}% reliable`;
+  return `${lt} · ${rel}`;
+}
+
 interface NewOrderDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -109,11 +115,8 @@ export function NewOrderDialog({ open, onOpenChange }: NewOrderDialogProps) {
     const usable = filtered.length > 0 ? filtered : list;
     return [...usable].sort((a, b) => a.name.localeCompare(b.name));
   }, [nodes]);
-  const sortedSuppliers = useMemo(
-    () =>
-      [...(suppliers ?? [])].sort((a, b) =>
-        a.name.localeCompare(b.name),
-      ) as Supplier[],
+  const allSuppliers = useMemo(
+    () => (suppliers ?? []) as Supplier[],
     [suppliers],
   );
 
@@ -121,6 +124,7 @@ export function NewOrderDialog({ open, onOpenChange }: NewOrderDialogProps) {
   const [itemPickerOpen, setItemPickerOpen] = useState(false);
   const [toNodeId, setToNodeId] = useState("");
   const [supplierId, setSupplierId] = useState("");
+  const [showAllSuppliers, setShowAllSuppliers] = useState(false);
   const [quantity, setQuantity] = useState("100");
   const [priority, setPriority] = useState<string>("ROUTINE");
   const [requestedDeliveryAt, setRequestedDeliveryAt] = useState<string>(
@@ -135,6 +139,7 @@ export function NewOrderDialog({ open, onOpenChange }: NewOrderDialogProps) {
       setItemPickerOpen(false);
       setToNodeId("");
       setSupplierId("");
+      setShowAllSuppliers(false);
       setQuantity("100");
       setPriority("ROUTINE");
       setRequestedDeliveryAt(defaultDeliveryDate());
@@ -146,6 +151,49 @@ export function NewOrderDialog({ open, onOpenChange }: NewOrderDialogProps) {
     () => sortedItems.find((it) => it.id === itemId) ?? null,
     [sortedItems, itemId],
   );
+
+  // Suppliers that actually carry the selected item, sorted by reliability desc.
+  const matchingSuppliers = useMemo(() => {
+    if (!itemId) return [] as Supplier[];
+    return allSuppliers
+      .filter((s) => Array.isArray(s.items) && s.items.includes(itemId))
+      .sort((a, b) => (b.reliability ?? 0) - (a.reliability ?? 0));
+  }, [allSuppliers, itemId]);
+
+  const sortedAllSuppliers = useMemo(
+    () =>
+      [...allSuppliers].sort((a, b) => a.name.localeCompare(b.name)),
+    [allSuppliers],
+  );
+
+  const supplierOptions = useMemo(() => {
+    if (!itemId) return [] as Supplier[];
+    if (showAllSuppliers || matchingSuppliers.length === 0) {
+      // Put matching ones first, then the rest, when showing all.
+      const matchIds = new Set(matchingSuppliers.map((s) => s.id));
+      return [
+        ...matchingSuppliers,
+        ...sortedAllSuppliers.filter((s) => !matchIds.has(s.id)),
+      ];
+    }
+    return matchingSuppliers;
+  }, [itemId, showAllSuppliers, matchingSuppliers, sortedAllSuppliers]);
+
+  // When the item changes, default to the highest-reliability supplier
+  // that carries it. Clear selection if no supplier covers it.
+  useEffect(() => {
+    if (!itemId) {
+      setSupplierId("");
+      return;
+    }
+    if (matchingSuppliers.length > 0) {
+      setSupplierId(matchingSuppliers[0].id);
+      setShowAllSuppliers(false);
+    } else {
+      setSupplierId("");
+    }
+  }, [itemId, matchingSuppliers]);
+
 
   const qtyNum = Number(quantity);
   const isValid =
@@ -192,6 +240,14 @@ export function NewOrderDialog({ open, onOpenChange }: NewOrderDialogProps) {
       setError(message);
     }
   };
+
+  const supplierPlaceholder = !itemId
+    ? "Select an item first"
+    : matchingSuppliers.length === 0 && !showAllSuppliers
+      ? "No suppliers carry this item"
+      : "Select a supplier";
+
+  const noMatches = !!itemId && matchingSuppliers.length === 0;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -340,19 +396,63 @@ export function NewOrderDialog({ open, onOpenChange }: NewOrderDialogProps) {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="new-order-supplier">Supplier</Label>
-              <Select value={supplierId} onValueChange={setSupplierId}>
+              <div className="flex items-center justify-between gap-2">
+                <Label htmlFor="new-order-supplier">Supplier</Label>
+                {itemId && matchingSuppliers.length > 0 && (
+                  <button
+                    type="button"
+                    data-testid="supplier-show-all-toggle"
+                    className="text-[11px] text-muted-foreground hover:text-foreground underline-offset-2 hover:underline"
+                    onClick={() => setShowAllSuppliers((v) => !v)}
+                  >
+                    {showAllSuppliers ? "Only matching" : "Show all"}
+                  </button>
+                )}
+              </div>
+              <Select
+                value={supplierId}
+                onValueChange={setSupplierId}
+                disabled={!itemId || supplierOptions.length === 0}
+              >
                 <SelectTrigger id="new-order-supplier">
-                  <SelectValue placeholder="Select a supplier" />
+                  <SelectValue placeholder={supplierPlaceholder} />
                 </SelectTrigger>
                 <SelectContent className="max-h-72">
-                  {sortedSuppliers.map((s) => (
-                    <SelectItem key={s.id} value={s.id}>
-                      {s.name}
-                    </SelectItem>
-                  ))}
+                  {supplierOptions.map((s) => {
+                    const carries =
+                      Array.isArray(s.items) && s.items.includes(itemId);
+                    return (
+                      <SelectItem key={s.id} value={s.id}>
+                        <div className="flex flex-col leading-tight py-0.5">
+                          <span className="text-sm">
+                            {s.name}
+                            {!carries && (
+                              <span className="ml-2 text-[10px] uppercase tracking-wide text-amber-600 dark:text-amber-400">
+                                no coverage
+                              </span>
+                            )}
+                          </span>
+                          <span className="text-[11px] text-muted-foreground">
+                            {formatSupplierMeta(s)}
+                          </span>
+                        </div>
+                      </SelectItem>
+                    );
+                  })}
                 </SelectContent>
               </Select>
+              {noMatches && (
+                <div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
+                  <span>No supplier in the catalog carries this item.</span>
+                  <button
+                    type="button"
+                    className="underline-offset-2 hover:underline text-foreground"
+                    onClick={() => setShowAllSuppliers(true)}
+                  >
+                    Show all anyway
+                  </button>
+                </div>
+              )}
             </div>
           </div>
 
