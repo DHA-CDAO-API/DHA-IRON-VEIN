@@ -6,7 +6,14 @@ import { Badge } from '@/components/ui/badge';
 import { SortableTable } from '@/components/ui/sortable-table';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Box, Network, AlertTriangle, MapPin } from 'lucide-react';
-import { formatPercent, formatDays, formatDOS, dosClass as riskClass } from '@/lib/format';
+import {
+  formatPercent,
+  formatDays,
+  formatDOS,
+  dosClass as riskClass,
+  inventoryStatusBadgeClasses,
+  inventoryStatusLabel,
+} from '@/lib/format';
 
 function suppliersCarryingItem<T extends { items?: string[] }>(
   list: T[],
@@ -167,10 +174,25 @@ export default function ItemDetail() {
                     label: 'Status',
                     sortAccessor: (node) => node.daysOfSupply ?? 0,
                     render: (node) => {
+                      // Map DOS into the same four-tier status enum the API uses
+                      // for inventory rows. Reusing the shared helper guarantees
+                      // colors stay aligned with Site Detail and prevents the
+                      // "green CRITICAL" bug from coming back.
                       const dos = node.daysOfSupply;
-                      const cls = !dos || dos <= 3 ? 'border-destructive text-destructive' : dos <= 7 ? 'border-amber-500 text-amber-500' : 'border-emerald-500 text-emerald-500';
-                      const label = !dos || dos <= 3 ? 'CRITICAL' : dos <= 7 ? 'WATCH' : 'HEALTHY';
-                      return <Badge variant="outline" className={cls}>{label}</Badge>;
+                      const status =
+                        !dos || dos <= 3
+                          ? 'critical'
+                          : dos <= 7
+                            ? 'warn'
+                            : 'healthy';
+                      return (
+                        <Badge
+                          variant="outline"
+                          className={inventoryStatusBadgeClasses(status)}
+                        >
+                          {inventoryStatusLabel(status)}
+                        </Badge>
+                      );
                     },
                   },
                 ]}

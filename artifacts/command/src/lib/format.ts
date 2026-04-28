@@ -80,6 +80,67 @@ export function dosClass(dos: number | null | undefined): string {
 }
 
 /**
+ * Canonical inventory status values that the API can emit
+ * (matches `InventoryBalanceStatus` / `DaysOfSupplyEntryStatus`).
+ * Anything outside this set is treated as "unknown" so badges
+ * never accidentally render `CRITICAL` in green just because a
+ * comparison missed.
+ */
+export type InventoryStatus = "healthy" | "watch" | "warn" | "critical";
+
+const INVENTORY_STATUSES: ReadonlySet<InventoryStatus> = new Set([
+  "healthy",
+  "watch",
+  "warn",
+  "critical",
+]);
+
+function normalizeInventoryStatus(
+  status: string | null | undefined,
+): InventoryStatus | null {
+  if (!status) return null;
+  const lower = String(status).toLowerCase().trim();
+  return INVENTORY_STATUSES.has(lower as InventoryStatus)
+    ? (lower as InventoryStatus)
+    : null;
+}
+
+/**
+ * Tailwind classes for an outline `<Badge>` rendering an inventory status.
+ * Use this everywhere the four-tier status is shown so the colors stay
+ * consistent — `critical` is always red, `warn` is always amber, `watch`
+ * reads as "keep an eye on this", and only `healthy` is green.
+ */
+export function inventoryStatusBadgeClasses(
+  status: string | null | undefined,
+): string {
+  const normalized = normalizeInventoryStatus(status);
+  switch (normalized) {
+    case "critical":
+      return "border-destructive text-destructive";
+    case "warn":
+      return "border-amber-500 text-amber-500";
+    case "watch":
+      // Distinct from healthy but lower-urgency than `warn`: muted amber.
+      return "border-amber-500/50 text-amber-500/90";
+    case "healthy":
+      return "border-emerald-500 text-emerald-500";
+    default:
+      return "border-muted-foreground/40 text-muted-foreground";
+  }
+}
+
+/** Human-readable label for an inventory status (always uppercase). */
+export function inventoryStatusLabel(
+  status: string | null | undefined,
+): string {
+  const normalized = normalizeInventoryStatus(status);
+  if (normalized) return normalized.toUpperCase();
+  if (status == null || status === "") return "—";
+  return String(status).toUpperCase();
+}
+
+/**
  * Render a recent timestamp as a compact "Xs ago" / "Xm ago" string.
  *
  * Designed for a freshness chip that ticks every second without re-fetching

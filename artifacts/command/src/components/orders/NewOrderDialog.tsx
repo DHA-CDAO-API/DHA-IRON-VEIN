@@ -98,9 +98,23 @@ function formatNodeType(type?: string): string | null {
 interface NewOrderDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /**
+   * Optional pre-fill values applied each time the dialog opens. Useful when
+   * launching the dialog from a row in an inventory table — the operator
+   * shouldn't have to re-pick the item / destination they were already
+   * looking at. When omitted the dialog falls back to its empty defaults.
+   */
+  prefill?: {
+    itemId?: string;
+    toNodeId?: string;
+    /** Suggested integer quantity. If omitted, the dialog's default is used. */
+    quantity?: number;
+  } | null;
 }
 
-export function NewOrderDialog({ open, onOpenChange }: NewOrderDialogProps) {
+const DEFAULT_QUANTITY = "100";
+
+export function NewOrderDialog({ open, onOpenChange, prefill }: NewOrderDialogProps) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const createOrder = useCreateOrder();
@@ -187,7 +201,7 @@ export function NewOrderDialog({ open, onOpenChange }: NewOrderDialogProps) {
   const [supplierId, setSupplierId] = useState("");
   const [supplierPickerOpen, setSupplierPickerOpen] = useState(false);
   const [showAllSuppliers, setShowAllSuppliers] = useState(false);
-  const [quantity, setQuantity] = useState("100");
+  const [quantity, setQuantity] = useState(DEFAULT_QUANTITY);
   const [priority, setPriority] = useState<string>("ROUTINE");
   const [requestedDeliveryAt, setRequestedDeliveryAt] = useState<string>(
     defaultDeliveryDate(),
@@ -195,23 +209,32 @@ export function NewOrderDialog({ open, onOpenChange }: NewOrderDialogProps) {
   const [acknowledgeNoCoverage, setAcknowledgeNoCoverage] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Reset form when dialog opens
+  // Reset form when dialog opens. When the caller provided pre-fill values
+  // (e.g. opened from an inventory row), seed the corresponding fields so
+  // the operator doesn't have to re-pick something they were already looking
+  // at. The supplier picker stays empty here; the existing
+  // "default to highest-reliability supplier that carries the item" effect
+  // below takes care of selecting one once `items` data is loaded.
   useEffect(() => {
     if (open) {
-      setItemId("");
+      setItemId(prefill?.itemId ?? "");
       setItemPickerOpen(false);
-      setToNodeId("");
+      setToNodeId(prefill?.toNodeId ?? "");
       setDestinationPickerOpen(false);
       setSupplierId("");
       setSupplierPickerOpen(false);
       setShowAllSuppliers(false);
-      setQuantity("100");
+      setQuantity(
+        prefill?.quantity != null && Number.isFinite(prefill.quantity) && prefill.quantity > 0
+          ? String(Math.round(prefill.quantity))
+          : DEFAULT_QUANTITY,
+      );
       setPriority("ROUTINE");
       setRequestedDeliveryAt(defaultDeliveryDate());
       setAcknowledgeNoCoverage(false);
       setError(null);
     }
-  }, [open]);
+  }, [open, prefill?.itemId, prefill?.toNodeId, prefill?.quantity]);
 
   const selectedItem = useMemo(
     () => sortedItems.find((it) => it.id === itemId) ?? null,

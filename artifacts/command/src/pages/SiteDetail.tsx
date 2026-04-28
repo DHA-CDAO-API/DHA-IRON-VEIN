@@ -27,9 +27,21 @@ import { AiBadge } from '@/components/ui/ai-badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Activity, AlertTriangle, Box, MapPin, CheckCircle2, TrendingDown, Droplet, Package, Shield, Layers, FlaskConical } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
-import { CATEGORY_ORDER, categoryKey, categoryLabel, dosClass, formatDOS, formatNumber, type ItemCategoryKey } from '@/lib/format';
+import {
+  CATEGORY_ORDER,
+  categoryKey,
+  categoryLabel,
+  dosClass,
+  formatDOS,
+  formatNumber,
+  inventoryStatusBadgeClasses,
+  inventoryStatusLabel,
+  type ItemCategoryKey,
+} from '@/lib/format';
 import { orderStatusBadgeClass, orderStatusLabel } from '@/lib/orderStatus';
 import { BloodReadinessTab } from '@/components/site/blood/BloodReadinessTab';
+import { NewOrderDialog } from '@/components/orders/NewOrderDialog';
+import { Plus } from 'lucide-react';
 
 type DosRow = DaysOfSupplyEntry & {
   category: ItemCategoryKey;
@@ -119,6 +131,31 @@ export default function SiteDetail() {
 
   const ackAlert = useAcknowledgeAlert();
   const promoteRec = usePromoteRecommendationToOrder();
+
+  // Inline-order dialog state. Opening from an inventory row pre-fills the
+  // dialog with that item, this site as destination, and a default quantity
+  // sized to push DOS back above the watch threshold.
+  const [orderPrefill, setOrderPrefill] = useState<
+    { itemId: string; toNodeId: string; quantity: number } | null
+  >(null);
+  const [newOrderOpen, setNewOrderOpen] = useState(false);
+  const openOrderForRow = useCallback(
+    (row: DosRow) => {
+      if (!nodeId) return;
+      // Default target: enough on-hand to cover ~14 days at the current burn,
+      // matching the platform's default `watchDays` threshold. If burn is
+      // unknown or zero, fall back to the dialog's empty default by passing
+      // 0 — the dialog will use its baked-in 100 in that case.
+      const TARGET_DAYS = 14;
+      const burn = Number.isFinite(row.dailyBurn) ? row.dailyBurn ?? 0 : 0;
+      const onHand = row.onHand ?? 0;
+      const need = burn > 0 ? Math.ceil(TARGET_DAYS * burn - onHand) : 0;
+      const qty = need > 0 ? need : 0;
+      setOrderPrefill({ itemId: row.itemId, toNodeId: nodeId, quantity: qty });
+      setNewOrderOpen(true);
+    },
+    [nodeId],
+  );
   const { data: suppliers } = useListSuppliers();
   const [editingRec, setEditingRec] = useState<Recommendation | null>(null);
   const [promotedById, setPromotedById] = useState<
@@ -464,6 +501,7 @@ export default function SiteDetail() {
                             categoryKey={k}
                             label={categoryLabel(k)}
                             rows={list}
+                            onOrderRow={openOrderForRow}
                           />
                         );
                       })}
@@ -474,6 +512,7 @@ export default function SiteDetail() {
                       label={categoryLabel(activeCategory)}
                       rows={groupedDos.get(activeCategory) ?? []}
                       hideHeader
+                      onOrderRow={openOrderForRow}
                     />
                   )}
                 </div>
@@ -806,6 +845,14 @@ export default function SiteDetail() {
           if (editingRec) handlePromoteConfirm(editingRec, overrides);
         }}
       />
+      <NewOrderDialog
+        open={newOrderOpen}
+        onOpenChange={(next) => {
+          setNewOrderOpen(next);
+          if (!next) setOrderPrefill(null);
+        }}
+        prefill={orderPrefill}
+      />
     </div>
   );
 }
@@ -850,11 +897,15 @@ function CategorySection({
   label,
   rows,
   hideHeader,
+  onOrderRow,
 }: {
   categoryKey: ItemCategoryKey;
   label: string;
   rows: DosRow[];
   hideHeader?: boolean;
+  /** Optional handler invoked when the operator clicks the inline Order
+   *  action on a row. When omitted the column is hidden. */
+  onOrderRow?: (row: DosRow) => void;
 }) {
   const Icon = CATEGORY_ICON[key];
   const onHandTotal = rows.reduce((s, r) => s + (r.onHand ?? 0), 0);
@@ -954,18 +1005,55 @@ function CategorySection({
             render: (item) => (
               <Badge
                 variant="outline"
-                className={
-                  item.status === 'critical'
-                    ? 'border-destructive text-destructive'
-                    : item.status === 'warn'
-                    ? 'border-amber-500 text-amber-500'
-                    : 'border-emerald-500 text-emerald-500'
-                }
+                className={inventoryStatusBadgeClasses(item.status)}
               >
-                {String(item.status).toUpperCase()}
+                {inventoryStatusLabel(item.status)}
               </Badge>
             ),
           },
+          ...(onOrderRow
+            ? [
+                {
+                  key: 'order',
+                  label: '',
+                  align: 'right' as const,
+                  // Sorting an action column doesn't make sense; the table's
+                  // sortable-by-default behavior is suppressed by passing
+                  // `sortable: false`.
+                  sortable: false,
+                  render: (item: DosRow) => {
+                    const isUrgent =
+                      item.status === 'critical' || item.status === 'warn';
+                    return (
+                      <Button
+                        type="button"
+                        size="sm"
+                        // Emphasize the action on rows that need attention;
+                        // healthy / watch rows still get the action but in a
+                        // muted ghost style so it doesn't compete for focus.
+                        variant={isUrgent ? 'default' : 'ghost'}
+                        className={
+                          isUrgent
+                            ? 'h-7 px-2.5 text-xs gap-1'
+                            : 'h-7 px-2.5 text-xs gap-1 text-muted-foreground hover:text-foreground'
+                        }
+                        data-testid={`inventory-row-order-${item.itemId}`}
+                        onClick={(e) => {
+                          // Prevent the surrounding row click from also firing
+                          // (and from following the item link in the first cell).
+                          e.stopPropagation();
+                          e.preventDefault();
+                          onOrderRow(item);
+                        }}
+                      >
+                        <Plus className="h-3.5 w-3.5" />
+                        {isUrgent ? 'Reorder' : 'Order'}
+                      </Button>
+                    );
+                  },
+                },
+              ]
+            : []),
         ]}
       />
     </div>

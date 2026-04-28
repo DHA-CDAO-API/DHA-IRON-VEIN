@@ -25,13 +25,20 @@ export function computeRiskScore(inp: RiskInputs): number {
   return Math.round(Math.min(1, Math.max(0, raw)) * 100);
 }
 
+/**
+ * Map a days-of-supply value into the four-tier status enum used by the
+ * OpenAPI contract (`healthy | watch | warn | critical`). The string values
+ * intentionally match `InventoryBalanceStatus` / `DaysOfSupplyEntryStatus` so
+ * the API response and the TypeScript types stay in sync — callers comparing
+ * `=== "critical"` etc. on the client side only work because of this.
+ */
 export function statusFromDOS(
   dos: number,
   watchDays: number,
   criticalDays: number,
-): "OK" | "WATCH" | "SHORT" | "CRITICAL" {
-  if (dos <= criticalDays) return "CRITICAL";
-  if (dos <= criticalDays + 2) return "SHORT";
-  if (dos <= watchDays) return "WATCH";
-  return "OK";
+): "healthy" | "watch" | "warn" | "critical" {
+  if (dos <= criticalDays) return "critical";
+  if (dos <= criticalDays + 2) return "warn";
+  if (dos <= watchDays) return "watch";
+  return "healthy";
 }
