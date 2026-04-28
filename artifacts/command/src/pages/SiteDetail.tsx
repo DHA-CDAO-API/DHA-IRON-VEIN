@@ -1,5 +1,6 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { useParams, Link } from 'wouter';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useParams, Link, useSearch } from 'wouter';
+import { navigate } from 'wouter/use-browser-location';
 import {
   useGetSiteDetail,
   getGetSiteDetailQueryKey,
@@ -16,6 +17,7 @@ import {
 import { PromoteDialog, type PromoteOverrides } from '@/components/PromoteDialog';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { SortableTable } from '@/components/ui/sortable-table';
@@ -58,6 +60,16 @@ const CATEGORY_ICON: Record<ItemCategoryKey, React.ComponentType<{ className?: s
   ppe: Shield,
   other: Layers,
 };
+
+const FORECAST_HORIZON_OPTIONS = [7, 14, 30] as const;
+type ForecastHorizon = (typeof FORECAST_HORIZON_OPTIONS)[number];
+
+function parseForecastHorizon(value: string | null | undefined): ForecastHorizon {
+  const n = Number(value);
+  return (FORECAST_HORIZON_OPTIONS as readonly number[]).includes(n)
+    ? (n as ForecastHorizon)
+    : 7;
+}
 
 export default function SiteDetail() {
   const { nodeId } = useParams();
@@ -150,8 +162,23 @@ export default function SiteDetail() {
     return m;
   }, [categorizedDos]);
 
-  // Forecast: compute next-7-day shortage projection from demand-based DOS
-  const [forecastHorizon] = useState(7);
+  // Forecast horizon: read from `?fcst=7|14|30` so the choice survives refresh.
+  const search = useSearch();
+  const forecastHorizon = useMemo<ForecastHorizon>(() => {
+    const params = new URLSearchParams(search);
+    return parseForecastHorizon(params.get('fcst'));
+  }, [search]);
+  const setForecastHorizon = useCallback((next: ForecastHorizon) => {
+    const params = new URLSearchParams(window.location.search);
+    if (next === 7) {
+      params.delete('fcst');
+    } else {
+      params.set('fcst', String(next));
+    }
+    const qs = params.toString();
+    navigate(`${window.location.pathname}${qs ? `?${qs}` : ''}`, { replace: true });
+  }, []);
+
   const forecast = useForecastDemand();
   const forecastSeries = forecast.data?.series ?? [];
 
@@ -167,7 +194,7 @@ export default function SiteDetail() {
       },
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nodeId, detail?.node?.id]);
+  }, [nodeId, detail?.node?.id, forecastHorizon]);
 
   const forecastShortages = useMemo(() => {
     if (forecastSeries.length === 0) {
@@ -450,14 +477,39 @@ export default function SiteDetail() {
               </TabsContent>
 
               <TabsContent value="forecast" className="m-0 p-4 space-y-3">
-                <div className="flex items-center justify-between">
+                <div className="flex items-start justify-between gap-3 flex-wrap">
                   <div>
                     <div className="text-sm font-medium">Projected shortages — next {forecastHorizon} days</div>
                     <div className="text-xs text-muted-foreground">
                       Items expected to hit zero on-hand within the forecast window at current burn.
                     </div>
                   </div>
-                  {forecast.isPending && <Skeleton className="h-6 w-24" />}
+                  <div className="flex items-center gap-2 shrink-0">
+                    {forecast.isPending && <Skeleton className="h-6 w-16" />}
+                    <ToggleGroup
+                      type="single"
+                      size="sm"
+                      variant="outline"
+                      value={String(forecastHorizon)}
+                      onValueChange={(v) => {
+                        if (!v) return;
+                        setForecastHorizon(parseForecastHorizon(v));
+                      }}
+                      aria-label="Forecast window"
+                      className="gap-0 rounded-md"
+                    >
+                      {FORECAST_HORIZON_OPTIONS.map((d) => (
+                        <ToggleGroupItem
+                          key={d}
+                          value={String(d)}
+                          aria-label={`${d} day forecast`}
+                          className="h-7 px-2.5 text-xs first:rounded-r-none last:rounded-l-none [&:not(:first-child):not(:last-child)]:rounded-none -ml-px first:ml-0 data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
+                        >
+                          {d}d
+                        </ToggleGroupItem>
+                      ))}
+                    </ToggleGroup>
+                  </div>
                 </div>
                 {forecast.isPending && forecastShortages.length === 0 ? (
                   <div className="space-y-2">
