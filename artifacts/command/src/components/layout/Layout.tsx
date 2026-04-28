@@ -54,9 +54,23 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       <div className="w-16 md:w-64 border-r border-border bg-sidebar flex flex-col justify-between transition-all shrink-0">
         <div>
           <div className="h-16 flex items-center justify-center md:justify-start md:px-4 border-b border-border shrink-0">
-            <span className="font-bold text-primary truncate hidden md:inline-block tracking-widest text-xs uppercase">
-              INDOPACOM
-            </span>
+            <div className="hidden md:flex flex-col leading-tight min-w-0">
+              <span className="font-bold text-primary tracking-widest text-xs uppercase truncate">
+                DHA: IRON-VEIN
+              </span>
+              <span
+                className="text-[8.5px] text-muted-foreground/80 tracking-wide leading-snug truncate"
+                title="INDOPACOM Resilient Operational Network for Vital Expeditionary Inventory Nodes"
+              >
+                INDOPACOM Resilient Operational Network
+              </span>
+              <span
+                className="text-[8.5px] text-muted-foreground/80 tracking-wide leading-snug truncate"
+                title="INDOPACOM Resilient Operational Network for Vital Expeditionary Inventory Nodes"
+              >
+                for Vital Expeditionary Inventory Nodes
+              </span>
+            </div>
             <Activity className="h-6 w-6 text-primary md:hidden" />
           </div>
           <nav className="flex flex-col gap-1 p-2 mt-4">

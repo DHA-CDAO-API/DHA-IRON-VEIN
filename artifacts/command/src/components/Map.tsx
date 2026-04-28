@@ -1215,39 +1215,132 @@ export default function NetworkGLMap(props: NetworkMapProps) {
         boxShadow: '0 8px 24px rgba(0,0,0,0.6)',
         color: '#f4f4f5',
         pointerEvents: 'none',
+        // Push the card down-and-to-the-right of the cursor so the
+        // hotspot itself stays visible. Without this, deck.gl anchors
+        // the tooltip top-left at the cursor and the card sits directly
+        // on top of the hovered node, occluding it.
+        marginLeft: '18px',
+        marginTop: '14px',
+        transform: 'translate(0, 0)',
       },
     };
   };
 
+  // Smooth zoom helpers used by the +/- overlay buttons. We clamp to a
+  // sensible band so operators can't accidentally pan into nothingness.
+  const zoomBy = (delta: number) => {
+    const cur = effectiveViewState;
+    const nextZoom = Math.max(1.5, Math.min(11, (cur.zoom ?? 3) + delta));
+    const next: MapViewState = {
+      ...cur,
+      zoom: nextZoom,
+      transitionDuration: 220,
+    } as MapViewState;
+    if (onViewStateChange) onViewStateChange({ viewState: next });
+    if (!viewState) setInternalView(next);
+  };
+
   return (
     <WebGLBoundary fallback={<NetworkFallback {...props} />}>
-      <DeckGL
-        ref={deckRef}
-        viewState={effectiveViewState}
-        onViewStateChange={handleViewStateChange as any}
-        controller={controllerOpts as any}
-        layers={layers}
-        onClick={handleMapClick}
-        onHover={handleMapHover}
-        getTooltip={getDeckTooltip as any}
-        getCursor={({
-          isDragging,
-          isHovering,
-        }: {
-          isDragging: boolean;
-          isHovering: boolean;
-        }) =>
-          drawMode !== null
-            ? 'crosshair'
-            : isDragging
-              ? 'grabbing'
-              : isHovering
-                ? 'pointer'
-                : 'grab'
-        }
-      >
-        <MapLibre mapStyle={MAP_STYLE} />
-      </DeckGL>
+      <div style={{ position: 'absolute', inset: 0 }}>
+        <DeckGL
+          ref={deckRef}
+          viewState={effectiveViewState}
+          onViewStateChange={handleViewStateChange as any}
+          controller={controllerOpts as any}
+          layers={layers}
+          onClick={handleMapClick}
+          onHover={handleMapHover}
+          getTooltip={getDeckTooltip as any}
+          getCursor={({
+            isDragging,
+            isHovering,
+          }: {
+            isDragging: boolean;
+            isHovering: boolean;
+          }) =>
+            drawMode !== null
+              ? 'crosshair'
+              : isDragging
+                ? 'grabbing'
+                : isHovering
+                  ? 'pointer'
+                  : 'grab'
+          }
+        >
+          <MapLibre mapStyle={MAP_STYLE} />
+        </DeckGL>
+        {/* Zoom controls. Operators kept asking for an obvious +/- since
+            scroll-wheel zoom is intentionally disabled to stop the
+            embedded map from hijacking dashboard scroll. */}
+        <div
+          style={{
+            position: 'absolute',
+            top: 12,
+            right: 12,
+            zIndex: 10,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 4,
+            pointerEvents: 'auto',
+          }}
+        >
+          <button
+            type="button"
+            aria-label="Zoom in"
+            title="Zoom in"
+            onClick={() => zoomBy(1)}
+            style={zoomBtnStyle}
+            onMouseEnter={(e) => {
+              (e.currentTarget as HTMLButtonElement).style.background =
+                'rgba(76, 196, 196, 0.18)';
+            }}
+            onMouseLeave={(e) => {
+              (e.currentTarget as HTMLButtonElement).style.background =
+                'rgba(12, 13, 16, 0.92)';
+            }}
+          >
+            +
+          </button>
+          <button
+            type="button"
+            aria-label="Zoom out"
+            title="Zoom out"
+            onClick={() => zoomBy(-1)}
+            style={zoomBtnStyle}
+            onMouseEnter={(e) => {
+              (e.currentTarget as HTMLButtonElement).style.background =
+                'rgba(76, 196, 196, 0.18)';
+            }}
+            onMouseLeave={(e) => {
+              (e.currentTarget as HTMLButtonElement).style.background =
+                'rgba(12, 13, 16, 0.92)';
+            }}
+          >
+            −
+          </button>
+        </div>
+      </div>
     </WebGLBoundary>
   );
 }
+
+const zoomBtnStyle: React.CSSProperties = {
+  width: 30,
+  height: 30,
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  background: 'rgba(12, 13, 16, 0.92)',
+  border: '1px solid rgba(76, 196, 196, 0.45)',
+  borderRadius: 6,
+  color: '#f4f4f5',
+  fontSize: 18,
+  fontWeight: 600,
+  lineHeight: 1,
+  cursor: 'pointer',
+  fontFamily: 'ui-sans-serif, system-ui',
+  boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
+  userSelect: 'none',
+  transition: 'background 120ms ease',
+};

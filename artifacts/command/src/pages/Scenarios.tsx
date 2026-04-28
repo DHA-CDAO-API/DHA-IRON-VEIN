@@ -52,6 +52,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import {
   Loader2,
+  RotateCcw,
   PlayCircle,
   ShieldAlert,
   Wrench,
@@ -451,7 +452,7 @@ export default function Scenarios() {
           setError((e as Error)?.message ?? "Preview failed");
         }
       }
-    }, 350);
+    }, 150);
     return () => {
       cancelled = true;
       window.clearTimeout(handle);
@@ -639,6 +640,14 @@ export default function Scenarios() {
           savedAt={savedAt}
           onSave={handleSaveCustom}
           onRun={() => {}}
+          onReset={() => {
+            skipNextPreviewRef.current = true;
+            setBuilder(DEFAULT_BUILDER);
+            setResult(null);
+            setPreviousResult(null);
+            setSavedAt(null);
+            setError(null);
+          }}
         />
       </div>
 
@@ -958,6 +967,7 @@ function CustomBuilder({
   zones,
   onSave,
   onRun,
+  onReset,
   isSaving,
   isRunning,
   isPreviewing,
@@ -969,6 +979,7 @@ function CustomBuilder({
   zones: TheaterZone[];
   onSave: () => void;
   onRun: () => void;
+  onReset: () => void;
   isSaving: boolean;
   isRunning: boolean;
   isPreviewing: boolean;
@@ -1177,22 +1188,34 @@ function CustomBuilder({
           />
         </div>
 
-        <Button
-          size="sm"
-          disabled={isSaving || state.affectedNodes.length === 0 || !state.name.trim()}
-          onClick={onSave}
-          className="w-full"
-        >
-          {isSaving ? (
-            <>
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Saving…
-            </>
-          ) : (
-            <>
-              <Save className="h-4 w-4 mr-2" /> Save Custom Scenario
-            </>
-          )}
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            size="sm"
+            disabled={isSaving || state.affectedNodes.length === 0 || !state.name.trim()}
+            onClick={onSave}
+            className="flex-1"
+          >
+            {isSaving ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Saving…
+              </>
+            ) : (
+              <>
+                <Save className="h-4 w-4 mr-2" /> Save Custom Scenario
+              </>
+            )}
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={isSaving}
+            onClick={onReset}
+            title="Reset all controls to defaults"
+            className="shrink-0"
+          >
+            <RotateCcw className="h-3.5 w-3.5 mr-1.5" /> Reset
+          </Button>
+        </div>
         <div className="text-[10px] text-muted-foreground text-center px-1 leading-tight">
           {isPreviewing ? (
             <span className="inline-flex items-center gap-1 text-primary">
@@ -1363,7 +1386,7 @@ function ScenarioTimelineCard({ result }: { result: ScenarioResult }) {
           <ResponsiveContainer width="100%" height="100%">
             <LineChart
               data={chartData}
-              margin={{ top: 8, right: 24, left: 12, bottom: 24 }}
+              margin={{ top: 28, right: 24, left: 12, bottom: 36 }}
             >
               <CartesianGrid
                 strokeDasharray="3 3"
@@ -1377,9 +1400,9 @@ function ScenarioTimelineCard({ result }: { result: ScenarioResult }) {
                 interval="preserveStartEnd"
               >
                 <RLabel
-                  value="Day from now"
+                  value="Day from now (mission-relative)"
                   position="insideBottom"
-                  offset={-12}
+                  offset={-8}
                   style={{
                     fontSize: 10,
                     fill: "hsl(var(--muted-foreground))",
@@ -1440,7 +1463,10 @@ function ScenarioTimelineCard({ result }: { result: ScenarioResult }) {
                 labelFormatter={(label) => `${label} (mission-relative)`}
               />
               <Legend
-                wrapperStyle={{ fontSize: 11, paddingTop: 4 }}
+                verticalAlign="top"
+                align="right"
+                height={20}
+                wrapperStyle={{ fontSize: 11, paddingBottom: 4 }}
                 iconType="line"
               />
               <ReferenceLine
