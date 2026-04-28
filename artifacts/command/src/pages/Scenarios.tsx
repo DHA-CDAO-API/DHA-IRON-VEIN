@@ -35,6 +35,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AiBadge } from "@/components/ui/ai-badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { SortableTable, type SortableColumn } from "@/components/ui/sortable-table";
 import {
   Select,
@@ -1236,6 +1237,20 @@ function RecommendationCards({
   >({});
   const [errorById, setErrorById] = React.useState<Record<string, string>>({});
   const [editing, setEditing] = React.useState<Recommendation | null>(null);
+  const [selectedIds, setSelectedIds] = React.useState<Set<string>>(
+    () => new Set(),
+  );
+  const [batchRunningId, setBatchRunningId] = React.useState<string | null>(
+    null,
+  );
+  const [batchProgress, setBatchProgress] = React.useState<{
+    done: number;
+    total: number;
+    succeeded: number;
+    failed: number;
+  } | null>(null);
+  const isBatchRunning = batchRunningId !== null;
+  const showProgressSummary = !isBatchRunning && batchProgress !== null;
 
   const [priorityFilter, setPriorityFilter] = React.useState<Set<string>>(
     new Set(),
@@ -1317,6 +1332,118 @@ function RecommendationCards({
     });
   }, [recommendations, priorityFilter, searchQuery, hidePromoted, promotedById]);
 
+  // Promotable = open (not yet promoted) recs from the full list.
+  // Used for selection pruning and for the promote pipeline.
+  const promotableIds = React.useMemo(() => {
+    return recommendations
+      .filter((r) => !r.promotedOrderId && !promotedById[r.id])
+      .map((r) => r.id);
+  }, [recommendations, promotedById]);
+
+  // "Select all open" respects the active filter and only selects what's visible.
+  const visiblePromotableIds = React.useMemo(() => {
+    return filtered
+      .filter((r) => !r.promotedOrderId && !promotedById[r.id])
+      .map((r) => r.id);
+  }, [filtered, promotedById]);
+
+  // Drop selections that are no longer promotable (e.g. after promotion).
+  React.useEffect(() => {
+    setSelectedIds((prev) => {
+      if (prev.size === 0) return prev;
+      const allowed = new Set(promotableIds);
+      let changed = false;
+      const next = new Set<string>();
+      for (const id of prev) {
+        if (allowed.has(id)) {
+          next.add(id);
+        } else {
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [promotableIds]);
+
+  const toggleSelected = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const selectAllOpen = () => {
+    setSelectedIds(new Set(visiblePromotableIds));
+  };
+
+  const clearSelection = () => {
+    setSelectedIds(new Set());
+  };
+
+  const promoteOne = async (recId: string) => {
+    setErrorById((prev) => ({ ...prev, [recId]: "" }));
+    try {
+      const res = await promote.mutateAsync({
+        recommendationId: recId,
+        data: {},
+      });
+      const order = res as { id?: string; orderNo?: string } | undefined;
+      setPromotedById((prev) => ({
+        ...prev,
+        [recId]: {
+          orderId: order?.id ?? "promoted",
+          orderNo: order?.orderNo ?? order?.id ?? "PROMOTED",
+        },
+      }));
+      return true;
+    } catch (e) {
+      setErrorById((prev) => ({
+        ...prev,
+        [recId]: (e as Error)?.message ?? "Promote failed",
+      }));
+      return false;
+    }
+  };
+
+  const handleBulkPromote = async () => {
+    const promotableSet = new Set(promotableIds);
+    const ids = Array.from(selectedIds).filter((id) => promotableSet.has(id));
+    if (ids.length === 0) return;
+    let succeeded = 0;
+    let failed = 0;
+    setBatchProgress({ done: 0, total: ids.length, succeeded: 0, failed: 0 });
+    for (let i = 0; i < ids.length; i++) {
+      const id = ids[i];
+      setBatchRunningId(id);
+      const ok = await promoteOne(id);
+      if (ok) succeeded += 1;
+      else failed += 1;
+      setBatchProgress({
+        done: i + 1,
+        total: ids.length,
+        succeeded,
+        failed,
+      });
+      // Remove successful ones from selection as we go.
+      if (ok) {
+        setSelectedIds((prev) => {
+          if (!prev.has(id)) return prev;
+          const next = new Set(prev);
+          next.delete(id);
+          return next;
+        });
+      }
+    }
+    setBatchRunningId(null);
+  };
+
+  const selectedCount = selectedIds.size;
+  const allVisibleOpenSelected =
+    visiblePromotableIds.length > 0 &&
+    visiblePromotableIds.every((id) => selectedIds.has(id));
+
   const total = recommendations.length;
   const visible = filtered.length;
   const hasActiveFilters =
@@ -1390,6 +1517,94 @@ function RecommendationCards({
         </div>
       </div>
 
+      {(selectedCount > 0 || isBatchRunning || showProgressSummary) && (
+        <div
+          data-testid="rec-bulk-toolbar"
+          className="sticky top-0 z-10 mb-2 flex flex-wrap items-center justify-between gap-2 rounded-md border border-primary/40 bg-background/95 backdrop-blur p-2 shadow-sm"
+        >
+          <div className="flex items-center gap-3 text-xs">
+            {!showProgressSummary ? (
+              <span className="font-semibold text-primary">
+                {selectedCount} selected
+              </span>
+            ) : null}
+            {batchProgress ? (
+              <span
+                className={cn(
+                  "text-muted-foreground",
+                  showProgressSummary &&
+                    batchProgress.failed === 0 &&
+                    "text-emerald-400 font-medium",
+                  showProgressSummary &&
+                    batchProgress.failed > 0 &&
+                    "text-amber-400 font-medium",
+                )}
+                data-testid="rec-bulk-progress"
+              >
+                {isBatchRunning ? "Promoting" : "Done"} {batchProgress.done}/
+                {batchProgress.total}
+                {batchProgress.failed > 0
+                  ? ` · ${batchProgress.failed} failed`
+                  : ""}
+              </span>
+            ) : visiblePromotableIds.length > 0 ? (
+              <button
+                type="button"
+                onClick={allVisibleOpenSelected ? clearSelection : selectAllOpen}
+                className="text-[11px] text-muted-foreground hover:text-foreground underline-offset-2 hover:underline"
+                data-testid="rec-bulk-select-all"
+              >
+                {allVisibleOpenSelected
+                  ? "Clear selection"
+                  : `Select all open (${visiblePromotableIds.length})`}
+              </button>
+            ) : null}
+          </div>
+          <div className="flex items-center gap-2">
+            {showProgressSummary ? (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setBatchProgress(null)}
+                className="h-7 text-xs"
+                data-testid="rec-bulk-dismiss"
+              >
+                Dismiss
+              </Button>
+            ) : selectedCount > 0 && !isBatchRunning ? (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={clearSelection}
+                className="h-7 text-xs"
+                data-testid="rec-bulk-clear"
+              >
+                Clear
+              </Button>
+            ) : null}
+            {!showProgressSummary ? (
+              <Button
+                size="sm"
+                onClick={handleBulkPromote}
+                disabled={isBatchRunning || selectedCount === 0}
+                data-testid="rec-bulk-promote"
+                className="h-7"
+              >
+                {isBatchRunning ? (
+                  <>
+                    <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                    Promoting {batchProgress?.done ?? 0}/
+                    {batchProgress?.total ?? selectedCount}…
+                  </>
+                ) : (
+                  `Promote ${selectedCount} selected to POs`
+                )}
+              </Button>
+            ) : null}
+          </div>
+        </div>
+      )}
+
       {filtered.length === 0 ? (
         <div className="rounded-md border border-border bg-background/30 px-3 py-6 text-center text-xs text-muted-foreground">
           No recommendations match the current filters.
@@ -1397,103 +1612,137 @@ function RecommendationCards({
       ) : (
         <ul className="space-y-2">
           {filtered.map((r) => {
-        const initiallyPromoted = !!r.promotedOrderId;
-        const localPromote = promotedById[r.id];
-        const isPromoted = initiallyPromoted || !!localPromote;
-        const promotedRef =
-          localPromote?.orderNo ?? r.promotedOrderId ?? null;
-        const isPending =
-          promote.isPending && promote.variables?.recommendationId === r.id;
-        const err = errorById[r.id];
-        return (
-          <li
-            key={r.id}
-            data-testid={`rec-card-${r.id}`}
-            className={cn(
-              "rounded-md border bg-background/40 p-3 text-xs space-y-2",
-              isPromoted ? "border-emerald-500/30" : "border-border",
-            )}
-          >
-            <div className="flex items-start justify-between gap-2">
-              <div className="flex items-center gap-2 flex-wrap">
-                <Badge
-                  variant="outline"
-                  className={cn("text-[10px]", kindClass(r.kind))}
-                >
-                  {r.kind}
-                </Badge>
-                <Badge
-                  variant="outline"
-                  className={cn("text-[10px]", priorityClass(r.priority))}
-                >
-                  {r.priority}
-                </Badge>
-                <span className="font-semibold text-sm leading-tight">
-                  {r.itemName ?? r.itemId}
-                </span>
-                <span className="text-muted-foreground">→</span>
-                <span className="font-medium text-sm leading-tight text-primary">
-                  {r.nodeName ?? r.nodeId}
-                </span>
-              </div>
-              <div className="text-right shrink-0">
-                <div className="font-mono text-sm font-bold">
-                  {r.quantity.toLocaleString()}
+            const initiallyPromoted = !!r.promotedOrderId;
+            const localPromote = promotedById[r.id];
+            const isPromoted = initiallyPromoted || !!localPromote;
+            const promotedRef =
+              localPromote?.orderNo ?? r.promotedOrderId ?? null;
+            const isRunningSingle =
+              promote.isPending &&
+              promote.variables?.recommendationId === r.id &&
+              batchRunningId === null;
+            const isRunningInBatch = batchRunningId === r.id;
+            const isPending = isRunningSingle || isRunningInBatch;
+            const isQueued =
+              isBatchRunning && selectedIds.has(r.id) && !isPending;
+            const err = errorById[r.id];
+            const isSelected = selectedIds.has(r.id);
+            return (
+              <li
+                key={r.id}
+                data-testid={`rec-card-${r.id}`}
+                className={cn(
+                  "rounded-md border bg-background/40 p-3 text-xs space-y-2",
+                  isPromoted
+                    ? "border-emerald-500/30"
+                    : isSelected
+                      ? "border-primary/50"
+                      : "border-border",
+                )}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-start gap-2 flex-wrap">
+                    {!isPromoted ? (
+                      <Checkbox
+                        checked={isSelected}
+                        onCheckedChange={() => toggleSelected(r.id)}
+                        disabled={isBatchRunning}
+                        aria-label={`Select recommendation ${r.itemName ?? r.itemId} for ${r.nodeName ?? r.nodeId}`}
+                        data-testid={`rec-select-${r.id}`}
+                        className="mt-0.5"
+                      />
+                    ) : null}
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <Badge
+                        variant="outline"
+                        className={cn("text-[10px]", kindClass(r.kind))}
+                      >
+                        {r.kind}
+                      </Badge>
+                      <Badge
+                        variant="outline"
+                        className={cn(
+                          "text-[10px]",
+                          priorityClass(r.priority),
+                        )}
+                      >
+                        {r.priority}
+                      </Badge>
+                      <span className="font-semibold text-sm leading-tight">
+                        {r.itemName ?? r.itemId}
+                      </span>
+                      <span className="text-muted-foreground">→</span>
+                      <span className="font-medium text-sm leading-tight text-primary">
+                        {r.nodeName ?? r.nodeId}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <div className="font-mono text-sm font-bold">
+                      {r.quantity.toLocaleString()}
+                    </div>
+                    <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                      units
+                    </div>
+                  </div>
                 </div>
-                <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                  units
-                </div>
-              </div>
-            </div>
 
-            <p className="text-muted-foreground leading-snug">{r.rationale}</p>
+                <p className="text-muted-foreground leading-snug">
+                  {r.rationale}
+                </p>
 
-            <div className="flex items-center justify-between gap-2 pt-1.5 border-t border-border/50">
-              <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
-                {r.suggestedSupplierName ? (
-                  <span className="flex items-center gap-1">
-                    <Truck className="h-3 w-3" />
-                    {r.suggestedSupplierName}
-                  </span>
-                ) : null}
-                <span className="font-mono">ETA {r.etaDays.toFixed(0)}d</span>
-                {typeof r.estimatedCost === "number" ? (
-                  <span className="font-mono">
-                    ${r.estimatedCost.toLocaleString()}
-                  </span>
-                ) : null}
-              </div>
-              {isPromoted ? (
-                <span className="inline-flex items-center gap-1 text-[11px] text-emerald-400 font-medium">
-                  <CheckCircle2 className="h-3.5 w-3.5" />
-                  {promotedRef ? `Promoted · ${promotedRef}` : "Promoted"}
-                </span>
-              ) : (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={isPending}
-                  onClick={() => setEditing(r)}
-                  data-testid={`rec-promote-${r.id}`}
-                  className="border-primary/50 text-primary hover:bg-primary/10 h-7"
-                >
-                  {isPending ? (
-                    <>
-                      <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-                      Promoting…
-                    </>
+                <div className="flex items-center justify-between gap-2 pt-1.5 border-t border-border/50">
+                  <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
+                    {r.suggestedSupplierName ? (
+                      <span className="flex items-center gap-1">
+                        <Truck className="h-3 w-3" />
+                        {r.suggestedSupplierName}
+                      </span>
+                    ) : null}
+                    <span className="font-mono">
+                      ETA {r.etaDays.toFixed(0)}d
+                    </span>
+                    {typeof r.estimatedCost === "number" ? (
+                      <span className="font-mono">
+                        ${r.estimatedCost.toLocaleString()}
+                      </span>
+                    ) : null}
+                  </div>
+                  {isPromoted ? (
+                    <span className="inline-flex items-center gap-1 text-[11px] text-emerald-400 font-medium">
+                      <CheckCircle2 className="h-3.5 w-3.5" />
+                      {promotedRef ? `Promoted · ${promotedRef}` : "Promoted"}
+                    </span>
+                  ) : isQueued ? (
+                    <span className="text-[11px] text-muted-foreground italic">
+                      Queued…
+                    </span>
                   ) : (
-                    "Promote to PO"
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={isPending || isBatchRunning}
+                      onClick={() => setEditing(r)}
+                      data-testid={`rec-promote-${r.id}`}
+                      className="border-primary/50 text-primary hover:bg-primary/10 h-7"
+                    >
+                      {isPending ? (
+                        <>
+                          <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                          Promoting…
+                        </>
+                      ) : (
+                        "Promote to PO"
+                      )}
+                    </Button>
                   )}
-                </Button>
-              )}
-            </div>
-            {err ? (
-              <div className="text-[11px] text-destructive">{err}</div>
-            ) : null}
-          </li>
-        );
-      })}
+                </div>
+                {err ? (
+                  <div className="text-[11px] text-destructive">{err}</div>
+                ) : null}
+              </li>
+            );
+          })}
         </ul>
       )}
       <PromoteDialog
