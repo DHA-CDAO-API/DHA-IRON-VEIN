@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { useGetNetworkSnapshot, useGetDashboardOverview, useListActivity, getGetNetworkSnapshotQueryKey, getGetDashboardOverviewQueryKey, getListActivityQueryKey } from '@workspace/api-client-react';
@@ -6,31 +6,71 @@ import NetworkGLMap from '@/components/Map';
 import { AlertTriangle, TrendingDown, TrendingUp, Activity, Box, Truck } from 'lucide-react';
 import { Link } from 'wouter';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useAutoRefresh } from '@/hooks/use-auto-refresh';
+import RefreshControls, {
+  readPersistedInterval,
+  writePersistedInterval,
+  DEFAULT_REFRESH_INTERVAL_MS,
+} from '@/components/RefreshControls';
+
+const REFRESH_STORAGE_KEY = 'command:overview:refresh-interval-ms';
 
 export default function CommandOverview() {
-  const { data: snapshot, isLoading: snapLoading } = useGetNetworkSnapshot({
-    query: {
-      queryKey: getGetNetworkSnapshotQueryKey(),
-    },
-  });
-
-  const { data: overview, isLoading: overviewLoading } = useGetDashboardOverview({
-    query: {
-      queryKey: getGetDashboardOverviewQueryKey(),
-    },
-  });
-
-  const { data: activity, isLoading: activityLoading } = useListActivity(
-    { limit: 10 },
-    {
-      query: {
-        queryKey: getListActivityQueryKey({ limit: 10 }),
-      },
-    }
+  const [intervalMs, setIntervalMs] = useState<number>(() =>
+    readPersistedInterval(REFRESH_STORAGE_KEY, DEFAULT_REFRESH_INTERVAL_MS),
   );
+
+  const handleIntervalChange = (ms: number) => {
+    setIntervalMs(ms);
+    writePersistedInterval(REFRESH_STORAGE_KEY, ms);
+  };
+
+  const snapshotKey = useMemo(() => getGetNetworkSnapshotQueryKey(), []);
+  const overviewKey = useMemo(() => getGetDashboardOverviewQueryKey(), []);
+  const activityKey = useMemo(() => getListActivityQueryKey({ limit: 10 }), []);
+
+  const { data: snapshot, isLoading: snapLoading } = useGetNetworkSnapshot({
+    query: { queryKey: snapshotKey },
+  });
+
+  const { data: overview } = useGetDashboardOverview({
+    query: { queryKey: overviewKey },
+  });
+
+  const { data: activity } = useListActivity(
+    { limit: 10 },
+    { query: { queryKey: activityKey } },
+  );
+
+  const refreshKeys = useMemo(
+    () => [snapshotKey, overviewKey, activityKey],
+    [snapshotKey, overviewKey, activityKey],
+  );
+
+  const { refreshNow, isRefreshing, lastUpdatedAt } = useAutoRefresh({
+    intervalMs,
+    queryKeys: refreshKeys,
+  });
 
   return (
     <div className="h-full flex flex-col p-4 gap-4 overflow-y-auto bg-background text-foreground">
+      {/* Page Header */}
+      <div className="flex items-center justify-between gap-4 shrink-0">
+        <div>
+          <h1 className="text-lg font-bold tracking-wide text-foreground">Command Overview</h1>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Theater-wide readiness, risk, and live shipment posture.
+          </p>
+        </div>
+        <RefreshControls
+          intervalMs={intervalMs}
+          onIntervalChange={handleIntervalChange}
+          lastUpdatedAt={lastUpdatedAt}
+          isRefreshing={isRefreshing}
+          onRefreshNow={() => void refreshNow()}
+        />
+      </div>
+
       {/* KPI Strip */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 shrink-0">
         <KPICard title="Theater DOS" value={overview?.kpis?.theaterDaysOfSupply?.toFixed(1) ?? '--'} icon={<Box className="h-4 w-4 text-primary" />} trend="-1.2" unit="days" />

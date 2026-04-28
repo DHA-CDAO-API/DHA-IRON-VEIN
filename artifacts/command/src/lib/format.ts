@@ -59,6 +59,28 @@ export function dosClass(dos: number | null | undefined): string {
   return "text-emerald-500 font-bold";
 }
 
+/**
+ * Render a recent timestamp as a compact "Xs ago" / "Xm ago" string.
+ *
+ * Designed for a freshness chip that ticks every second without re-fetching
+ * any data — callers pass a `now` argument they update on a setInterval.
+ */
+export function formatRelativeTime(
+  timestamp: number | null | undefined,
+  now: number = Date.now(),
+): string {
+  if (timestamp == null || !Number.isFinite(timestamp)) return "—";
+  const diffSec = Math.max(0, Math.floor((now - timestamp) / 1000));
+  if (diffSec < 5) return "just now";
+  if (diffSec < 60) return `${diffSec}s ago`;
+  const min = Math.floor(diffSec / 60);
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const days = Math.floor(hr / 24);
+  return `${days}d ago`;
+}
+
 /** Render an ISO timestamp as a short date like `27 Apr 2026`. */
 export function formatShortDate(iso: string | null | undefined): string {
   if (!iso) return "—";
