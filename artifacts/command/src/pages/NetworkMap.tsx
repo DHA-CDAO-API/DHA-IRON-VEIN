@@ -54,12 +54,14 @@ import {
   Plane,
   ShieldAlert,
   ShieldCheck,
+  Sparkles,
   Square,
   Trash2,
   Truck,
   X,
 } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
+import { usePrefersReducedMotion } from '@/hooks/use-reduced-motion';
 
 const CATEGORY_META: Record<
   SupplyCategory,
@@ -127,6 +129,14 @@ export default function NetworkMapPage() {
   const [showThreats, setShowThreats] = useState(true);
   const [showAOR, setShowAOR] = useState(true);
   const [showZones, setShowZones] = useState(true);
+
+  // Motion / animation preference. Defaults to following the OS-level
+  // `prefers-reduced-motion` setting, but the user can override either way
+  // via the Layers panel toggle (e.g. enable animation despite OS setting,
+  // or freeze the map even though the OS isn't requesting reduced motion).
+  const prefersReducedMotion = usePrefersReducedMotion();
+  const [animateOverride, setAnimateOverride] = useState<boolean | null>(null);
+  const animateMap = animateOverride ?? !prefersReducedMotion;
 
   // Active popup
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
@@ -353,6 +363,27 @@ export default function NetworkMapPage() {
                   Theater zones ({zones.length})
                 </Label>
               </div>
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="layer-animate"
+                  checked={animateMap}
+                  onCheckedChange={(v) => setAnimateOverride(!!v)}
+                />
+                <Label
+                  htmlFor="layer-animate"
+                  className="text-xs cursor-pointer flex items-center gap-1.5"
+                >
+                  <Sparkles className="h-3 w-3 text-primary" />
+                  Animate map
+                </Label>
+              </div>
+              {!animateMap && (
+                <p className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground pl-6 -mt-1">
+                  {animateOverride === false
+                    ? 'Motion off · still frame'
+                    : 'OS reduced-motion · still frame'}
+                </p>
+              )}
             </div>
 
             <div className="border-t border-border pt-2 grid grid-cols-3 gap-1 text-[10px] font-mono uppercase tracking-wider">
@@ -499,6 +530,7 @@ export default function NetworkMapPage() {
           selectedCategories={selectedCats}
           showThreats={showThreats}
           showAOR={showAOR}
+          animate={animateMap}
           onNodeClick={(node) => {
             setSelectedShipmentId(null);
             setSelectedNodeId(node?.id ?? null);

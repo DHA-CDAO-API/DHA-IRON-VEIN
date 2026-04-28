@@ -61,6 +61,12 @@ interface NetworkMapProps {
   showThreats?: boolean;
   showAOR?: boolean;
   showZones?: boolean;
+  /**
+   * When `false`, the rAF loop is suspended and both the pulse halos and
+   * shipment trip particles are rendered as a single representative still
+   * frame (halos at base radius, trips frozen mid-route). Defaults to `true`.
+   */
+  animate?: boolean;
   onNodeClick?: (node: any, riskInfo: any | null) => void;
   onShipmentClick?: (shipment: any) => void;
   onZoneClick?: (zone: TheaterZone) => void;
@@ -260,6 +266,7 @@ export default function NetworkGLMap(props: NetworkMapProps) {
     showThreats = true,
     showAOR = true,
     showZones = true,
+    animate = true,
     onNodeClick,
     onShipmentClick,
     onZoneClick,
@@ -734,8 +741,13 @@ export default function NetworkGLMap(props: NetworkMapProps) {
     [decoratedNodes],
   );
 
-  const buildAnimatedLayers = useCallback((t: number) => {
-    const pulse = 1 + 0.45 * Math.sin((t / 30) * Math.PI);
+  const buildAnimatedLayers = useCallback((t: number, frozen: boolean) => {
+    // When `frozen`, render a single representative still frame: halos at
+    // base radius (no breathing) and trips paused mid-route. The accessor
+    // logic stays identical so tier colours and per-shipment data still
+    // work for picking and tooltips.
+    const pulse = frozen ? 1 : 1 + 0.45 * Math.sin((t / 30) * Math.PI);
+    const currentTime = frozen ? TRIP_LENGTH * 0.5 : t;
     return [
       // 5. Animated convoys (trip particles flowing along routes). Pickable
       //    so operators can click any moving particle and see the underlying
@@ -751,7 +763,7 @@ export default function NetworkGLMap(props: NetworkMapProps) {
         widthUnits: 'pixels',
         getWidth: 4,
         trailLength: 220,
-        currentTime: t,
+        currentTime,
         loopLength: TRIP_LENGTH,
         capRounded: true,
         jointRounded: true,
@@ -786,15 +798,28 @@ export default function NetworkGLMap(props: NetworkMapProps) {
 
   // Initial layer array for the first React render (before the rAF loop kicks
   // in). Subsequent updates are pushed via `deck.setProps` from the loop.
+  // When `animate` is false we render the still frame immediately and skip
+  // the rAF loop entirely so motion-sensitive operators see no movement.
   const layers = useMemo(
-    () => [...staticLayers, ...buildAnimatedLayers(timeRef.current)],
-    [staticLayers, buildAnimatedLayers],
+    () => [...staticLayers, ...buildAnimatedLayers(timeRef.current, !animate)],
+    [staticLayers, buildAnimatedLayers, animate],
   );
 
   // Animation loop. Updates the time ref and pushes a fresh layer set into
   // the deck instance directly — no React state, no component re-render.
+  // Suspends entirely when `animate=false`; in that case we push one still
+  // frame so any in-flight props changes (e.g. filter toggles) take effect.
   useEffect(() => {
     if (hasWebGL !== true) return;
+    if (!animate) {
+      const deck = deckRef.current;
+      if (deck && typeof deck.setProps === 'function') {
+        deck.setProps({
+          layers: [...staticLayers, ...buildAnimatedLayers(timeRef.current, true)],
+        });
+      }
+      return;
+    }
     let mounted = true;
     let last = performance.now();
     const tick = (now: number) => {
@@ -805,7 +830,7 @@ export default function NetworkGLMap(props: NetworkMapProps) {
       const deck = deckRef.current;
       if (deck && typeof deck.setProps === 'function') {
         deck.setProps({
-          layers: [...staticLayers, ...buildAnimatedLayers(timeRef.current)],
+          layers: [...staticLayers, ...buildAnimatedLayers(timeRef.current, false)],
         });
       }
       animRef.current = requestAnimationFrame(tick);
@@ -815,7 +840,7 @@ export default function NetworkGLMap(props: NetworkMapProps) {
       mounted = false;
       if (animRef.current) cancelAnimationFrame(animRef.current);
     };
-  }, [hasWebGL, staticLayers, buildAnimatedLayers]);
+  }, [hasWebGL, staticLayers, buildAnimatedLayers, animate]);
 
   if (hasWebGL === null) return null;
   if (!hasWebGL) return <NetworkFallback {...props} />;
