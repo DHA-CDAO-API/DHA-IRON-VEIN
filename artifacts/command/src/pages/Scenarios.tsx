@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { PlayCircle, ShieldAlert } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
+import { AiBadge } from '@/components/ui/ai-badge';
 
 export default function Scenarios() {
   const { data: presets, isLoading: presetsLoading } = useListPresetEvents();
@@ -36,7 +37,10 @@ export default function Scenarios() {
 
       {/* Center - Visualization */}
       <div className="flex-1 flex flex-col gap-4 min-w-0">
-        <div className="text-sm font-bold uppercase tracking-wider text-muted-foreground px-1">Simulation Output</div>
+        <div className="flex items-center justify-between px-1">
+          <div className="text-sm font-bold uppercase tracking-wider text-muted-foreground">Simulation Output</div>
+          <AiBadge />
+        </div>
         <Card className="flex-1 bg-card/30 border-border flex items-center justify-center flex-col gap-4 text-muted-foreground">
           <ShieldAlert className="h-16 w-16 text-muted" />
           <p>Load a scenario to view 30-day simulated projection.</p>

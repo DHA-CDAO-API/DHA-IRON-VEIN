@@ -2,11 +2,12 @@ import React from "react";
 import { Link, useLocation } from "wouter";
 import { 
   Activity, Map as MapIcon, Box, ShoppingCart, PlayCircle, 
-  MessageSquare, Database, Settings, UserCircle, Search, Clock
+  MessageSquare, Database, Settings, UserCircle, Search
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import RoleBadge from "@/components/RoleBadge";
 import AlertsRail from "@/components/AlertsRail";
+import LiveClock from "@/components/layout/LiveClock";
 import { useGetProfile } from "@workspace/api-client-react";
 
 export default function Layout({ children }: { children: React.ReactNode }) {
@@ -79,10 +80,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           <div className="flex items-center gap-4">
             <RoleBadge />
             <div className="h-6 w-px bg-border mx-1"></div>
-            <div className="flex items-center gap-2 text-muted-foreground font-mono text-xs hidden sm:flex">
-              <Clock className="h-4 w-4" />
-              <span>{new Date().toISOString().slice(11, 16)} ZULU</span>
-            </div>
+            <LiveClock />
             <AlertsRail />
             <div className="h-6 w-px bg-border"></div>
             <Link href="/profile" className="flex items-center gap-2 text-sm font-medium hover:text-primary transition-colors">

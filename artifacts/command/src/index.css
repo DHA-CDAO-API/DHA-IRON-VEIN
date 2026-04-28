@@ -170,4 +170,26 @@
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
   }
+
+  /*
+   * Global hand-cursor rule: anything intentionally clickable should reveal
+   * itself on hover. Native interactive elements get the pointer for free,
+   * but ARIA buttons, tab/link surrogates, and custom clickable wrappers
+   * (mark with data-clickable) need it explicitly.
+   */
+  button:not(:disabled),
+  a[href],
+  [role="button"]:not([aria-disabled="true"]),
+  [role="link"]:not([aria-disabled="true"]),
+  [role="tab"]:not([aria-disabled="true"]),
+  [role="menuitem"]:not([aria-disabled="true"]),
+  [role="option"]:not([aria-disabled="true"]),
+  [data-clickable] {
+    cursor: pointer;
+  }
+
+  button:disabled,
+  [aria-disabled="true"] {
+    cursor: not-allowed;
+  }
 }

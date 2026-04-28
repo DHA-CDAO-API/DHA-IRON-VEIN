@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label';
 
 export default function NetworkMapPage() {
   const { data: snapshot, isLoading } = useGetNetworkSnapshot({
-    query: { queryKey: getGetNetworkSnapshotQueryKey(), refetchInterval: 10000 },
+    query: { queryKey: getGetNetworkSnapshotQueryKey() },
   });
 
   return (

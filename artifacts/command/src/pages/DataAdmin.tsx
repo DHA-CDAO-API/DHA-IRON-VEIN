@@ -8,7 +8,7 @@ import { useToast } from '@/hooks/use-toast';
 
 export default function DataAdmin() {
   const { data: status, isLoading: statusLoading } = useGetSeedStatus({
-    query: { queryKey: getGetSeedStatusQueryKey(), refetchInterval: 10000 },
+    query: { queryKey: getGetSeedStatusQueryKey() },
   });
   
   const { data: catalog, isLoading: catalogLoading } = useListCatalogItems({ limit: 10 });

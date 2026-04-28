@@ -8,7 +8,7 @@ import { Clock, Printer } from 'lucide-react';
 
 export default function OrdersBoard() {
   const { data: orders, isLoading } = useListOrders({}, {
-    query: { refetchInterval: 10000, queryKey: getListOrdersQueryKey() }
+    query: { queryKey: getListOrdersQueryKey() }
   });
 
   if (isLoading || !orders) {

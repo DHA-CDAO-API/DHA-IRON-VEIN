@@ -8,6 +8,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
 import { Bot, User, Send, Plus, Loader2 } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
+import { AiBadge } from '@/components/ui/ai-badge';
 
 export default function Copilot() {
   const queryClient = useQueryClient();
@@ -129,7 +130,10 @@ export default function Copilot() {
       {/* Main Chat */}
       <div className="flex-1 flex flex-col bg-card/30 border border-border rounded-xl overflow-hidden min-w-0">
         <div className="h-14 border-b border-border/50 flex items-center justify-between px-4 shrink-0">
-          <div className="font-bold tracking-wide">Copilot</div>
+          <div className="flex items-center gap-3">
+            <div className="font-bold tracking-wide">Copilot</div>
+            <AiBadge />
+          </div>
           <Select value={provider} onValueChange={setProvider}>
             <SelectTrigger className="w-[180px] h-8 text-xs">
               <SelectValue placeholder="Select Provider" />

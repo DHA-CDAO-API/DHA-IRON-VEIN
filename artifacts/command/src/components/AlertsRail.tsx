@@ -9,7 +9,7 @@ import { Link } from 'wouter';
 export default function AlertsRail() {
   const { data: alerts = [] } = useListAlerts(
     { status: 'open' },
-    { query: { queryKey: getListAlertsQueryKey({ status: 'open' }), refetchInterval: 10000 } }
+    { query: { queryKey: getListAlertsQueryKey({ status: 'open' }) } }
   );
 
   const ackAlert = useAcknowledgeAlert();

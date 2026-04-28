@@ -19,7 +19,19 @@ import DataAdmin from "@/pages/DataAdmin";
 import Settings from "@/pages/Settings";
 import Profile from "@/pages/Profile";
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      // Static data mode: no background polling. Numbers only change after
+      // a user-initiated mutation (which invalidates the relevant query).
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      refetchInterval: false,
+      staleTime: Infinity,
+      retry: 1,
+    },
+  },
+});
 
 function Router() {
   return (

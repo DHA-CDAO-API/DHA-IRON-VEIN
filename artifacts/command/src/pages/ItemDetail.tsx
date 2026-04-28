@@ -3,7 +3,7 @@ import { useParams, Link } from 'wouter';
 import { useGetItemDetail, getGetItemDetailQueryKey } from '@workspace/api-client-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { SortableTable } from '@/components/ui/sortable-table';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Box, Network, AlertTriangle, MapPin } from 'lucide-react';
 
@@ -114,32 +114,56 @@ export default function ItemDetail() {
           <Card className="bg-card/50 border-border flex-1 flex flex-col overflow-hidden">
             <div className="p-4 border-b border-border/50 bg-muted/20 font-medium text-sm">Site Distribution</div>
             <div className="flex-1 overflow-auto p-0">
-              <Table>
-                <TableHeader className="bg-muted/50 sticky top-0">
-                  <TableRow>
-                    <TableHead>Site</TableHead>
-                    <TableHead className="text-right">On Hand</TableHead>
-                    <TableHead className="text-right">DOS</TableHead>
-                    <TableHead>Status</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {perNode.sort((a, b) => (a.daysOfSupply || 0) - (b.daysOfSupply || 0)).map(node => (
-                    <TableRow key={node.nodeId}>
-                      <TableCell className="font-medium">
-                        <Link href={`/sites/${node.nodeId}`} className="hover:text-primary hover:underline">{node.nodeName || node.nodeId}</Link>
-                      </TableCell>
-                      <TableCell className="text-right font-mono">{node.quantityOnHand}</TableCell>
-                      <TableCell className={`text-right font-mono ${riskClass(node.daysOfSupply || 0)}`}>{(node.daysOfSupply || 0).toFixed(1)}</TableCell>
-                      <TableCell>
-                        <Badge variant="outline" className={!node.daysOfSupply || node.daysOfSupply <= 3 ? 'border-destructive text-destructive' : node.daysOfSupply <= 7 ? 'border-amber-500 text-amber-500' : 'border-emerald-500 text-emerald-500'}>
-                          {!node.daysOfSupply || node.daysOfSupply <= 3 ? 'CRITICAL' : node.daysOfSupply <= 7 ? 'WATCH' : 'HEALTHY'}
-                        </Badge>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+              <SortableTable
+                stickyHeader
+                initialSort={{ key: 'dos', direction: 'asc' }}
+                data={perNode}
+                rowKey={(node) => node.nodeId}
+                emptyMessage="No site distribution data"
+                columns={[
+                  {
+                    key: 'site',
+                    label: 'Site',
+                    sortAccessor: (node) => node.nodeName || node.nodeId,
+                    render: (node) => (
+                      <Link href={`/sites/${node.nodeId}`} className="font-medium hover:text-primary hover:underline">
+                        {node.nodeName || node.nodeId}
+                      </Link>
+                    ),
+                  },
+                  {
+                    key: 'onHand',
+                    label: 'On Hand',
+                    align: 'right',
+                    sortAccessor: (node) => node.quantityOnHand,
+                    render: (node) => (
+                      <span className="font-mono">{node.quantityOnHand}</span>
+                    ),
+                  },
+                  {
+                    key: 'dos',
+                    label: 'DOS',
+                    align: 'right',
+                    sortAccessor: (node) => node.daysOfSupply ?? 0,
+                    render: (node) => (
+                      <span className={`font-mono ${riskClass(node.daysOfSupply || 0)}`}>
+                        {(node.daysOfSupply || 0).toFixed(1)}
+                      </span>
+                    ),
+                  },
+                  {
+                    key: 'status',
+                    label: 'Status',
+                    sortAccessor: (node) => node.daysOfSupply ?? 0,
+                    render: (node) => {
+                      const dos = node.daysOfSupply;
+                      const cls = !dos || dos <= 3 ? 'border-destructive text-destructive' : dos <= 7 ? 'border-amber-500 text-amber-500' : 'border-emerald-500 text-emerald-500';
+                      const label = !dos || dos <= 3 ? 'CRITICAL' : dos <= 7 ? 'WATCH' : 'HEALTHY';
+                      return <Badge variant="outline" className={cls}>{label}</Badge>;
+                    },
+                  },
+                ]}
+              />
             </div>
           </Card>
         </div>

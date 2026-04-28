@@ -5,7 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { SortableTable } from '@/components/ui/sortable-table';
+import { AiBadge } from '@/components/ui/ai-badge';
 import { Activity, AlertTriangle, Box, MapPin, CheckCircle2, TrendingUp } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -24,7 +25,6 @@ export default function SiteDetail() {
     query: {
       enabled: !!nodeId,
       queryKey: getGetSiteDetailQueryKey(nodeId || ''),
-      refetchInterval: 15000
     }
   });
 
@@ -109,35 +109,55 @@ export default function SiteDetail() {
             
             <div className="flex-1 overflow-y-auto mt-4 bg-card/30 rounded-md border border-border">
               <TabsContent value="inventory" className="m-0 h-full p-0">
-                <Table>
-                  <TableHeader className="bg-muted/50 sticky top-0">
-                    <TableRow>
-                      <TableHead>Item</TableHead>
-                      <TableHead className="text-right">On Hand</TableHead>
-                      <TableHead className="text-right">DOS</TableHead>
-                      <TableHead>Status</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {dosByItem.map(item => (
-                      <TableRow key={item.itemId}>
-                        <TableCell className="font-medium">
-                          <Link href={`/items/${item.itemId}`} className="hover:text-primary hover:underline">{item.itemName}</Link>
-                        </TableCell>
-                        <TableCell className="text-right font-mono">{item.quantityOnHand}</TableCell>
-                        <TableCell className={`text-right font-mono ${riskClass(item.daysOfSupply)}`}>{item.daysOfSupply.toFixed(1)}</TableCell>
-                        <TableCell>
-                          <Badge variant="outline" className={item.status === 'critical' ? 'border-destructive text-destructive' : item.status === 'warn' ? 'border-amber-500 text-amber-500' : 'border-emerald-500 text-emerald-500'}>
-                            {item.status.toUpperCase()}
-                          </Badge>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                    {dosByItem.length === 0 && (
-                      <TableRow><TableCell colSpan={4} className="text-center py-8 text-muted-foreground">No inventory data available</TableCell></TableRow>
-                    )}
-                  </TableBody>
-                </Table>
+                <SortableTable
+                  stickyHeader
+                  initialSort={{ key: 'dos', direction: 'asc' }}
+                  data={dosByItem}
+                  rowKey={(item) => item.itemId}
+                  emptyMessage="No inventory data available"
+                  columns={[
+                    {
+                      key: 'item',
+                      label: 'Item',
+                      sortAccessor: (item) => item.itemName,
+                      render: (item) => (
+                        <Link href={`/items/${item.itemId}`} className="font-medium hover:text-primary hover:underline">
+                          {item.itemName}
+                        </Link>
+                      ),
+                    },
+                    {
+                      key: 'onHand',
+                      label: 'On Hand',
+                      align: 'right',
+                      sortAccessor: (item) => item.quantityOnHand,
+                      render: (item) => (
+                        <span className="font-mono">{item.quantityOnHand}</span>
+                      ),
+                    },
+                    {
+                      key: 'dos',
+                      label: 'DOS',
+                      align: 'right',
+                      sortAccessor: (item) => item.daysOfSupply,
+                      render: (item) => (
+                        <span className={`font-mono ${riskClass(item.daysOfSupply)}`}>
+                          {item.daysOfSupply.toFixed(1)}
+                        </span>
+                      ),
+                    },
+                    {
+                      key: 'status',
+                      label: 'Status',
+                      sortAccessor: (item) => item.status,
+                      render: (item) => (
+                        <Badge variant="outline" className={item.status === 'critical' ? 'border-destructive text-destructive' : item.status === 'warn' ? 'border-amber-500 text-amber-500' : 'border-emerald-500 text-emerald-500'}>
+                          {item.status.toUpperCase()}
+                        </Badge>
+                      ),
+                    },
+                  ]}
+                />
               </TabsContent>
               
               <TabsContent value="alerts" className="m-0 p-4 space-y-4">
@@ -196,9 +216,12 @@ export default function SiteDetail() {
         <div className="flex flex-col gap-4">
           <Card className="bg-card/50 backdrop-blur border-border flex-1 flex flex-col overflow-hidden">
             <CardHeader className="pb-2 border-b border-border/50 shrink-0">
-              <CardTitle className="text-sm font-medium flex items-center gap-2 text-primary">
-                <Activity className="h-4 w-4" />
-                Recommended Actions
+              <CardTitle className="text-sm font-medium flex items-center justify-between gap-2 text-primary">
+                <span className="flex items-center gap-2">
+                  <Activity className="h-4 w-4" />
+                  Recommended Actions
+                </span>
+                <AiBadge />
               </CardTitle>
             </CardHeader>
             <CardContent className="p-0 overflow-y-auto">

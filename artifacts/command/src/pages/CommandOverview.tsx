@@ -11,14 +11,12 @@ export default function CommandOverview() {
   const { data: snapshot, isLoading: snapLoading } = useGetNetworkSnapshot({
     query: {
       queryKey: getGetNetworkSnapshotQueryKey(),
-      refetchInterval: 5000,
     },
   });
 
   const { data: overview, isLoading: overviewLoading } = useGetDashboardOverview({
     query: {
       queryKey: getGetDashboardOverviewQueryKey(),
-      refetchInterval: 10000,
     },
   });
 
@@ -27,7 +25,6 @@ export default function CommandOverview() {
     {
       query: {
         queryKey: getListActivityQueryKey({ limit: 10 }),
-        refetchInterval: 15000,
       },
     }
   );
