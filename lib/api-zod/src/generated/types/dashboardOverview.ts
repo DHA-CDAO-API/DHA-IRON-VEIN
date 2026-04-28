@@ -11,6 +11,8 @@ import type { HistoryPoint } from "./historyPoint";
 import type { TheaterBloodReadiness } from "./theaterBloodReadiness";
 
 export interface DashboardOverview {
+  /** ISO timestamp marking when this snapshot was assembled. */
+  generatedAt: Date;
   networkDaysOfSupply: number;
   openCriticalAlerts: number;
   openWarnAlerts: number;

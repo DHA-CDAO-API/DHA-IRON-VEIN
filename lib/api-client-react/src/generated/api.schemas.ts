@@ -1147,6 +1147,8 @@ export interface TheaterBloodReadiness {
 }
 
 export interface DashboardOverview {
+  /** ISO timestamp marking when this snapshot was assembled. */
+  generatedAt: string;
   networkDaysOfSupply: number;
   openCriticalAlerts: number;
   openWarnAlerts: number;
@@ -1183,6 +1185,250 @@ export interface RiskBoard {
   byHub: RiskBoardByHubItem[];
 }
 
+export type CascadeScenarioTriggerType =
+  (typeof CascadeScenarioTriggerType)[keyof typeof CascadeScenarioTriggerType];
+
+export const CascadeScenarioTriggerType = {
+  hub_loss: "hub_loss",
+  generator_failure: "generator_failure",
+  route_interdiction: "route_interdiction",
+} as const;
+
+export type CascadeScenarioSeverity =
+  (typeof CascadeScenarioSeverity)[keyof typeof CascadeScenarioSeverity];
+
+export const CascadeScenarioSeverity = {
+  NOMINAL: "NOMINAL",
+  WATCH: "WATCH",
+  CRITICAL: "CRITICAL",
+} as const;
+
+/**
+ * Confidence in the scenario projection based on data coverage.
+ */
+export type CascadeScenarioConfidence =
+  (typeof CascadeScenarioConfidence)[keyof typeof CascadeScenarioConfidence];
+
+export const CascadeScenarioConfidence = {
+  HIGH: "HIGH",
+  MEDIUM: "MEDIUM",
+  LOW: "LOW",
+} as const;
+
+export type CascadeAffectedSpokeTier =
+  (typeof CascadeAffectedSpokeTier)[keyof typeof CascadeAffectedSpokeTier];
+
+export const CascadeAffectedSpokeTier = {
+  NOMINAL: "NOMINAL",
+  WATCH: "WATCH",
+  CRITICAL: "CRITICAL",
+} as const;
+
+export interface CascadeAffectedSpoke {
+  nodeId: string;
+  nodeName: string;
+  /** Current organic days of supply at this spoke. */
+  currentDaysOfSupply: number;
+  /** Projected days of supply after the cascade event. */
+  projectedDaysOfSupply: number;
+  tier: CascadeAffectedSpokeTier;
+}
+
+export interface CascadeScenario {
+  id: string;
+  triggerType: CascadeScenarioTriggerType;
+  triggerNodeId: string;
+  triggerNodeName: string;
+  triggerLabel: string;
+  severity: CascadeScenarioSeverity;
+  /** Confidence in the scenario projection based on data coverage. */
+  confidence: CascadeScenarioConfidence;
+  affectedSiteCount: number;
+  affectedSiteIds: string[];
+  affectedSiteNames: string[];
+  /** Per-site projection for each affected spoke. */
+  affectedSpokes: CascadeAffectedSpoke[];
+  /** Estimated days-of-supply impact across affected sites. */
+  projectedDosImpact: number;
+  leadTimeImpactHours: number;
+  narrative: string;
+}
+
+export interface CascadeAnalysis {
+  generatedAt: string;
+  scenarios: CascadeScenario[];
+}
+
+export type ReadinessLeaderboardEntryTier =
+  (typeof ReadinessLeaderboardEntryTier)[keyof typeof ReadinessLeaderboardEntryTier];
+
+export const ReadinessLeaderboardEntryTier = {
+  NOMINAL: "NOMINAL",
+  WATCH: "WATCH",
+  CRITICAL: "CRITICAL",
+} as const;
+
+export interface ReadinessLeaderboardEntry {
+  nodeId: string;
+  nodeName: string;
+  nodeType: string;
+  /** @nullable */
+  regionalHub?: string | null;
+  viableUnits: number;
+  viableDaysOfSupply: number;
+  daysUntilStockout: number;
+  /** Change in viable days-of-supply versus the previous ~24h snapshot for this site. */
+  deltaDosVs24h: number;
+  /** True when a previous snapshot exists; when false the delta is 0 and the UI should render an em-dash. */
+  hasBaseline: boolean;
+  tier: ReadinessLeaderboardEntryTier;
+  sparkline: HistoryPoint[];
+  /**
+   * Primary constraint at this site (cold_chain, reagents, blood, donors, or null).
+   * @nullable
+   */
+  constraintCategory?: string | null;
+  /** Path to the site's Blood Readiness tab. */
+  deeplink: string;
+}
+
+export interface ReadinessLeaderboard {
+  generatedAt: string;
+  entries: ReadinessLeaderboardEntry[];
+}
+
+export type ColdChainPulseEventSeverity =
+  (typeof ColdChainPulseEventSeverity)[keyof typeof ColdChainPulseEventSeverity];
+
+export const ColdChainPulseEventSeverity = {
+  WATCH: "WATCH",
+  WARNING: "WARNING",
+  CRITICAL: "CRITICAL",
+} as const;
+
+export interface ColdChainPulseEvent {
+  id: number;
+  occurredAt: string;
+  assetId: string;
+  assetName: string;
+  assetType: string;
+  nodeId: string;
+  nodeName: string;
+  severity: ColdChainPulseEventSeverity;
+  recordedTempC: number;
+  targetTempMinC: number;
+  targetTempMaxC: number;
+  peakTempDeltaC: number;
+  recovered: boolean;
+  /** @nullable */
+  resolvedAt?: string | null;
+  affectedUnits: number;
+  notes: string;
+}
+
+export interface ColdChainPulse {
+  generatedAt: string;
+  windowMinutes: number;
+  events: ColdChainPulseEvent[];
+}
+
+export type OverviewActivityItemSeverity =
+  (typeof OverviewActivityItemSeverity)[keyof typeof OverviewActivityItemSeverity];
+
+export const OverviewActivityItemSeverity = {
+  info: "info",
+  watch: "watch",
+  warning: "warning",
+  critical: "critical",
+} as const;
+
+export interface OverviewActivityItem {
+  id: string;
+  kind: string;
+  summary: string;
+  severity: OverviewActivityItemSeverity;
+  /** @nullable */
+  nodeId?: string | null;
+  /** @nullable */
+  nodeName?: string | null;
+  /** @nullable */
+  itemId?: string | null;
+  /** @nullable */
+  orderId?: string | null;
+  /** @nullable */
+  actorRole?: string | null;
+  createdAt: string;
+  /** @nullable */
+  deeplink?: string | null;
+}
+
+export interface OverviewActivityStream {
+  generatedAt: string;
+  items: OverviewActivityItem[];
+  /**
+   * Cursor for the next page (the createdAt of the last item). Null when there are no more items.
+   * @nullable
+   */
+  nextCursor?: string | null;
+}
+
+export interface MissionRow {
+  id: string;
+  label: string;
+  siteCount: number;
+}
+
+export interface MissionSupplyColumn {
+  id: string;
+  label: string;
+}
+
+export type MissionRiskCellTier =
+  (typeof MissionRiskCellTier)[keyof typeof MissionRiskCellTier];
+
+export const MissionRiskCellTier = {
+  NOMINAL: "NOMINAL",
+  WATCH: "WATCH",
+  CRITICAL: "CRITICAL",
+} as const;
+
+export interface MissionRiskCell {
+  missionId: string;
+  columnId: string;
+  tier: MissionRiskCellTier;
+  affectedSites: number;
+  rationale: string;
+  metricValue: number;
+}
+
+export interface MissionRiskMatrix {
+  generatedAt: string;
+  missions: MissionRow[];
+  supplyColumns: MissionSupplyColumn[];
+  cells: MissionRiskCell[];
+}
+
+export type AiOverviewBriefBullets = {
+  topRisk: string;
+  recommendedAction: string;
+  change: string;
+};
+
+export interface AiOverviewBrief {
+  generatedAt: string;
+  provider: string;
+  model: string;
+  cached: boolean;
+  /** True when the AI provider was unreachable and a deterministic fallback brief was used. */
+  fallback: boolean;
+  bullets: AiOverviewBriefBullets;
+  /**
+   * Raw model response text (null when fallback was used).
+   * @nullable
+   */
+  rawText?: string | null;
+}
+
 export type ListCatalogItemsParams = {
   search?: string;
   limit?: number;
@@ -1211,4 +1457,31 @@ export type GetRecommendationsParams = {
 
 export type ListActivityParams = {
   limit?: number;
+};
+
+export type GetOverviewLeaderboardParams = {
+  limit?: number;
+};
+
+export type GetOverviewColdChainPulseParams = {
+  windowMinutes?: number;
+};
+
+export type GetOverviewActivityStreamParams = {
+  /**
+   * @minimum 5
+   * @maximum 60
+   */
+  limit?: number;
+  /**
+   * ISO timestamp from a previous response's `nextCursor`. Returns items strictly older than this timestamp.
+   */
+  cursor?: string;
+};
+
+export type GetOverviewAiBriefParams = {
+  /**
+   * When "true", bypass the server-side cache and force regeneration.
+   */
+  refresh?: boolean;
 };

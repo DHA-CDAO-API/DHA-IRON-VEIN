@@ -19,9 +19,12 @@ import type {
 import type {
   AcknowledgeAlertInput,
   ActivityEntry,
+  AiOverviewBrief,
   Alert,
   AppSettings,
+  CascadeAnalysis,
   CatalogPage,
+  ColdChainPulse,
   Conversation,
   ConversationDetail,
   CreateConversationInput,
@@ -30,6 +33,10 @@ import type {
   DashboardOverview,
   ForecastInput,
   ForecastResult,
+  GetOverviewActivityStreamParams,
+  GetOverviewAiBriefParams,
+  GetOverviewColdChainPulseParams,
+  GetOverviewLeaderboardParams,
   GetRecommendationsParams,
   HealthCheckResponse,
   InventoryBalance,
@@ -40,14 +47,17 @@ import type {
   ListCatalogItemsParams,
   ListInventoryBalancesParams,
   ListOrdersParams,
+  MissionRiskMatrix,
   NetworkSnapshot,
   Node,
   NodeBloodReadiness,
   Order,
   OrderDetail,
+  OverviewActivityStream,
   PresetEvent,
   Profile,
   PromoteRecommendationOverrides,
+  ReadinessLeaderboard,
   Recommendation,
   RiskBoard,
   RoleDefinition,
@@ -3410,6 +3420,531 @@ export function useListActivity<
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getListActivityQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getGetOverviewCascadeUrl = () => {
+  return `/api/overview/cascade`;
+};
+
+export const getOverviewCascade = async (
+  options?: RequestInit,
+): Promise<CascadeAnalysis> => {
+  return customFetch<CascadeAnalysis>(getGetOverviewCascadeUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetOverviewCascadeQueryKey = () => {
+  return [`/api/overview/cascade`] as const;
+};
+
+export const getGetOverviewCascadeQueryOptions = <
+  TData = Awaited<ReturnType<typeof getOverviewCascade>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getOverviewCascade>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetOverviewCascadeQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getOverviewCascade>>
+  > = ({ signal }) => getOverviewCascade({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getOverviewCascade>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetOverviewCascadeQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getOverviewCascade>>
+>;
+export type GetOverviewCascadeQueryError = ErrorType<unknown>;
+
+export function useGetOverviewCascade<
+  TData = Awaited<ReturnType<typeof getOverviewCascade>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getOverviewCascade>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetOverviewCascadeQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getGetOverviewLeaderboardUrl = (
+  params?: GetOverviewLeaderboardParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/overview/leaderboard?${stringifiedParams}`
+    : `/api/overview/leaderboard`;
+};
+
+export const getOverviewLeaderboard = async (
+  params?: GetOverviewLeaderboardParams,
+  options?: RequestInit,
+): Promise<ReadinessLeaderboard> => {
+  return customFetch<ReadinessLeaderboard>(
+    getGetOverviewLeaderboardUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetOverviewLeaderboardQueryKey = (
+  params?: GetOverviewLeaderboardParams,
+) => {
+  return [`/api/overview/leaderboard`, ...(params ? [params] : [])] as const;
+};
+
+export const getGetOverviewLeaderboardQueryOptions = <
+  TData = Awaited<ReturnType<typeof getOverviewLeaderboard>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: GetOverviewLeaderboardParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getOverviewLeaderboard>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetOverviewLeaderboardQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getOverviewLeaderboard>>
+  > = ({ signal }) =>
+    getOverviewLeaderboard(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getOverviewLeaderboard>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetOverviewLeaderboardQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getOverviewLeaderboard>>
+>;
+export type GetOverviewLeaderboardQueryError = ErrorType<unknown>;
+
+export function useGetOverviewLeaderboard<
+  TData = Awaited<ReturnType<typeof getOverviewLeaderboard>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: GetOverviewLeaderboardParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getOverviewLeaderboard>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetOverviewLeaderboardQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getGetOverviewColdChainPulseUrl = (
+  params?: GetOverviewColdChainPulseParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/overview/cold-chain-pulse?${stringifiedParams}`
+    : `/api/overview/cold-chain-pulse`;
+};
+
+export const getOverviewColdChainPulse = async (
+  params?: GetOverviewColdChainPulseParams,
+  options?: RequestInit,
+): Promise<ColdChainPulse> => {
+  return customFetch<ColdChainPulse>(getGetOverviewColdChainPulseUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetOverviewColdChainPulseQueryKey = (
+  params?: GetOverviewColdChainPulseParams,
+) => {
+  return [
+    `/api/overview/cold-chain-pulse`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getGetOverviewColdChainPulseQueryOptions = <
+  TData = Awaited<ReturnType<typeof getOverviewColdChainPulse>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: GetOverviewColdChainPulseParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getOverviewColdChainPulse>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetOverviewColdChainPulseQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getOverviewColdChainPulse>>
+  > = ({ signal }) =>
+    getOverviewColdChainPulse(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getOverviewColdChainPulse>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetOverviewColdChainPulseQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getOverviewColdChainPulse>>
+>;
+export type GetOverviewColdChainPulseQueryError = ErrorType<unknown>;
+
+export function useGetOverviewColdChainPulse<
+  TData = Awaited<ReturnType<typeof getOverviewColdChainPulse>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: GetOverviewColdChainPulseParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getOverviewColdChainPulse>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetOverviewColdChainPulseQueryOptions(
+    params,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getGetOverviewActivityStreamUrl = (
+  params?: GetOverviewActivityStreamParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/overview/activity-stream?${stringifiedParams}`
+    : `/api/overview/activity-stream`;
+};
+
+export const getOverviewActivityStream = async (
+  params?: GetOverviewActivityStreamParams,
+  options?: RequestInit,
+): Promise<OverviewActivityStream> => {
+  return customFetch<OverviewActivityStream>(
+    getGetOverviewActivityStreamUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetOverviewActivityStreamQueryKey = (
+  params?: GetOverviewActivityStreamParams,
+) => {
+  return [
+    `/api/overview/activity-stream`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getGetOverviewActivityStreamQueryOptions = <
+  TData = Awaited<ReturnType<typeof getOverviewActivityStream>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: GetOverviewActivityStreamParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getOverviewActivityStream>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetOverviewActivityStreamQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getOverviewActivityStream>>
+  > = ({ signal }) =>
+    getOverviewActivityStream(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getOverviewActivityStream>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetOverviewActivityStreamQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getOverviewActivityStream>>
+>;
+export type GetOverviewActivityStreamQueryError = ErrorType<unknown>;
+
+export function useGetOverviewActivityStream<
+  TData = Awaited<ReturnType<typeof getOverviewActivityStream>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: GetOverviewActivityStreamParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getOverviewActivityStream>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetOverviewActivityStreamQueryOptions(
+    params,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getGetOverviewMissionRiskMatrixUrl = () => {
+  return `/api/overview/mission-risk-matrix`;
+};
+
+export const getOverviewMissionRiskMatrix = async (
+  options?: RequestInit,
+): Promise<MissionRiskMatrix> => {
+  return customFetch<MissionRiskMatrix>(getGetOverviewMissionRiskMatrixUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetOverviewMissionRiskMatrixQueryKey = () => {
+  return [`/api/overview/mission-risk-matrix`] as const;
+};
+
+export const getGetOverviewMissionRiskMatrixQueryOptions = <
+  TData = Awaited<ReturnType<typeof getOverviewMissionRiskMatrix>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getOverviewMissionRiskMatrix>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetOverviewMissionRiskMatrixQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getOverviewMissionRiskMatrix>>
+  > = ({ signal }) =>
+    getOverviewMissionRiskMatrix({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getOverviewMissionRiskMatrix>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetOverviewMissionRiskMatrixQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getOverviewMissionRiskMatrix>>
+>;
+export type GetOverviewMissionRiskMatrixQueryError = ErrorType<unknown>;
+
+export function useGetOverviewMissionRiskMatrix<
+  TData = Awaited<ReturnType<typeof getOverviewMissionRiskMatrix>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getOverviewMissionRiskMatrix>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetOverviewMissionRiskMatrixQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getGetOverviewAiBriefUrl = (params?: GetOverviewAiBriefParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/overview/ai-brief?${stringifiedParams}`
+    : `/api/overview/ai-brief`;
+};
+
+export const getOverviewAiBrief = async (
+  params?: GetOverviewAiBriefParams,
+  options?: RequestInit,
+): Promise<AiOverviewBrief> => {
+  return customFetch<AiOverviewBrief>(getGetOverviewAiBriefUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetOverviewAiBriefQueryKey = (
+  params?: GetOverviewAiBriefParams,
+) => {
+  return [`/api/overview/ai-brief`, ...(params ? [params] : [])] as const;
+};
+
+export const getGetOverviewAiBriefQueryOptions = <
+  TData = Awaited<ReturnType<typeof getOverviewAiBrief>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: GetOverviewAiBriefParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getOverviewAiBrief>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetOverviewAiBriefQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getOverviewAiBrief>>
+  > = ({ signal }) => getOverviewAiBrief(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getOverviewAiBrief>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetOverviewAiBriefQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getOverviewAiBrief>>
+>;
+export type GetOverviewAiBriefQueryError = ErrorType<unknown>;
+
+export function useGetOverviewAiBrief<
+  TData = Awaited<ReturnType<typeof getOverviewAiBrief>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: GetOverviewAiBriefParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getOverviewAiBrief>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetOverviewAiBriefQueryOptions(params, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

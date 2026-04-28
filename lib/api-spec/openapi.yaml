@@ -670,6 +670,93 @@ paths:
                 type: array
                 items: { $ref: "#/components/schemas/ActivityEntry" }
 
+  /overview/cascade:
+    get:
+      operationId: getOverviewCascade
+      tags: [overview]
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CascadeAnalysis" }
+
+  /overview/leaderboard:
+    get:
+      operationId: getOverviewLeaderboard
+      tags: [overview]
+      parameters:
+        - in: query
+          name: limit
+          schema: { type: integer, default: 8 }
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReadinessLeaderboard" }
+
+  /overview/cold-chain-pulse:
+    get:
+      operationId: getOverviewColdChainPulse
+      tags: [overview]
+      parameters:
+        - in: query
+          name: windowMinutes
+          schema: { type: integer, default: 60 }
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ColdChainPulse" }
+
+  /overview/activity-stream:
+    get:
+      operationId: getOverviewActivityStream
+      tags: [overview]
+      parameters:
+        - in: query
+          name: limit
+          schema: { type: integer, default: 20, minimum: 5, maximum: 60 }
+        - in: query
+          name: cursor
+          description: ISO timestamp from a previous response's `nextCursor`. Returns items strictly older than this timestamp.
+          schema: { type: string, format: date-time }
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OverviewActivityStream" }
+
+  /overview/mission-risk-matrix:
+    get:
+      operationId: getOverviewMissionRiskMatrix
+      tags: [overview]
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MissionRiskMatrix" }
+
+  /overview/ai-brief:
+    get:
+      operationId: getOverviewAiBrief
+      tags: [overview]
+      parameters:
+        - in: query
+          name: refresh
+          description: When "true", bypass the server-side cache and force regeneration.
+          schema: { type: boolean, default: false }
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AiOverviewBrief" }
+
 components:
   schemas:
     HealthCheckResponse:
@@ -1525,8 +1612,12 @@ components:
 
     DashboardOverview:
       type: object
-      required: [networkDaysOfSupply, openCriticalAlerts, openWarnAlerts, totalNodes, inFlightShipments, openOrders, pendingRecommendations, kpis, dosTrend, alertCountsBySeverity]
+      required: [generatedAt, networkDaysOfSupply, openCriticalAlerts, openWarnAlerts, totalNodes, inFlightShipments, openOrders, pendingRecommendations, kpis, dosTrend, alertCountsBySeverity]
       properties:
+        generatedAt:
+          type: string
+          format: date-time
+          description: ISO timestamp marking when this snapshot was assembled.
         networkDaysOfSupply: { type: number }
         openCriticalAlerts: { type: integer }
         openWarnAlerts: { type: integer }
@@ -1777,3 +1868,266 @@ components:
         nodesWithCriticalShortage:
           type: integer
           description: Number of blood-storing nodes whose reagent DOS is at or below the critical threshold.
+
+    CascadeAnalysis:
+      type: object
+      required: [generatedAt, scenarios]
+      properties:
+        generatedAt: { type: string, format: date-time }
+        scenarios:
+          type: array
+          items: { $ref: "#/components/schemas/CascadeScenario" }
+
+    CascadeScenario:
+      type: object
+      required:
+        - id
+        - triggerType
+        - triggerNodeId
+        - triggerNodeName
+        - triggerLabel
+        - severity
+        - confidence
+        - affectedSiteCount
+        - affectedSiteIds
+        - affectedSiteNames
+        - affectedSpokes
+        - projectedDosImpact
+        - leadTimeImpactHours
+        - narrative
+      properties:
+        id: { type: string }
+        triggerType:
+          type: string
+          enum: [hub_loss, generator_failure, route_interdiction]
+        triggerNodeId: { type: string }
+        triggerNodeName: { type: string }
+        triggerLabel: { type: string }
+        severity: { type: string, enum: [NOMINAL, WATCH, CRITICAL] }
+        confidence:
+          type: string
+          enum: [HIGH, MEDIUM, LOW]
+          description: Confidence in the scenario projection based on data coverage.
+        affectedSiteCount: { type: integer }
+        affectedSiteIds:
+          type: array
+          items: { type: string }
+        affectedSiteNames:
+          type: array
+          items: { type: string }
+        affectedSpokes:
+          type: array
+          description: Per-site projection for each affected spoke.
+          items: { $ref: "#/components/schemas/CascadeAffectedSpoke" }
+        projectedDosImpact:
+          type: number
+          description: Estimated days-of-supply impact across affected sites.
+        leadTimeImpactHours: { type: integer }
+        narrative: { type: string }
+
+    CascadeAffectedSpoke:
+      type: object
+      required:
+        - nodeId
+        - nodeName
+        - currentDaysOfSupply
+        - projectedDaysOfSupply
+        - tier
+      properties:
+        nodeId: { type: string }
+        nodeName: { type: string }
+        currentDaysOfSupply:
+          type: number
+          description: Current organic days of supply at this spoke.
+        projectedDaysOfSupply:
+          type: number
+          description: Projected days of supply after the cascade event.
+        tier: { type: string, enum: [NOMINAL, WATCH, CRITICAL] }
+
+    ReadinessLeaderboard:
+      type: object
+      required: [generatedAt, entries]
+      properties:
+        generatedAt: { type: string, format: date-time }
+        entries:
+          type: array
+          items: { $ref: "#/components/schemas/ReadinessLeaderboardEntry" }
+
+    ReadinessLeaderboardEntry:
+      type: object
+      required:
+        - nodeId
+        - nodeName
+        - nodeType
+        - viableUnits
+        - viableDaysOfSupply
+        - daysUntilStockout
+        - deltaDosVs24h
+        - hasBaseline
+        - tier
+        - sparkline
+        - deeplink
+      properties:
+        nodeId: { type: string }
+        nodeName: { type: string }
+        nodeType: { type: string }
+        regionalHub: { type: ["string", "null"] }
+        viableUnits: { type: integer }
+        viableDaysOfSupply: { type: number }
+        daysUntilStockout: { type: number }
+        deltaDosVs24h:
+          type: number
+          description: Change in viable days-of-supply versus the previous ~24h snapshot for this site.
+        hasBaseline:
+          type: boolean
+          description: True when a previous snapshot exists; when false the delta is 0 and the UI should render an em-dash.
+        tier: { type: string, enum: [NOMINAL, WATCH, CRITICAL] }
+        sparkline:
+          type: array
+          items: { $ref: "#/components/schemas/HistoryPoint" }
+        constraintCategory:
+          type: ["string", "null"]
+          description: Primary constraint at this site (cold_chain, reagents, blood, donors, or null).
+        deeplink:
+          type: string
+          description: Path to the site's Blood Readiness tab.
+
+    ColdChainPulse:
+      type: object
+      required: [generatedAt, windowMinutes, events]
+      properties:
+        generatedAt: { type: string, format: date-time }
+        windowMinutes: { type: integer }
+        events:
+          type: array
+          items: { $ref: "#/components/schemas/ColdChainPulseEvent" }
+
+    ColdChainPulseEvent:
+      type: object
+      required:
+        - id
+        - occurredAt
+        - assetId
+        - assetName
+        - assetType
+        - nodeId
+        - nodeName
+        - severity
+        - recordedTempC
+        - targetTempMinC
+        - targetTempMaxC
+        - peakTempDeltaC
+        - recovered
+        - affectedUnits
+        - notes
+      properties:
+        id: { type: integer }
+        occurredAt: { type: string, format: date-time }
+        assetId: { type: string }
+        assetName: { type: string }
+        assetType: { type: string }
+        nodeId: { type: string }
+        nodeName: { type: string }
+        severity: { type: string, enum: [WATCH, WARNING, CRITICAL] }
+        recordedTempC: { type: number }
+        targetTempMinC: { type: number }
+        targetTempMaxC: { type: number }
+        peakTempDeltaC: { type: number }
+        recovered: { type: boolean }
+        resolvedAt: { type: ["string", "null"], format: date-time }
+        affectedUnits: { type: integer }
+        notes: { type: string }
+
+    OverviewActivityStream:
+      type: object
+      required: [generatedAt, items]
+      properties:
+        generatedAt: { type: string, format: date-time }
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/OverviewActivityItem" }
+        nextCursor:
+          type: ["string", "null"]
+          format: date-time
+          description: Cursor for the next page (the createdAt of the last item). Null when there are no more items.
+
+    OverviewActivityItem:
+      type: object
+      required: [id, kind, summary, severity, createdAt]
+      properties:
+        id: { type: string }
+        kind: { type: string }
+        summary: { type: string }
+        severity:
+          type: string
+          enum: [info, watch, warning, critical]
+        nodeId: { type: ["string", "null"] }
+        nodeName: { type: ["string", "null"] }
+        itemId: { type: ["string", "null"] }
+        orderId: { type: ["string", "null"] }
+        actorRole: { type: ["string", "null"] }
+        createdAt: { type: string, format: date-time }
+        deeplink: { type: ["string", "null"] }
+
+    MissionRiskMatrix:
+      type: object
+      required: [generatedAt, missions, supplyColumns, cells]
+      properties:
+        generatedAt: { type: string, format: date-time }
+        missions:
+          type: array
+          items: { $ref: "#/components/schemas/MissionRow" }
+        supplyColumns:
+          type: array
+          items: { $ref: "#/components/schemas/MissionSupplyColumn" }
+        cells:
+          type: array
+          items: { $ref: "#/components/schemas/MissionRiskCell" }
+
+    MissionRow:
+      type: object
+      required: [id, label, siteCount]
+      properties:
+        id: { type: string }
+        label: { type: string }
+        siteCount: { type: integer }
+
+    MissionSupplyColumn:
+      type: object
+      required: [id, label]
+      properties:
+        id: { type: string }
+        label: { type: string }
+
+    MissionRiskCell:
+      type: object
+      required: [missionId, columnId, tier, affectedSites, rationale, metricValue]
+      properties:
+        missionId: { type: string }
+        columnId: { type: string }
+        tier: { type: string, enum: [NOMINAL, WATCH, CRITICAL] }
+        affectedSites: { type: integer }
+        rationale: { type: string }
+        metricValue: { type: number }
+
+    AiOverviewBrief:
+      type: object
+      required: [generatedAt, provider, model, cached, fallback, bullets]
+      properties:
+        generatedAt: { type: string, format: date-time }
+        provider: { type: string }
+        model: { type: string }
+        cached: { type: boolean }
+        fallback:
+          type: boolean
+          description: True when the AI provider was unreachable and a deterministic fallback brief was used.
+        bullets:
+          type: object
+          required: [topRisk, recommendedAction, change]
+          properties:
+            topRisk: { type: string }
+            recommendedAction: { type: string }
+            change: { type: string }
+        rawText:
+          type: ["string", "null"]
+          description: Raw model response text (null when fallback was used).

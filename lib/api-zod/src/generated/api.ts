@@ -1595,6 +1595,9 @@ export const ListRolesResponseItem = zod.object({
 export const ListRolesResponse = zod.array(ListRolesResponseItem);
 
 export const GetDashboardOverviewResponse = zod.object({
+  generatedAt: zod.coerce
+    .date()
+    .describe("ISO timestamp marking when this snapshot was assembled."),
   networkDaysOfSupply: zod.number(),
   openCriticalAlerts: zod.number(),
   openWarnAlerts: zod.number(),
@@ -1849,3 +1852,232 @@ export const ListActivityResponseItem = zod.object({
   createdAt: zod.coerce.date(),
 });
 export const ListActivityResponse = zod.array(ListActivityResponseItem);
+
+export const GetOverviewCascadeResponse = zod.object({
+  generatedAt: zod.coerce.date(),
+  scenarios: zod.array(
+    zod.object({
+      id: zod.string(),
+      triggerType: zod.enum([
+        "hub_loss",
+        "generator_failure",
+        "route_interdiction",
+      ]),
+      triggerNodeId: zod.string(),
+      triggerNodeName: zod.string(),
+      triggerLabel: zod.string(),
+      severity: zod.enum(["NOMINAL", "WATCH", "CRITICAL"]),
+      confidence: zod
+        .enum(["HIGH", "MEDIUM", "LOW"])
+        .describe(
+          "Confidence in the scenario projection based on data coverage.",
+        ),
+      affectedSiteCount: zod.number(),
+      affectedSiteIds: zod.array(zod.string()),
+      affectedSiteNames: zod.array(zod.string()),
+      affectedSpokes: zod
+        .array(
+          zod.object({
+            nodeId: zod.string(),
+            nodeName: zod.string(),
+            currentDaysOfSupply: zod
+              .number()
+              .describe("Current organic days of supply at this spoke."),
+            projectedDaysOfSupply: zod
+              .number()
+              .describe("Projected days of supply after the cascade event."),
+            tier: zod.enum(["NOMINAL", "WATCH", "CRITICAL"]),
+          }),
+        )
+        .describe("Per-site projection for each affected spoke."),
+      projectedDosImpact: zod
+        .number()
+        .describe("Estimated days-of-supply impact across affected sites."),
+      leadTimeImpactHours: zod.number(),
+      narrative: zod.string(),
+    }),
+  ),
+});
+
+export const getOverviewLeaderboardQueryLimitDefault = 8;
+
+export const GetOverviewLeaderboardQueryParams = zod.object({
+  limit: zod.coerce.number().default(getOverviewLeaderboardQueryLimitDefault),
+});
+
+export const GetOverviewLeaderboardResponse = zod.object({
+  generatedAt: zod.coerce.date(),
+  entries: zod.array(
+    zod.object({
+      nodeId: zod.string(),
+      nodeName: zod.string(),
+      nodeType: zod.string(),
+      regionalHub: zod.string().nullish(),
+      viableUnits: zod.number(),
+      viableDaysOfSupply: zod.number(),
+      daysUntilStockout: zod.number(),
+      deltaDosVs24h: zod
+        .number()
+        .describe(
+          "Change in viable days-of-supply versus the previous ~24h snapshot for this site.",
+        ),
+      hasBaseline: zod
+        .boolean()
+        .describe(
+          "True when a previous snapshot exists; when false the delta is 0 and the UI should render an em-dash.",
+        ),
+      tier: zod.enum(["NOMINAL", "WATCH", "CRITICAL"]),
+      sparkline: zod.array(
+        zod.object({
+          day: zod.number(),
+          value: zod.number(),
+          label: zod.string().nullish(),
+        }),
+      ),
+      constraintCategory: zod
+        .string()
+        .nullish()
+        .describe(
+          "Primary constraint at this site (cold_chain, reagents, blood, donors, or null).",
+        ),
+      deeplink: zod
+        .string()
+        .describe("Path to the site's Blood Readiness tab."),
+    }),
+  ),
+});
+
+export const getOverviewColdChainPulseQueryWindowMinutesDefault = 60;
+
+export const GetOverviewColdChainPulseQueryParams = zod.object({
+  windowMinutes: zod.coerce
+    .number()
+    .default(getOverviewColdChainPulseQueryWindowMinutesDefault),
+});
+
+export const GetOverviewColdChainPulseResponse = zod.object({
+  generatedAt: zod.coerce.date(),
+  windowMinutes: zod.number(),
+  events: zod.array(
+    zod.object({
+      id: zod.number(),
+      occurredAt: zod.coerce.date(),
+      assetId: zod.string(),
+      assetName: zod.string(),
+      assetType: zod.string(),
+      nodeId: zod.string(),
+      nodeName: zod.string(),
+      severity: zod.enum(["WATCH", "WARNING", "CRITICAL"]),
+      recordedTempC: zod.number(),
+      targetTempMinC: zod.number(),
+      targetTempMaxC: zod.number(),
+      peakTempDeltaC: zod.number(),
+      recovered: zod.boolean(),
+      resolvedAt: zod.coerce.date().nullish(),
+      affectedUnits: zod.number(),
+      notes: zod.string(),
+    }),
+  ),
+});
+
+export const getOverviewActivityStreamQueryLimitDefault = 20;
+export const getOverviewActivityStreamQueryLimitMin = 5;
+export const getOverviewActivityStreamQueryLimitMax = 60;
+
+export const GetOverviewActivityStreamQueryParams = zod.object({
+  limit: zod.coerce
+    .number()
+    .min(getOverviewActivityStreamQueryLimitMin)
+    .max(getOverviewActivityStreamQueryLimitMax)
+    .default(getOverviewActivityStreamQueryLimitDefault),
+  cursor: zod
+    .date()
+    .optional()
+    .describe(
+      "ISO timestamp from a previous response's `nextCursor`. Returns items strictly older than this timestamp.",
+    ),
+});
+
+export const GetOverviewActivityStreamResponse = zod.object({
+  generatedAt: zod.coerce.date(),
+  items: zod.array(
+    zod.object({
+      id: zod.string(),
+      kind: zod.string(),
+      summary: zod.string(),
+      severity: zod.enum(["info", "watch", "warning", "critical"]),
+      nodeId: zod.string().nullish(),
+      nodeName: zod.string().nullish(),
+      itemId: zod.string().nullish(),
+      orderId: zod.string().nullish(),
+      actorRole: zod.string().nullish(),
+      createdAt: zod.coerce.date(),
+      deeplink: zod.string().nullish(),
+    }),
+  ),
+  nextCursor: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Cursor for the next page (the createdAt of the last item). Null when there are no more items.",
+    ),
+});
+
+export const GetOverviewMissionRiskMatrixResponse = zod.object({
+  generatedAt: zod.coerce.date(),
+  missions: zod.array(
+    zod.object({
+      id: zod.string(),
+      label: zod.string(),
+      siteCount: zod.number(),
+    }),
+  ),
+  supplyColumns: zod.array(
+    zod.object({
+      id: zod.string(),
+      label: zod.string(),
+    }),
+  ),
+  cells: zod.array(
+    zod.object({
+      missionId: zod.string(),
+      columnId: zod.string(),
+      tier: zod.enum(["NOMINAL", "WATCH", "CRITICAL"]),
+      affectedSites: zod.number(),
+      rationale: zod.string(),
+      metricValue: zod.number(),
+    }),
+  ),
+});
+
+export const getOverviewAiBriefQueryRefreshDefault = false;
+
+export const GetOverviewAiBriefQueryParams = zod.object({
+  refresh: zod.coerce
+    .boolean()
+    .default(getOverviewAiBriefQueryRefreshDefault)
+    .describe(
+      'When \"true\", bypass the server-side cache and force regeneration.',
+    ),
+});
+
+export const GetOverviewAiBriefResponse = zod.object({
+  generatedAt: zod.coerce.date(),
+  provider: zod.string(),
+  model: zod.string(),
+  cached: zod.boolean(),
+  fallback: zod
+    .boolean()
+    .describe(
+      "True when the AI provider was unreachable and a deterministic fallback brief was used.",
+    ),
+  bullets: zod.object({
+    topRisk: zod.string(),
+    recommendedAction: zod.string(),
+    change: zod.string(),
+  }),
+  rawText: zod
+    .string()
+    .nullish()
+    .describe("Raw model response text (null when fallback was used)."),
+});
