@@ -82,6 +82,16 @@ export const RoutePriority = {
   tertiary: "tertiary",
 } as const;
 
+export type RouteCategoriesItem =
+  (typeof RouteCategoriesItem)[keyof typeof RouteCategoriesItem];
+
+export const RouteCategoriesItem = {
+  blood_products: "blood_products",
+  supplies: "supplies",
+  ppe: "ppe",
+  other: "other",
+} as const;
+
 export interface Route {
   id: string;
   fromNode: string;
@@ -90,7 +100,22 @@ export interface Route {
   days: number;
   reliability: number;
   modality?: string;
+  /** Categories of supply that this route is currently carrying (derived from in-flight shipments + recent orders). */
+  categories?: RouteCategoriesItem[];
 }
+
+/**
+ * Top-level category of the item being shipped
+ */
+export type InFlightShipmentCategory =
+  (typeof InFlightShipmentCategory)[keyof typeof InFlightShipmentCategory];
+
+export const InFlightShipmentCategory = {
+  blood_products: "blood_products",
+  supplies: "supplies",
+  ppe: "ppe",
+  other: "other",
+} as const;
 
 export interface InFlightShipment {
   id: string;
@@ -103,6 +128,8 @@ export interface InFlightShipment {
   /** 0..1 */
   progress: number;
   priority?: string;
+  /** Top-level category of the item being shipped */
+  category?: InFlightShipmentCategory;
 }
 
 export interface ThreatOverlay {
@@ -112,12 +139,49 @@ export interface ThreatOverlay {
   polygon: number[][];
 }
 
+/**
+ * Threat tier derived from risk score and open alert severity
+ */
+export type NetworkSnapshotRiskByNodeItemTier =
+  (typeof NetworkSnapshotRiskByNodeItemTier)[keyof typeof NetworkSnapshotRiskByNodeItemTier];
+
+export const NetworkSnapshotRiskByNodeItemTier = {
+  nominal: "nominal",
+  heightened: "heightened",
+  critical: "critical",
+} as const;
+
+/**
+ * Minimum days-of-supply for items in each category at this node
+ */
+export type NetworkSnapshotRiskByNodeItemDosByCategory = {
+  [key: string]: number;
+};
+
+export type NetworkSnapshotRiskByNodeItemTopCriticalItemsItem = {
+  itemId: string;
+  itemName: string;
+  category?: string;
+  daysOfSupply: number;
+  onHand?: number;
+};
+
 export type NetworkSnapshotRiskByNodeItem = {
   nodeId: string;
   riskScore: number;
   daysOfSupply: number;
   openAlerts: number;
   criticalShortItems?: number;
+  /** Threat tier derived from risk score and open alert severity */
+  tier?: NetworkSnapshotRiskByNodeItemTier;
+  /** Minimum days-of-supply for items in each category at this node */
+  dosByCategory?: NetworkSnapshotRiskByNodeItemDosByCategory;
+  /** Top 3 most-critical items at this node by lowest DOS */
+  topCriticalItems?: NetworkSnapshotRiskByNodeItemTopCriticalItemsItem[];
+  /** @nullable */
+  lastShipmentInAt?: string | null;
+  /** @nullable */
+  lastShipmentOutAt?: string | null;
 };
 
 export interface NetworkSnapshot {
@@ -127,6 +191,8 @@ export interface NetworkSnapshot {
   shipments: InFlightShipment[];
   riskByNode: NetworkSnapshotRiskByNodeItem[];
   threats: ThreatOverlay[];
+  /** Polygon (lon,lat pairs) outlining the USINDOPACOM area of responsibility */
+  aorBoundary?: number[][];
   /** @nullable */
   focusedHubId: string | null;
   operationalState?: string;

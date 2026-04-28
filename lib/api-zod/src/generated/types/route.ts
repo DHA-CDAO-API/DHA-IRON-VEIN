@@ -5,6 +5,7 @@
  * Predictive Sustainment Platform API for INDOPACOM medical logistics decision support.
  * OpenAPI spec version: 1.0.0
  */
+import type { RouteCategoriesItem } from "./routeCategoriesItem";
 import type { RoutePriority } from "./routePriority";
 
 export interface Route {
@@ -15,4 +16,6 @@ export interface Route {
   days: number;
   reliability: number;
   modality?: string;
+  /** Categories of supply that this route is currently carrying (derived from in-flight shipments + recent orders). */
+  categories?: RouteCategoriesItem[];
 }

@@ -88,6 +88,12 @@ export const ListRoutesResponseItem = zod.object({
   days: zod.number(),
   reliability: zod.number(),
   modality: zod.string().optional(),
+  categories: zod
+    .array(zod.enum(["blood_products", "supplies", "ppe", "other"]))
+    .optional()
+    .describe(
+      "Categories of supply that this route is currently carrying (derived from in-flight shipments + recent orders).",
+    ),
 });
 export const ListRoutesResponse = zod.array(ListRoutesResponseItem);
 
@@ -120,6 +126,12 @@ export const GetNetworkSnapshotResponse = zod.object({
       days: zod.number(),
       reliability: zod.number(),
       modality: zod.string().optional(),
+      categories: zod
+        .array(zod.enum(["blood_products", "supplies", "ppe", "other"]))
+        .optional()
+        .describe(
+          "Categories of supply that this route is currently carrying (derived from in-flight shipments + recent orders).",
+        ),
     }),
   ),
   shipments: zod.array(
@@ -133,6 +145,10 @@ export const GetNetworkSnapshotResponse = zod.object({
       etaDays: zod.number(),
       progress: zod.number().describe("0..1"),
       priority: zod.string().optional(),
+      category: zod
+        .enum(["blood_products", "supplies", "ppe", "other"])
+        .optional()
+        .describe("Top-level category of the item being shipped"),
     }),
   ),
   riskByNode: zod.array(
@@ -142,6 +158,32 @@ export const GetNetworkSnapshotResponse = zod.object({
       daysOfSupply: zod.number(),
       openAlerts: zod.number(),
       criticalShortItems: zod.number().optional(),
+      tier: zod
+        .enum(["nominal", "heightened", "critical"])
+        .optional()
+        .describe(
+          "Threat tier derived from risk score and open alert severity",
+        ),
+      dosByCategory: zod
+        .record(zod.string(), zod.number())
+        .optional()
+        .describe(
+          "Minimum days-of-supply for items in each category at this node",
+        ),
+      topCriticalItems: zod
+        .array(
+          zod.object({
+            itemId: zod.string(),
+            itemName: zod.string(),
+            category: zod.string().optional(),
+            daysOfSupply: zod.number(),
+            onHand: zod.number().optional(),
+          }),
+        )
+        .optional()
+        .describe("Top 3 most-critical items at this node by lowest DOS"),
+      lastShipmentInAt: zod.coerce.date().nullish(),
+      lastShipmentOutAt: zod.coerce.date().nullish(),
     }),
   ),
   threats: zod.array(
@@ -152,6 +194,12 @@ export const GetNetworkSnapshotResponse = zod.object({
       polygon: zod.array(zod.array(zod.number())),
     }),
   ),
+  aorBoundary: zod
+    .array(zod.array(zod.number()))
+    .optional()
+    .describe(
+      "Polygon (lon,lat pairs) outlining the USINDOPACOM area of responsibility",
+    ),
   focusedHubId: zod.string().nullable(),
   operationalState: zod.string().optional(),
 });

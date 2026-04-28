@@ -2,9 +2,12 @@ import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { Map as MapLibre } from 'react-map-gl/maplibre';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import DeckGL from '@deck.gl/react';
-import { ScatterplotLayer, PathLayer } from '@deck.gl/layers';
+import { ScatterplotLayer, ArcLayer, PathLayer, ColumnLayer } from '@deck.gl/layers';
 import { TripsLayer } from '@deck.gl/geo-layers';
-import { FlyToInterpolator, type MapViewState } from '@deck.gl/core';
+import { type MapViewState } from '@deck.gl/core';
+
+export type SupplyCategory = 'blood_products' | 'supplies' | 'ppe' | 'other';
+export type ThreatTier = 'nominal' | 'heightened' | 'critical';
 
 interface NetworkMapProps {
   nodes?: any[];
@@ -12,32 +15,62 @@ interface NetworkMapProps {
   shipments?: any[];
   threats?: any[];
   riskByNode?: any[];
-  onNodeClick?: (node: any) => void;
+  aorBoundary?: number[][];
+  /**
+   * Set of categories the user has selected via the layer panel. If the set is
+   * empty (or contains all categories) the map shows everything.
+   */
+  selectedCategories?: Set<SupplyCategory>;
+  showThreats?: boolean;
+  showAOR?: boolean;
+  onNodeClick?: (node: any, riskInfo: any | null) => void;
   viewState?: MapViewState;
   onViewStateChange?: (params: { viewState: MapViewState }) => void;
-  autoPan?: boolean;
 }
 
+// INDOPACOM AOR-spanning view: ~60°E → ~110°W, ~60°N → ~60°S. Centred over
+// the dateline with enough zoom-out to show India through the eastern Pacific.
 const INITIAL_VIEW_STATE: MapViewState = {
-  longitude: 138,
-  latitude: 18,
-  zoom: 3.1,
-  pitch: 38,
+  longitude: 150,
+  latitude: 10,
+  zoom: 1.7,
+  pitch: 28,
   bearing: 0,
 };
 
-// Subdued dark basemap that complements the new warm slate theme
 const MAP_STYLE = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json';
 
-// Theme-aligned palette (RGBA arrays, 0-255)
-const COLOR = {
-  routeIdle: [148, 163, 184, 90] as [number, number, number, number],         // muted slate
-  shipmentTeal: [76, 196, 196, 230] as [number, number, number, number],     // primary teal
-  nodeNominal: [160, 200, 200, 230] as [number, number, number, number],     // pale teal
-  nodeWarn: [232, 168, 76, 240] as [number, number, number, number],         // warm amber
-  nodeAlert: [220, 64, 76, 245] as [number, number, number, number],         // blood crimson
-  pulseAlert: [220, 64, 76, 80] as [number, number, number, number],
+// Centralised threat-tier palette. Used by node fills, halos, popup badges,
+// and the route-end colour gradient on at-risk shipments so the same node
+// reads consistently everywhere on the map.
+export const TIER_COLOR: Record<ThreatTier, [number, number, number]> = {
+  nominal: [88, 196, 158],     // emerald / nominal
+  heightened: [232, 168, 76],  // warm amber / WATCH
+  critical: [220, 64, 76],     // blood crimson / CRITICAL
 };
+
+export const TIER_LABEL: Record<ThreatTier, string> = {
+  nominal: 'NOMINAL',
+  heightened: 'WATCH',
+  critical: 'CRITICAL',
+};
+
+export function tierForRisk(score: number, openAlerts = 0): ThreatTier {
+  if (score >= 70) return 'critical';
+  if (score >= 35 || openAlerts > 0) return 'heightened';
+  return 'nominal';
+}
+
+// Per-category palette for arcs/animated trips so the user can tell flows apart
+const CATEGORY_COLOR: Record<SupplyCategory, [number, number, number]> = {
+  blood_products: [220, 64, 76],     // crimson — life-saving
+  supplies: [76, 196, 196],          // teal — primary
+  ppe: [180, 130, 230],              // violet — barrier
+  other: [148, 163, 184],            // muted slate
+};
+
+const ROUTE_BASE_COLOR: [number, number, number, number] = [148, 163, 184, 90];
+const ROUTE_DIM_COLOR: [number, number, number, number] = [80, 90, 105, 35];
 
 function detectWebGL(): boolean {
   try {
@@ -52,9 +85,9 @@ function detectWebGL(): boolean {
   }
 }
 
-// Compute a curved great-circle-ish polyline between two lon/lat points.
-// Uses spherical interpolation (slerp on unit sphere) for accuracy across
-// the Pacific theater (avoids the open-ocean straight-line artefact).
+// Compute a curved great-circle polyline between two lon/lat points using
+// spherical interpolation. Keeps trip polylines from "wrapping" across the
+// antimeridian, which matters for INDOPACOM (Pacific-spanning) routes.
 function greatCircleWaypoints(
   lon1: number,
   lat1: number,
@@ -91,7 +124,6 @@ function greatCircleWaypoints(
     const φ = Math.atan2(z, Math.sqrt(x * x + y * y));
     let λ = Math.atan2(y, x);
     let lon = toDeg(λ);
-    // Keep longitudes contiguous so paths don't wrap across the antimeridian
     if (i > 0) {
       const prev = pts[i - 1][0];
       while (lon - prev > 180) lon -= 360;
@@ -103,7 +135,7 @@ function greatCircleWaypoints(
 }
 
 function NetworkFallback({ nodes = [], riskByNode = [], onNodeClick }: NetworkMapProps) {
-  const riskMap = new Map(riskByNode.map((r) => [r.nodeId, r.riskScore]));
+  const riskMap = new Map(riskByNode.map((r) => [r.nodeId, r]));
   return (
     <div
       className="absolute inset-0 overflow-auto p-4"
@@ -114,15 +146,16 @@ function NetworkFallback({ nodes = [], riskByNode = [], onNodeClick }: NetworkMa
       </div>
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
         {nodes.map((n) => {
-          const risk = (riskMap.get(n.id) as number | undefined) ?? 0;
+          const r: any = riskMap.get(n.id);
+          const tier: ThreatTier = (r?.tier as ThreatTier) ?? tierForRisk(r?.riskScore ?? 0, r?.openAlerts ?? 0);
           const ring =
-            risk > 80 ? 'border-destructive text-destructive'
-            : risk > 50 ? 'border-amber-500 text-amber-400'
+            tier === 'critical' ? 'border-destructive text-destructive'
+            : tier === 'heightened' ? 'border-amber-500 text-amber-400'
             : 'border-primary/60 text-primary';
           return (
             <button
               key={n.id}
-              onClick={() => onNodeClick?.(n)}
+              onClick={() => onNodeClick?.(n, r ?? null)}
               className={`text-left border ${ring} bg-card/70 rounded p-2 hover:bg-card transition`}
             >
               <div className="text-xs font-mono opacity-70">{n.type || 'NODE'}</div>
@@ -130,7 +163,9 @@ function NetworkFallback({ nodes = [], riskByNode = [], onNodeClick }: NetworkMa
               <div className="text-[10px] font-mono opacity-60">
                 {Number(n.latitude).toFixed(2)}, {Number(n.longitude).toFixed(2)}
               </div>
-              <div className="text-[10px] font-mono mt-1">RISK {risk.toFixed(0)}</div>
+              <div className="text-[10px] font-mono mt-1">
+                {TIER_LABEL[tier]} · DOS {r?.daysOfSupply ?? '—'}
+              </div>
             </button>
           );
         })}
@@ -150,9 +185,7 @@ class WebGLBoundary extends React.Component<
   static getDerivedStateFromError() {
     return { failed: true };
   }
-  componentDidCatch() {
-    /* swallowed */
-  }
+  componentDidCatch() { /* swallowed */ }
   render() {
     return this.state.failed ? this.props.fallback : this.props.children;
   }
@@ -163,17 +196,19 @@ export default function NetworkGLMap(props: NetworkMapProps) {
     nodes = [],
     routes = [],
     shipments = [],
+    threats = [],
     riskByNode = [],
+    aorBoundary,
+    selectedCategories,
+    showThreats = true,
+    showAOR = true,
     onNodeClick,
     viewState,
     onViewStateChange,
-    autoPan = true,
   } = props;
 
   const [hasWebGL, setHasWebGL] = useState<boolean | null>(null);
-  // Drive the TripsLayer animation (looped time)
   const [time, setTime] = useState(0);
-  // Internal viewState used only when parent does not supply one (auto-pan)
   const [internalView, setInternalView] = useState<MapViewState>(viewState ?? INITIAL_VIEW_STATE);
   const animRef = useRef<number | null>(null);
 
@@ -181,8 +216,8 @@ export default function NetworkGLMap(props: NetworkMapProps) {
     setHasWebGL(detectWebGL());
   }, []);
 
-  // Smooth animation loop (~60fps), loops every ~24s of "shipment time"
-  const TRIP_LENGTH = 1800; // virtual seconds, tuned with getTimestamps below
+  // The basemap stays still; only the trip particles move.
+  const TRIP_LENGTH = 1800;
   useEffect(() => {
     if (hasWebGL !== true) return;
     let mounted = true;
@@ -191,7 +226,7 @@ export default function NetworkGLMap(props: NetworkMapProps) {
       if (!mounted) return;
       const dt = (now - last) / 1000;
       last = now;
-      setTime((t) => (t + dt * 90) % TRIP_LENGTH); // 90 virtual seconds / wall second
+      setTime((t) => (t + dt * 90) % TRIP_LENGTH);
       animRef.current = requestAnimationFrame(tick);
     };
     animRef.current = requestAnimationFrame(tick);
@@ -206,98 +241,239 @@ export default function NetworkGLMap(props: NetworkMapProps) {
     [nodes],
   );
 
+  const riskByNodeMap = useMemo(
+    () => new Map(riskByNode.map((r: any) => [r.nodeId, r])),
+    [riskByNode],
+  );
+
+  // Decide whether a route / shipment passes the active layer filter.
+  const allCategoriesActive = useMemo(() => {
+    if (!selectedCategories || selectedCategories.size === 0) return true;
+    return false;
+  }, [selectedCategories]);
+
+  const categoryActive = (cat: string | undefined): boolean => {
+    if (allCategoriesActive) return true;
+    if (!cat) return false;
+    return selectedCategories!.has(cat as SupplyCategory);
+  };
+
+  const routeMatchesFilter = (r: any): boolean => {
+    if (allCategoriesActive) return true;
+    const cats: string[] = r.categories ?? [];
+    if (cats.length === 0) return false;
+    for (const c of cats) if (categoryActive(c)) return true;
+    return false;
+  };
+
   // Pre-compute curved waypoints for every route once
   const routePaths = useMemo(() => {
-    const out: Array<{ id: string; path: Array<[number, number]>; reliability: number }> = [];
+    const out: Array<{
+      id: string;
+      from: [number, number];
+      to: [number, number];
+      path: Array<[number, number]>;
+      categories: string[];
+      reliability: number;
+      active: boolean;
+    }> = [];
     for (const r of routes) {
       const a: any = nodeIndex.get(r.fromNode);
       const b: any = nodeIndex.get(r.toNode);
       if (!a || !b) continue;
       out.push({
-        id: `${r.fromNode}->${r.toNode}`,
+        id: r.id ?? `${r.fromNode}->${r.toNode}`,
+        from: [a.longitude, a.latitude],
+        to: [b.longitude, b.latitude],
         path: greatCircleWaypoints(a.longitude, a.latitude, b.longitude, b.latitude, 36),
+        categories: r.categories ?? [],
         reliability: r.reliability ?? 0.9,
+        active: routeMatchesFilter(r),
       });
     }
     return out;
-  }, [routes, nodeIndex]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [routes, nodeIndex, allCategoriesActive, selectedCategories]);
 
-  // Build shipment trips (waypoints + per-vertex timestamps).
-  // If shipments are present, animate those; otherwise animate a representative
-  // subset of routes so the map always looks alive.
+  // Build animated shipment trips. Filter by category + match against route data.
   const tripData = useMemo(() => {
-    const source = shipments.length > 0
-      ? shipments
-      : routes.slice(0, 14); // representative active corridors
-    const trips: Array<{ path: Array<[number, number]>; timestamps: number[]; color: [number, number, number] }> = [];
+    type Trip = {
+      path: Array<[number, number]>;
+      timestamps: number[];
+      color: [number, number, number];
+    };
+    const trips: Trip[] = [];
+    // Use real in-flight shipments first; if none match the active filter, fall
+    // back to a representative subset of active routes so the map always has
+    // a sense of motion.
+    const activeShipments = shipments.filter((s: any) => categoryActive(s.category));
+    const sourceShipments = activeShipments.length > 0 ? activeShipments : [];
     let i = 0;
-    for (const s of source) {
+    for (const s of sourceShipments) {
       const a: any = nodeIndex.get(s.fromNode);
       const b: any = nodeIndex.get(s.toNode);
       if (!a || !b) continue;
       const wp = greatCircleWaypoints(a.longitude, a.latitude, b.longitude, b.latitude, 36);
-      // Stagger trip start so multiple convoys traverse simultaneously
       const offset = (i * 130) % TRIP_LENGTH;
-      const span = TRIP_LENGTH * 0.55; // each trip occupies ~55% of cycle
+      const span = TRIP_LENGTH * 0.55;
       const ts = wp.map((_, k) => offset + (k / (wp.length - 1)) * span);
       trips.push({
         path: wp,
         timestamps: ts,
-        color: [76, 196, 196],
+        color: CATEGORY_COLOR[(s.category as SupplyCategory) ?? 'other'],
+      });
+      i++;
+    }
+    // Always animate a representative slice of active routes so the network
+    // looks alive even when there are few in-flight shipments.
+    const activeRoutes = routePaths.filter((r) => r.active);
+    const slice = activeRoutes.slice(0, Math.min(activeRoutes.length, 18));
+    for (const rp of slice) {
+      const matchedCat = rp.categories.find((c) => categoryActive(c)) ?? 'supplies';
+      const offset = (i * 130) % TRIP_LENGTH;
+      const span = TRIP_LENGTH * 0.5;
+      const ts = rp.path.map((_, k) => offset + (k / (rp.path.length - 1)) * span);
+      trips.push({
+        path: rp.path,
+        timestamps: ts,
+        color: CATEGORY_COLOR[matchedCat as SupplyCategory] ?? CATEGORY_COLOR.supplies,
       });
       i++;
     }
     return trips;
-  }, [shipments, routes, nodeIndex]);
+  }, [shipments, routePaths, nodeIndex, allCategoriesActive, selectedCategories]);
 
-  // Auto-pan across hot spots every 9s when no parent-controlled viewState
-  useEffect(() => {
-    if (!autoPan || viewState || hasWebGL !== true) return;
-    const hotSpots: MapViewState[] = [
-      { longitude: 127.8, latitude: 26.3, zoom: 5.2, pitch: 40, bearing: 0 },   // Okinawa hub
-      { longitude: 121.5, latitude: 14.6, zoom: 4.8, pitch: 40, bearing: 10 }, // Luzon / Philippines
-      { longitude: 144.8, latitude: 13.5, zoom: 5.4, pitch: 40, bearing: -10 }, // Guam
-      { longitude: 130.9, latitude: -12.4, zoom: 4.8, pitch: 40, bearing: 0 }, // Darwin
-      { longitude: 138, latitude: 18, zoom: 3.1, pitch: 38, bearing: 0 },      // Theater overview
-    ];
-    let idx = 0;
-    const advance = () => {
-      idx = (idx + 1) % hotSpots.length;
-      setInternalView({
-        ...hotSpots[idx],
-        transitionDuration: 4000,
-        transitionInterpolator: new FlyToInterpolator({ speed: 0.8 }),
-      } as MapViewState);
-    };
-    // Initial pan after a short pause
-    const initial = setTimeout(advance, 1500);
-    const intvl = setInterval(advance, 9000);
-    return () => {
-      clearTimeout(initial);
-      clearInterval(intvl);
-    };
-  }, [autoPan, viewState, hasWebGL]);
+  // Decorate nodes with their tier + risk for fast lookups in layer callbacks.
+  type DecoratedNode = {
+    raw: any;
+    tier: ThreatTier;
+    riskScore: number;
+    daysOfSupply: number;
+    openAlerts: number;
+    dosByCategory: Record<string, number>;
+  };
+
+  const decoratedNodes: DecoratedNode[] = useMemo(() => {
+    return nodes.map((n: any) => {
+      const r: any = riskByNodeMap.get(n.id);
+      const tier: ThreatTier = (r?.tier as ThreatTier) ?? tierForRisk(r?.riskScore ?? 0, r?.openAlerts ?? 0);
+      return {
+        raw: n,
+        tier,
+        riskScore: r?.riskScore ?? 0,
+        daysOfSupply: r?.daysOfSupply ?? 999,
+        openAlerts: r?.openAlerts ?? 0,
+        dosByCategory: r?.dosByCategory ?? {},
+      };
+    });
+  }, [nodes, riskByNodeMap]);
+
+  // Decide colour: when a single category is selected, recolour by that
+  // category's DOS (green/amber/red bands). Otherwise use the threat tier.
+  const nodeColor = (d: DecoratedNode): [number, number, number, number] => {
+    if (selectedCategories && selectedCategories.size === 1) {
+      const cat = Array.from(selectedCategories)[0];
+      const dos = d.dosByCategory?.[cat] ?? 999;
+      let rgb: [number, number, number];
+      if (dos <= 5) rgb = TIER_COLOR.critical;
+      else if (dos <= 14) rgb = TIER_COLOR.heightened;
+      else rgb = TIER_COLOR.nominal;
+      return [...rgb, 235];
+    }
+    const rgb = TIER_COLOR[d.tier];
+    return [...rgb, 235];
+  };
+
+  // Pulse phase used by the alert-halo layer.
+  const pulse = 1 + 0.45 * Math.sin((time / 30) * Math.PI);
 
   const layers = useMemo(() => {
-    const riskMap = new Map(riskByNode.map((r) => [r.nodeId, r.riskScore]));
+    const out: any[] = [];
 
-    // Pulse radius for alerted nodes (blooms over ~1.6s)
-    const pulse = 1 + 0.6 * Math.sin((time / 30) * Math.PI);
+    // 1. AOR boundary outline (drawn first, sits beneath everything)
+    if (showAOR && aorBoundary && aorBoundary.length > 0) {
+      out.push(
+        new PathLayer({
+          id: 'aor-boundary',
+          data: [{ path: aorBoundary }],
+          getPath: (d: any) => d.path,
+          getColor: [76, 196, 196, 70],
+          getWidth: 2,
+          widthUnits: 'pixels',
+          widthMinPixels: 1,
+          getDashArray: [6, 4],
+          dashJustified: true,
+          extensions: [],
+        }),
+      );
+    }
 
-    return [
-      // Faded route network (always visible)
+    // 2. Faint full route network (always visible, dimmed when filtered)
+    out.push(
       new PathLayer({
         id: 'route-network',
         data: routePaths,
         getPath: (d: any) => d.path,
-        getColor: COLOR.routeIdle,
+        getColor: (d: any) => (d.active ? ROUTE_BASE_COLOR : ROUTE_DIM_COLOR),
         getWidth: 1.4,
         widthUnits: 'pixels',
         widthMinPixels: 1,
         capRounded: true,
         jointRounded: true,
+        updateTriggers: {
+          getColor: [allCategoriesActive, Array.from(selectedCategories ?? []).join(',')],
+        },
       }),
-      // Animated convoys
+    );
+
+    // 3. 3D arcs over active routes — depth comes from `getHeight` proportional to distance.
+    out.push(
+      new ArcLayer({
+        id: 'route-arcs',
+        data: routePaths.filter((r) => r.active),
+        getSourcePosition: (d: any) => d.from,
+        getTargetPosition: (d: any) => d.to,
+        getSourceColor: [76, 196, 196, 130],
+        getTargetColor: [180, 130, 230, 130],
+        getWidth: 1.6,
+        widthUnits: 'pixels',
+        widthMinPixels: 1,
+        getHeight: (d: any) => {
+          const [x1, y1] = d.from;
+          const [x2, y2] = d.to;
+          const dx = x2 - x1;
+          const dy = y2 - y1;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          return Math.min(0.8, dist / 90);
+        },
+        greatCircle: true,
+      }),
+    );
+
+    // 4. Threat overlays (subtle filled boxes)
+    if (showThreats) {
+      for (const t of threats) {
+        const sev = (t.severity || '').toUpperCase();
+        const col: [number, number, number, number] =
+          sev === 'CRITICAL' ? [220, 64, 76, 50]
+          : sev === 'WARNING' ? [220, 64, 76, 35]
+          : [232, 168, 76, 30];
+        out.push(
+          new PathLayer({
+            id: `threat-${t.id}`,
+            data: [{ path: t.polygon }],
+            getPath: (d: any) => d.path,
+            getColor: col,
+            getWidth: 2,
+            widthUnits: 'pixels',
+            widthMinPixels: 1,
+          }),
+        );
+      }
+    }
+
+    // 5. Animated convoys (trip particles flowing along routes)
+    out.push(
       new TripsLayer({
         id: 'shipment-trips',
         data: tripData,
@@ -307,60 +483,81 @@ export default function NetworkGLMap(props: NetworkMapProps) {
         opacity: 0.95,
         widthMinPixels: 3,
         widthUnits: 'pixels',
-        getWidth: 3.5,
+        getWidth: 4,
         trailLength: 220,
         currentTime: time,
         capRounded: true,
         jointRounded: true,
       }),
-      // Pulse halos for alerted nodes
+    );
+
+    // 6. Pulse halos for at-risk nodes (only tier > nominal)
+    out.push(
       new ScatterplotLayer({
         id: 'node-pulse',
-        data: nodes.filter((n: any) => ((riskMap.get(n.id) as number) ?? 0) > 60),
-        getPosition: (d: any) => [d.longitude, d.latitude],
-        getFillColor: COLOR.pulseAlert,
+        data: decoratedNodes.filter((d) => d.tier !== 'nominal'),
+        getPosition: (d: any) => [d.raw.longitude, d.raw.latitude],
+        getFillColor: (d: any): [number, number, number, number] => {
+          const tier = d.tier as ThreatTier;
+          const c = TIER_COLOR[tier];
+          return [c[0], c[1], c[2], tier === 'critical' ? 70 : 50];
+        },
         getRadius: (d: any) => {
-          const risk = (riskMap.get(d.id) as number) ?? 0;
-          const base = risk > 80 ? 50000 : 35000;
+          const base = d.tier === 'critical' ? 140000 : 90000;
           return base * pulse;
         },
         radiusUnits: 'meters',
         stroked: false,
         pickable: false,
+        updateTriggers: { getRadius: [time], getFillColor: [decoratedNodes] },
       }),
-      // Node markers
-      new ScatterplotLayer({
-        id: 'nodes',
-        data: nodes,
-        getPosition: (d: any) => [d.longitude, d.latitude],
-        getFillColor: (d: any) => {
-          const risk = (riskMap.get(d.id) as number | undefined) ?? 0;
-          if (risk > 80) return COLOR.nodeAlert;
-          if (risk > 50) return COLOR.nodeWarn;
-          return COLOR.nodeNominal;
+    );
+
+    // 7. 3D node columns. Extruded height encodes site importance + risk.
+    out.push(
+      new ColumnLayer({
+        id: 'nodes-columns',
+        data: decoratedNodes,
+        diskResolution: 24,
+        radius: 22000,
+        extruded: true,
+        getPosition: (d: any) => [d.raw.longitude, d.raw.latitude],
+        getFillColor: nodeColor,
+        getElevation: (d: any) => {
+          const t = (d.raw.type || '').toLowerCase();
+          let base = 30000;
+          if (t.includes('strategic') || t.includes('theater')) base = 200000;
+          else if (t.includes('hub')) base = 130000;
+          else if (t.includes('large mtf')) base = 90000;
+          else if (t.includes('mtf')) base = 60000;
+          else if (t.includes('bas')) base = 40000;
+          else if (t.includes('clinic')) base = 30000;
+          else if (t.includes('forward')) base = 35000;
+          // Boost height when the site is in trouble so it pops visually
+          const tierBoost =
+            d.tier === 'critical' ? 1.6 : d.tier === 'heightened' ? 1.25 : 1;
+          return base * tierBoost;
         },
-        getLineColor: [15, 20, 27, 220],
-        getRadius: (d: any) => {
-          const t = (d.type || '').toLowerCase();
-          if (t === 'strategic' || t === 'theater') return 36000;
-          if (t === 'hub') return 26000;
-          if (t === 'mtf') return 17000;
-          return 12000;
-        },
-        radiusUnits: 'meters',
-        stroked: true,
-        lineWidthUnits: 'pixels',
-        lineWidthMinPixels: 1,
-        getLineWidth: 1,
+        elevationScale: 1,
+        material: { ambient: 0.55, diffuse: 0.7, shininess: 32, specularColor: [60, 64, 70] },
         pickable: true,
-        onClick: (info: any) => {
-          if (info.object && onNodeClick) onNodeClick(info.object);
-        },
         autoHighlight: true,
-        highlightColor: [255, 255, 255, 255],
+        highlightColor: [255, 255, 255, 200],
+        onClick: (info: any) => {
+          if (info.object && onNodeClick) {
+            onNodeClick(info.object.raw, info.object);
+          }
+        },
+        updateTriggers: { getFillColor: [allCategoriesActive, Array.from(selectedCategories ?? []).join(',')] },
       }),
-    ];
-  }, [nodes, routePaths, tripData, riskByNode, onNodeClick, time]);
+    );
+
+    return out;
+  }, [
+    routePaths, tripData, decoratedNodes, threats, time, pulse,
+    aorBoundary, showAOR, showThreats, onNodeClick,
+    allCategoriesActive, selectedCategories,
+  ]);
 
   if (hasWebGL === null) return null;
   if (!hasWebGL) return <NetworkFallback {...props} />;
@@ -378,18 +575,6 @@ export default function NetworkGLMap(props: NetworkMapProps) {
         onViewStateChange={handleViewStateChange as any}
         controller={true}
         layers={layers}
-        getTooltip={({ object }: any) => {
-          if (!object) return null;
-          if (object.name) {
-            const risk = (
-              (new Map(riskByNode.map((r) => [r.nodeId, r.riskScore])).get(object.id) as number | undefined) ?? 0
-            ).toFixed(0);
-            return {
-              text: `${object.name}\n${object.type ?? 'Node'} · risk ${risk}`,
-            };
-          }
-          return null;
-        }}
       >
         <MapLibre mapStyle={MAP_STYLE} />
       </DeckGL>

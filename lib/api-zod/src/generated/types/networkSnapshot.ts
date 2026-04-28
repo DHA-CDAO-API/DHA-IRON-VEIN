@@ -18,6 +18,8 @@ export interface NetworkSnapshot {
   shipments: InFlightShipment[];
   riskByNode: NetworkSnapshotRiskByNodeItem[];
   threats: ThreatOverlay[];
+  /** Polygon (lon,lat pairs) outlining the USINDOPACOM area of responsibility */
+  aorBoundary?: number[][];
   /** @nullable */
   focusedHubId: string | null;
   operationalState?: string;

@@ -655,6 +655,10 @@ components:
         days: { type: number }
         reliability: { type: number }
         modality: { type: string }
+        categories:
+          type: array
+          description: Categories of supply that this route is currently carrying (derived from in-flight shipments + recent orders).
+          items: { type: string, enum: [blood_products, supplies, ppe, other] }
 
     InFlightShipment:
       type: object
@@ -669,6 +673,10 @@ components:
         etaDays: { type: number }
         progress: { type: number, description: "0..1" }
         priority: { type: string }
+        category:
+          type: string
+          enum: [blood_products, supplies, ppe, other]
+          description: Top-level category of the item being shipped
 
     ThreatOverlay:
       type: object
@@ -708,9 +716,37 @@ components:
               daysOfSupply: { type: number }
               openAlerts: { type: integer }
               criticalShortItems: { type: integer }
+              tier:
+                type: string
+                enum: [nominal, heightened, critical]
+                description: Threat tier derived from risk score and open alert severity
+              dosByCategory:
+                type: object
+                description: Minimum days-of-supply for items in each category at this node
+                additionalProperties: { type: number }
+              topCriticalItems:
+                type: array
+                description: Top 3 most-critical items at this node by lowest DOS
+                items:
+                  type: object
+                  required: [itemId, itemName, daysOfSupply]
+                  properties:
+                    itemId: { type: string }
+                    itemName: { type: string }
+                    category: { type: string }
+                    daysOfSupply: { type: number }
+                    onHand: { type: number }
+              lastShipmentInAt: { type: ["string", "null"], format: date-time }
+              lastShipmentOutAt: { type: ["string", "null"], format: date-time }
         threats:
           type: array
           items: { $ref: "#/components/schemas/ThreatOverlay" }
+        aorBoundary:
+          type: array
+          description: Polygon (lon,lat pairs) outlining the USINDOPACOM area of responsibility
+          items:
+            type: array
+            items: { type: number }
         focusedHubId: { type: ["string", "null"] }
         operationalState: { type: string }
 

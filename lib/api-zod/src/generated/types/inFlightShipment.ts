@@ -5,6 +5,7 @@
  * Predictive Sustainment Platform API for INDOPACOM medical logistics decision support.
  * OpenAPI spec version: 1.0.0
  */
+import type { InFlightShipmentCategory } from "./inFlightShipmentCategory";
 
 export interface InFlightShipment {
   id: string;
@@ -17,4 +18,6 @@ export interface InFlightShipment {
   /** 0..1 */
   progress: number;
   priority?: string;
+  /** Top-level category of the item being shipped */
+  category?: InFlightShipmentCategory;
 }

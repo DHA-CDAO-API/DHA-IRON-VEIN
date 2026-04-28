@@ -348,12 +348,12 @@ export async function runSeed(opts: SeedOptions = {}): Promise<void> {
   }
 
   // ---- Items (hand-curated, blood-products-first) ----
-  // category: blood_products | supplies | other
+  // category: blood_products | supplies | ppe | other
   const ITEM_CATALOG: Array<{
     id: string;
     name: string;
     unit: string;
-    category: "blood_products" | "supplies" | "other";
+    category: "blood_products" | "supplies" | "ppe" | "other";
     criticality: "critical" | "high" | "medium" | "low";
     baseDemand: number;
     waste: number;
@@ -399,10 +399,12 @@ export async function runSeed(opts: SeedOptions = {}): Promise<void> {
     { id: "warmer",         name: "Single-Use Blood Warmer (Buddy Lite)", unit: "ea", category: "supplies", criticality: "high",    baseDemand: 0.5, waste: 1.10, trigger: "transfusion_event", leadTimeDays: 21, shelfLifeDays: 730,  classOfSupply: "VIII" },
     { id: "transfusion_band", name: "Transfusion Recipient Wristband",   unit: "ea", category: "supplies", criticality: "medium",   baseDemand: 1.0, waste: 1.05, trigger: "transfusion_event", leadTimeDays: 7, shelfLifeDays: 1825, classOfSupply: "VIII" },
 
-    // ---- PPE (supplies) ----
-    { id: "gloves",  name: "Nitrile Exam Gloves",  unit: "pairs", category: "supplies", criticality: "high",   baseDemand: 4.0, waste: 1.15, trigger: "phlebotomy_event", leadTimeDays: 7, shelfLifeDays: 1095, classOfSupply: "VIII" },
-    { id: "mask",    name: "Surgical Mask",        unit: "ea",    category: "supplies", criticality: "medium", baseDemand: 1.5, waste: 1.10, trigger: "phlebotomy_event", leadTimeDays: 7, shelfLifeDays: 1825, classOfSupply: "VIII" },
-    { id: "shield",  name: "Disposable Face Shield", unit: "ea",  category: "supplies", criticality: "medium", baseDemand: 0.5, waste: 1.05, trigger: "phlebotomy_event", leadTimeDays: 14, shelfLifeDays: 1825, classOfSupply: "VIII" },
+    // ---- PPE ----
+    { id: "gloves",  name: "Nitrile Exam Gloves",    unit: "pairs", category: "ppe", criticality: "high",   baseDemand: 4.0, waste: 1.15, trigger: "phlebotomy_event", leadTimeDays: 7, shelfLifeDays: 1095, classOfSupply: "VIII" },
+    { id: "mask",    name: "Surgical Mask",          unit: "ea",    category: "ppe", criticality: "medium", baseDemand: 1.5, waste: 1.10, trigger: "phlebotomy_event", leadTimeDays: 7, shelfLifeDays: 1825, classOfSupply: "VIII" },
+    { id: "shield",  name: "Disposable Face Shield", unit: "ea",    category: "ppe", criticality: "medium", baseDemand: 0.5, waste: 1.05, trigger: "phlebotomy_event", leadTimeDays: 14, shelfLifeDays: 1825, classOfSupply: "VIII" },
+    { id: "gown",    name: "Isolation Gown",         unit: "ea",    category: "ppe", criticality: "medium", baseDemand: 0.8, waste: 1.05, trigger: "phlebotomy_event", leadTimeDays: 10, shelfLifeDays: 1825, classOfSupply: "VIII" },
+    { id: "n95",     name: "N95 Respirator",         unit: "ea",    category: "ppe", criticality: "high",   baseDemand: 1.0, waste: 1.10, trigger: "phlebotomy_event", leadTimeDays: 14, shelfLifeDays: 1825, classOfSupply: "VIII" },
 
     // ---- Other lab consumables / admin ----
     { id: "sharps",          name: "Sharps Container 2L",         unit: "ea", category: "other", criticality: "medium", baseDemand: 0.1, waste: 1.05, trigger: "phlebotomy_event", leadTimeDays: 14, shelfLifeDays: 3650, classOfSupply: "VIII" },
@@ -482,6 +484,41 @@ export async function runSeed(opts: SeedOptions = {}): Promise<void> {
     }),
   );
 
+  // ---- AOR anchor nodes (cover sub-regions of INDOPACOM that the dataset
+  // misses: Indian Ocean, Korean Peninsula, mid-Pacific, South Pacific). These
+  // appear on the map as nominal anchor sites; they intentionally have no
+  // demand profile so they render as low-risk reference points.
+  const ANCHOR_NODES: Array<{
+    id: string;
+    name: string;
+    type: string;
+    latitude: number;
+    longitude: number;
+    population: number;
+    countryCode: string;
+    regionalHub?: string | null;
+  }> = [
+    { id: "diegoGarcia", name: "NSF Diego Garcia",        type: "Theater hub", latitude: -7.31,  longitude: 72.41,   population: 600,  countryCode: "IO", regionalHub: "theater" },
+    { id: "campHumphreys", name: "Camp Humphreys (USAG)", type: "Large MTF",   latitude: 36.96,  longitude: 127.03,  population: 2800, countryCode: "KR", regionalHub: "northHub" },
+    { id: "wakeIsland",  name: "Wake Island AAF",         type: "Forward node", latitude: 19.30, longitude: 166.64,  population: 200,  countryCode: "US", regionalHub: "theater" },
+    { id: "christchurch", name: "Christchurch (Op DEEP FREEZE)", type: "Forward node", latitude: -43.49, longitude: 172.55, population: 150, countryCode: "NZ", regionalHub: "southHub" },
+  ];
+  await db.insert(nodes).values(
+    ANCHOR_NODES.map((n) => ({
+      id: n.id,
+      name: n.name,
+      type: n.type,
+      latitude: n.latitude,
+      longitude: n.longitude,
+      population: n.population,
+      optempo: "garrison",
+      stockDays: 90,
+      regionalHub: n.regionalHub ?? null,
+      upstreamNode: n.regionalHub ?? null,
+      countryCode: n.countryCode,
+    })),
+  );
+
   // ---- Routes ----
   const routeRows = readSheetAsObjects(wb, "Routes", [
     "id",
@@ -500,6 +537,26 @@ export async function runSeed(opts: SeedOptions = {}): Promise<void> {
       days: asNumber(r.days, 3),
       reliability: asNumber(r.reliability, 0.9),
       modality: inferModality(asString(r.priority, "secondary"), asNumber(r.days, 3)),
+    })),
+  );
+
+  // Anchor routes connect the AOR anchor sites to their parent hubs so they
+  // appear on the network map instead of floating alone.
+  const ANCHOR_ROUTES = [
+    { id: "r-anchor-dg",  from: "theater",  to: "diegoGarcia",   priority: "secondary", days: 9, reliability: 0.82 },
+    { id: "r-anchor-ch",  from: "northHub", to: "campHumphreys", priority: "primary",   days: 2, reliability: 0.92 },
+    { id: "r-anchor-wk",  from: "theater",  to: "wakeIsland",    priority: "tertiary",  days: 4, reliability: 0.84 },
+    { id: "r-anchor-cz",  from: "southHub", to: "christchurch",  priority: "tertiary",  days: 6, reliability: 0.83 },
+  ] as const;
+  await db.insert(routes).values(
+    ANCHOR_ROUTES.map((r) => ({
+      id: r.id,
+      fromNode: r.from,
+      toNode: r.to,
+      priority: r.priority,
+      days: r.days,
+      reliability: r.reliability,
+      modality: inferModality(r.priority, r.days),
     })),
   );
 
@@ -620,7 +677,8 @@ export async function runSeed(opts: SeedOptions = {}): Promise<void> {
     collection_bag: 80, antiseptic: 120, cooler: 6, coolant: 24, chain_log: 8,
     abo_kit: 24, crossmatch: 30, id_screen: 20,
     iv_set: 80, pressure_inf: 24, warmer: 16, transfusion_band: 80,
-    mask: 200, shield: 60, sharps: 8, centrifuge_tube: 80, biohazard_bag: 60,
+    mask: 200, shield: 60, gown: 80, n95: 100,
+    sharps: 8, centrifuge_tube: 80, biohazard_bag: 60,
   };
   // Hub/theater/supplier carry deeper stock (multiplier)
   const depthByType: Record<string, number> = {

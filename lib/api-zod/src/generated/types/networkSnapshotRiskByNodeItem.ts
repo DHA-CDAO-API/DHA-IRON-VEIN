@@ -5,6 +5,9 @@
  * Predictive Sustainment Platform API for INDOPACOM medical logistics decision support.
  * OpenAPI spec version: 1.0.0
  */
+import type { NetworkSnapshotRiskByNodeItemDosByCategory } from "./networkSnapshotRiskByNodeItemDosByCategory";
+import type { NetworkSnapshotRiskByNodeItemTier } from "./networkSnapshotRiskByNodeItemTier";
+import type { NetworkSnapshotRiskByNodeItemTopCriticalItemsItem } from "./networkSnapshotRiskByNodeItemTopCriticalItemsItem";
 
 export type NetworkSnapshotRiskByNodeItem = {
   nodeId: string;
@@ -12,4 +15,14 @@ export type NetworkSnapshotRiskByNodeItem = {
   daysOfSupply: number;
   openAlerts: number;
   criticalShortItems?: number;
+  /** Threat tier derived from risk score and open alert severity */
+  tier?: NetworkSnapshotRiskByNodeItemTier;
+  /** Minimum days-of-supply for items in each category at this node */
+  dosByCategory?: NetworkSnapshotRiskByNodeItemDosByCategory;
+  /** Top 3 most-critical items at this node by lowest DOS */
+  topCriticalItems?: NetworkSnapshotRiskByNodeItemTopCriticalItemsItem[];
+  /** @nullable */
+  lastShipmentInAt?: Date | null;
+  /** @nullable */
+  lastShipmentOutAt?: Date | null;
 };
