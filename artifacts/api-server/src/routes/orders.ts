@@ -351,6 +351,42 @@ router.get("/orders/:orderId", async (req, res, next) => {
       createdAt: r.ts.toISOString(),
     }));
 
+    // Per-shipment progress for the visual progress strip on OrderDetail.
+    // Derived from the shipments table + SHIPMENT_DELIVERED activity entries
+    // (which carry shipmentId in their meta blob).
+    const orderShipments = await db
+      .select()
+      .from(shipments)
+      .where(eq(shipments.orderId, id));
+    const deliveredByShipmentId = new Map<string, Date>();
+    for (const row of activityRows) {
+      if (row.kind !== "SHIPMENT_DELIVERED") continue;
+      const meta = row.meta as { shipmentId?: string } | null;
+      if (meta?.shipmentId && !deliveredByShipmentId.has(meta.shipmentId)) {
+        deliveredByShipmentId.set(meta.shipmentId, row.ts);
+      }
+    }
+    const nowMs = Date.now();
+    const shipmentsEnvelope = orderShipments.map((sh) => {
+      const deliveredAt = deliveredByShipmentId.get(sh.id) ?? null;
+      const status: "DEPARTED" | "IN_TRANSIT" | "DELIVERED" = deliveredAt
+        ? "DELIVERED"
+        : sh.departedAt.getTime() > nowMs
+          ? "DEPARTED"
+          : "IN_TRANSIT";
+      return {
+        id: sh.id,
+        itemId: sh.itemId,
+        itemName: itemNamesById.get(sh.itemId) ?? sh.itemId,
+        unit: itemUnitsById.get(sh.itemId) ?? null,
+        quantity: sh.quantity,
+        status,
+        departedAt: sh.departedAt.toISOString(),
+        etaAt: sh.etaAt.toISOString(),
+        deliveredAt: deliveredAt ? deliveredAt.toISOString() : null,
+      };
+    });
+
     // If promoted from a recommendation, fetch the persisted rec for context
     let recommendation: Record<string, unknown> | undefined;
     if (order.promotedFromRecommendationId) {
@@ -406,6 +442,7 @@ router.get("/orders/:orderId", async (req, res, next) => {
       itemMissing,
       lines: linesEnvelope,
       activity,
+      shipments: shipmentsEnvelope,
     };
 
     if (supplierRow) {

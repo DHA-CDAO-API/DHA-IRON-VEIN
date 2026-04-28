@@ -10,6 +10,7 @@ import type { Item } from "./item";
 import type { Node } from "./node";
 import type { Order } from "./order";
 import type { OrderLineDetail } from "./orderLineDetail";
+import type { OrderShipmentProgress } from "./orderShipmentProgress";
 import type { Recommendation } from "./recommendation";
 import type { Supplier } from "./supplier";
 
@@ -24,4 +25,6 @@ export interface OrderDetail {
   lines?: OrderLineDetail[];
   recommendation?: Recommendation;
   activity?: ActivityEntry[];
+  /** Per-shipment progress derived from the shipments table and the SHIPMENT_* activity entries. Empty until the order transitions to IN_TRANSIT. */
+  shipments?: OrderShipmentProgress[];
 }

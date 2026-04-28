@@ -8,6 +8,7 @@ import {
   type Order,
   type OrderDetail as OrderDetailEnvelope,
   type OrderLineDetail,
+  type OrderShipmentProgress,
   type UpdateOrderStatusInputPriority,
   type UpdateOrderStatusInputStatus,
 } from "@workspace/api-client-react";
@@ -31,6 +32,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
@@ -46,6 +52,9 @@ import {
   AlertTriangle,
   Activity,
   Package,
+  PackageCheck,
+  Plane,
+  Check,
 } from "lucide-react";
 import {
   formatNumber,
@@ -89,6 +98,114 @@ function statusClass(status: string) {
 type PendingChange =
   | { kind: "priority"; from: string; to: UpdateOrderStatusInputPriority }
   | { kind: "status"; from: string; to: UpdateOrderStatusInputStatus };
+
+type StepKey = "DEPARTED" | "IN_TRANSIT" | "DELIVERED";
+
+const SHIPMENT_STEPS: Array<{
+  key: StepKey;
+  label: string;
+  Icon: React.ComponentType<{ className?: string }>;
+}> = [
+  { key: "DEPARTED", label: "Departed", Icon: Truck },
+  { key: "IN_TRANSIT", label: "In Transit", Icon: Plane },
+  { key: "DELIVERED", label: "Delivered", Icon: PackageCheck },
+];
+
+function stepReached(status: OrderShipmentProgress["status"], step: StepKey): boolean {
+  const order: StepKey[] = ["DEPARTED", "IN_TRANSIT", "DELIVERED"];
+  return order.indexOf(step) <= order.indexOf(status as StepKey);
+}
+
+function stepTimestamp(
+  shipment: OrderShipmentProgress,
+  step: StepKey,
+): string | null {
+  if (step === "DEPARTED") return shipment.departedAt;
+  if (step === "DELIVERED") return shipment.deliveredAt ?? null;
+  // IN_TRANSIT has no dedicated timestamp; fall back to ETA so operators can
+  // see "expected to arrive by ...".
+  return shipment.etaAt;
+}
+
+function ShipmentProgress({ shipment }: { shipment: OrderShipmentProgress }) {
+  return (
+    <div>
+      <div className="flex items-center justify-between gap-3 mb-2">
+        <div className="text-sm font-medium truncate">
+          {shipment.itemName || shipment.itemId}{" "}
+          <span className="text-muted-foreground font-mono text-xs">
+            · {formatNumber(shipment.quantity)} {shipment.unit || ""}
+          </span>
+        </div>
+        <div className="text-xs text-muted-foreground font-mono shrink-0">
+          {shipment.id}
+        </div>
+      </div>
+      <div className="flex items-center" role="list" aria-label="Shipment milestones">
+        {SHIPMENT_STEPS.map((step, idx) => {
+          const reached = stepReached(shipment.status, step.key);
+          const isCurrent = step.key === shipment.status;
+          const ts = stepTimestamp(shipment, step.key);
+          const Icon = step.Icon;
+          const colorClass = reached
+            ? step.key === "DELIVERED"
+              ? "border-emerald-500 bg-emerald-500/15 text-emerald-500"
+              : "border-primary bg-primary/15 text-primary"
+            : "border-muted-foreground/30 bg-muted/20 text-muted-foreground/60";
+          const connectorClass = stepReached(shipment.status, SHIPMENT_STEPS[idx + 1]?.key ?? "DELIVERED")
+            ? step.key === "DELIVERED" || (idx === 1 && shipment.status === "DELIVERED")
+              ? "bg-emerald-500"
+              : "bg-primary"
+            : "bg-muted-foreground/30";
+          const tooltipLabel = reached
+            ? ts
+              ? `${step.label}${step.key === "IN_TRANSIT" ? " · ETA" : ""} ${formatShortDateTime(ts)}`
+              : `${step.label} (no timestamp recorded)`
+            : step.key === "IN_TRANSIT" && ts
+              ? `Pending · ETA ${formatShortDateTime(ts)}`
+              : `${step.label} (pending)`;
+          return (
+            <React.Fragment key={step.key}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div
+                    className="flex flex-col items-center gap-1 min-w-0 cursor-help"
+                    role="listitem"
+                    aria-label={tooltipLabel}
+                    aria-current={isCurrent ? "step" : undefined}
+                    data-testid={`shipment-step-${shipment.id}-${step.key}`}
+                  >
+                    <div
+                      className={`relative flex h-9 w-9 items-center justify-center rounded-full border-2 transition-colors ${colorClass}`}
+                    >
+                      {reached && step.key === "DELIVERED" ? (
+                        <Check className="h-4 w-4" />
+                      ) : (
+                        <Icon className="h-4 w-4" />
+                      )}
+                      {isCurrent && shipment.status !== "DELIVERED" && (
+                        <span className="absolute inset-0 rounded-full ring-2 ring-primary/40 animate-pulse" />
+                      )}
+                    </div>
+                    <div
+                      className={`text-[10px] uppercase tracking-wider font-medium ${reached ? "text-foreground" : "text-muted-foreground/70"}`}
+                    >
+                      {step.label}
+                    </div>
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent>{tooltipLabel}</TooltipContent>
+              </Tooltip>
+              {idx < SHIPMENT_STEPS.length - 1 && (
+                <div className={`flex-1 h-0.5 mx-1 -mt-4 transition-colors ${connectorClass}`} />
+              )}
+            </React.Fragment>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 export default function OrderDetail() {
   const { id } = useParams();
@@ -203,6 +320,7 @@ export default function OrderDetail() {
     actorRole?: string | null;
     createdAt: string;
   }>;
+  const shipmentProgress = (data.shipments ?? []) as OrderShipmentProgress[];
 
   const aiTriggered = order.triggerSource === "ai" || !!order.sourceRecommendationId;
   const supplierLabel = order.supplierName || supplier?.name || order.supplierId || fromNode?.name || "—";
@@ -363,6 +481,34 @@ export default function OrderDetail() {
           </CardContent>
         </Card>
       </div>
+
+      <Card className="bg-card/50 border-border shrink-0">
+        <CardContent className="p-4 space-y-4">
+          <div className="flex items-center gap-2">
+            <Truck className="h-4 w-4 text-primary" />
+            <div className="text-xs uppercase tracking-wider text-muted-foreground font-medium">
+              Shipment Progress
+            </div>
+            {shipmentProgress.length > 0 && (
+              <span className="text-xs text-muted-foreground">
+                ({shipmentProgress.length})
+              </span>
+            )}
+          </div>
+          {shipmentProgress.length === 0 ? (
+            <div className="text-sm text-muted-foreground italic">
+              No shipments yet — progress milestones appear once this order
+              moves to <span className="font-mono">IN_TRANSIT</span>.
+            </div>
+          ) : (
+            <div className="space-y-5">
+              {shipmentProgress.map((sh) => (
+                <ShipmentProgress key={sh.id} shipment={sh} />
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {(order.triggerNote || aiTriggered || recommendation) && (
         <Card className={`shrink-0 ${aiTriggered ? "bg-primary/5 border-primary/30" : "bg-card/50 border-border"}`}>

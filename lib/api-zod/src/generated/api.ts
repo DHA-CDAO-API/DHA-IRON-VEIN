@@ -943,6 +943,28 @@ export const GetOrderResponse = zod.object({
       }),
     )
     .optional(),
+  shipments: zod
+    .array(
+      zod.object({
+        id: zod.string(),
+        itemId: zod.string(),
+        itemName: zod.string().nullish(),
+        unit: zod.string().nullish(),
+        quantity: zod.number(),
+        status: zod
+          .enum(["DEPARTED", "IN_TRANSIT", "DELIVERED"])
+          .describe(
+            "Latest milestone for this shipment. DEPARTED means it just left the source, IN_TRANSIT means it's en route (departedAt has elapsed), DELIVERED means a SHIPMENT_DELIVERED activity entry exists.",
+          ),
+        departedAt: zod.coerce.date(),
+        etaAt: zod.coerce.date(),
+        deliveredAt: zod.coerce.date().nullish(),
+      }),
+    )
+    .optional()
+    .describe(
+      "Per-shipment progress derived from the shipments table and the SHIPMENT_\* activity entries. Empty until the order transitions to IN_TRANSIT.",
+    ),
 });
 
 export const UpdateOrderStatusParams = zod.object({

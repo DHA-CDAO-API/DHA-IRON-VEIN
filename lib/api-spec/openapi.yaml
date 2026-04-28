@@ -1130,6 +1130,27 @@ components:
         activity:
           type: array
           items: { $ref: "#/components/schemas/ActivityEntry" }
+        shipments:
+          type: array
+          description: Per-shipment progress derived from the shipments table and the SHIPMENT_* activity entries. Empty until the order transitions to IN_TRANSIT.
+          items: { $ref: "#/components/schemas/OrderShipmentProgress" }
+
+    OrderShipmentProgress:
+      type: object
+      required: [id, itemId, quantity, status, departedAt, etaAt]
+      properties:
+        id: { type: string }
+        itemId: { type: string }
+        itemName: { type: ["string", "null"] }
+        unit: { type: ["string", "null"] }
+        quantity: { type: number }
+        status:
+          type: string
+          enum: [DEPARTED, IN_TRANSIT, DELIVERED]
+          description: Latest milestone for this shipment. DEPARTED means it just left the source, IN_TRANSIT means it's en route (departedAt has elapsed), DELIVERED means a SHIPMENT_DELIVERED activity entry exists.
+        departedAt: { type: string, format: date-time }
+        etaAt: { type: string, format: date-time }
+        deliveredAt: { type: ["string", "null"], format: date-time }
 
     CreateOrderInput:
       type: object

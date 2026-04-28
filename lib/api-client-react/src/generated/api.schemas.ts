@@ -723,6 +723,34 @@ export interface ActivityEntry {
   createdAt: string;
 }
 
+/**
+ * Latest milestone for this shipment. DEPARTED means it just left the source, IN_TRANSIT means it's en route (departedAt has elapsed), DELIVERED means a SHIPMENT_DELIVERED activity entry exists.
+ */
+export type OrderShipmentProgressStatus =
+  (typeof OrderShipmentProgressStatus)[keyof typeof OrderShipmentProgressStatus];
+
+export const OrderShipmentProgressStatus = {
+  DEPARTED: "DEPARTED",
+  IN_TRANSIT: "IN_TRANSIT",
+  DELIVERED: "DELIVERED",
+} as const;
+
+export interface OrderShipmentProgress {
+  id: string;
+  itemId: string;
+  /** @nullable */
+  itemName?: string | null;
+  /** @nullable */
+  unit?: string | null;
+  quantity: number;
+  /** Latest milestone for this shipment. DEPARTED means it just left the source, IN_TRANSIT means it's en route (departedAt has elapsed), DELIVERED means a SHIPMENT_DELIVERED activity entry exists. */
+  status: OrderShipmentProgressStatus;
+  departedAt: string;
+  etaAt: string;
+  /** @nullable */
+  deliveredAt?: string | null;
+}
+
 export interface OrderDetail {
   order: Order;
   fromNode: Node;
@@ -734,6 +762,8 @@ export interface OrderDetail {
   lines?: OrderLineDetail[];
   recommendation?: Recommendation;
   activity?: ActivityEntry[];
+  /** Per-shipment progress derived from the shipments table and the SHIPMENT_* activity entries. Empty until the order transitions to IN_TRANSIT. */
+  shipments?: OrderShipmentProgress[];
 }
 
 export interface CreateOrderInput {

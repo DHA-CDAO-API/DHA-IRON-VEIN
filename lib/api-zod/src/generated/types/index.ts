@@ -70,6 +70,8 @@ export * from "./nodeBloodReadinessTestingSupplies";
 export * from "./order";
 export * from "./orderDetail";
 export * from "./orderLineDetail";
+export * from "./orderShipmentProgress";
+export * from "./orderShipmentProgressStatus";
 export * from "./presetEvent";
 export * from "./profile";
 export * from "./profileRole";
