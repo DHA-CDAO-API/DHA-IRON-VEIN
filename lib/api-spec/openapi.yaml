@@ -962,6 +962,9 @@ components:
         fromNode: { $ref: "#/components/schemas/Node" }
         toNode: { $ref: "#/components/schemas/Node" }
         item: { $ref: "#/components/schemas/Item" }
+        itemMissing:
+          type: boolean
+          description: True when the order's first line itemId has no matching row in the catalog. The `item` field is then a synthesized placeholder so the page can degrade gracefully.
         supplier: { $ref: "#/components/schemas/Supplier" }
         lines:
           type: array

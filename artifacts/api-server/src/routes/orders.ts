@@ -10,7 +10,7 @@ import {
   items,
   recommendations as recsTable,
 } from "@workspace/db";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { invalidateSimCache } from "../lib/ctx";
 import { logger } from "../lib/logger";
@@ -185,6 +185,26 @@ router.post("/orders", async (req, res, next) => {
       return res.status(400).json({ error: "supplierId or fromNodeId required" });
     }
 
+    // Validate that every referenced itemId exists in the catalog up-front so
+    // we don't silently create orders with dangling item references that later
+    // break OrderDetail.
+    const requestedItemIds = Array.from(new Set(lineInputs.map((l) => l.itemId)));
+    if (requestedItemIds.length > 0) {
+      const existing = await db
+        .select({ id: items.id })
+        .from(items)
+        .where(inArray(items.id, requestedItemIds));
+      const knownIds = new Set(existing.map((r) => r.id));
+      const unknown = requestedItemIds.filter((id) => !knownIds.has(id));
+      if (unknown.length > 0) {
+        return res.status(400).json({
+          error: "unknown itemId",
+          message: `No catalog entry exists for itemId(s): ${unknown.join(", ")}`,
+          unknownItemIds: unknown,
+        });
+      }
+    }
+
     await db.insert(orders).values({
       id: orderId,
       orderNo,
@@ -248,17 +268,41 @@ router.get("/orders/:orderId", async (req, res, next) => {
       : [undefined];
 
     if (!toNode) return res.status(500).json({ error: "destination node missing for order" });
-    if (!itemRow)
-      return res.status(500).json({ error: "no line items resolved for order" });
 
-    // Map raw DB rows to OpenAPI envelope shapes.
-    const itemEnvelope = {
-      ...itemRow,
-      unit: itemRow.unitOfIssue,
-      usagePerDraw: itemRow.baseDemandPerEvent,
-      usageRate: itemRow.wasteAdjustedDemand,
-      demandBasis: itemRow.trigger,
-    };
+    // The first line's item may not exist in the catalog (e.g. an ad-hoc order
+    // was created against an unknown itemId). Rather than 500-ing the whole
+    // page, synthesize a placeholder Item envelope and signal `itemMissing`
+    // so the UI can degrade gracefully (show the itemId, hide item-specific
+    // blocks).
+    const placeholderItemId = firstLine?.itemId ?? "";
+    const itemMissing = !itemRow;
+    const itemEnvelope = itemRow
+      ? {
+          ...itemRow,
+          unit: itemRow.unitOfIssue,
+          usagePerDraw: itemRow.baseDemandPerEvent,
+          usageRate: itemRow.wasteAdjustedDemand,
+          demandBasis: itemRow.trigger,
+        }
+      : {
+          id: placeholderItemId,
+          name: placeholderItemId || "Unknown item",
+          unit: "",
+          unitOfIssue: "",
+          category: "other",
+          classOfSupply: "",
+          criticality: "unknown",
+          usagePerDraw: 0,
+          usageRate: 0,
+          demandBasis: "unknown",
+          skewFactor: 0,
+          leadTimeDays: 0,
+          shelfLifeDays: 0,
+          baseDemandPerEvent: 0,
+          wasteAdjustedDemand: 0,
+          trigger: "unknown",
+          niinOrSku: "",
+        };
 
     // Resolve item names for line table
     const itemRows = await db.select({ id: items.id, name: items.name, unit: items.unitOfIssue }).from(items);
@@ -345,6 +389,7 @@ router.get("/orders/:orderId", async (req, res, next) => {
       fromNode: fromNodeRow ?? toNode,
       toNode,
       item: itemEnvelope,
+      itemMissing,
       lines: linesEnvelope,
       activity,
     };

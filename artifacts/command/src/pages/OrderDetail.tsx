@@ -96,6 +96,7 @@ export default function OrderDetail() {
   const item = data.item;
   const lines = (data.lines ?? []) as OrderLineDetail[];
   const recommendation = (data as { recommendation?: Record<string, unknown> }).recommendation;
+  const itemMissing = data.itemMissing === true;
   const activity = (data.activity ?? []) as Array<{
     id: string;
     kind: string;
@@ -356,12 +357,23 @@ export default function OrderDetail() {
 
       <div className="text-xs text-muted-foreground shrink-0 px-1">
         Item:{" "}
-        <Link
-          href={`/items/${item.id}`}
-          className="font-medium text-foreground hover:text-primary hover:underline"
-        >
-          {item.name}
-        </Link>
+        {itemMissing ? (
+          <span className="font-mono text-foreground">
+            {item.id || order.itemId || "unknown"}
+          </span>
+        ) : (
+          <Link
+            href={`/items/${item.id}`}
+            className="font-medium text-foreground hover:text-primary hover:underline"
+          >
+            {item.name}
+          </Link>
+        )}
+        {itemMissing && (
+          <span className="ml-2 text-amber-500">
+            (item not found in catalog)
+          </span>
+        )}
         {" · "}
         Total qty {formatNumber(order.quantity)} {order.unit || item.unit || ""}
       </div>

@@ -18,6 +18,8 @@ export interface OrderDetail {
   fromNode: Node;
   toNode: Node;
   item: Item;
+  /** True when the order's first line itemId has no matching row in the catalog. The `item` field is then a synthesized placeholder so the page can degrade gracefully. */
+  itemMissing?: boolean;
   supplier?: Supplier;
   lines?: OrderLineDetail[];
   recommendation?: Recommendation;

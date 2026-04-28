@@ -641,6 +641,12 @@ export const GetOrderResponse = zod.object({
     trigger: zod.string().optional(),
     niinOrSku: zod.string().optional(),
   }),
+  itemMissing: zod
+    .boolean()
+    .optional()
+    .describe(
+      "True when the order's first line itemId has no matching row in the catalog. The `item` field is then a synthesized placeholder so the page can degrade gracefully.",
+    ),
   supplier: zod
     .object({
       id: zod.string(),
