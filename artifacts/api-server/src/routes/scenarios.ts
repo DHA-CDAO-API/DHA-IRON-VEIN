@@ -1,9 +1,21 @@
 import { Router, type IRouter } from "express";
-import { db, scenarios as scenariosTable, presetEvents, appSettings, activityEntries } from "@workspace/db";
+import {
+  db,
+  scenarios as scenariosTable,
+  presetEvents,
+  appSettings,
+  activityEntries,
+  recommendations as recsTable,
+} from "@workspace/db";
 import { asc, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { loadSimContext } from "../lib/ctx";
-import { runScenario, type ScenarioRunInput } from "@workspace/sim";
+import {
+  runScenario,
+  findUpstreamRoute,
+  type ScenarioRunInput,
+  type SimSupplier,
+} from "@workspace/sim";
 import { completeChat, resolveModel, SCENARIO_BRIEF_SYSTEM } from "@workspace/ai-orchestrator";
 
 const router: IRouter = Router();
@@ -91,6 +103,10 @@ router.get("/scenarios/:scenarioId", async (req, res, next) => {
       .where(eq(scenariosTable.id, req.params.scenarioId));
     if (!row) return res.status(404).json({ error: "scenario not found" });
     const ctx = await loadSimContext();
+    const persistedRecs = await db
+      .select()
+      .from(recsTable)
+      .where(eq(recsTable.scenarioId, row.id));
     const envelope = buildScenarioResultEnvelope({
       id: row.id,
       name: row.name,
@@ -100,6 +116,10 @@ router.get("/scenarios/:scenarioId", async (req, res, next) => {
       result: row.result as ReturnType<typeof runScenario>,
       coaBrief: row.coaBrief ?? "",
       ctx: ctx.ctx,
+      suppliers: ctx.suppliers,
+      promotedByRecId: new Map(
+        persistedRecs.map((r) => [r.id, r.promotedOrderId ?? null]),
+      ),
     });
     res.json({
       // Legacy fields first
@@ -220,6 +240,17 @@ router.post("/scenarios", async (req, res, next) => {
       refId: id,
       meta: { peakDay: result.peakDay, impacted: result.impactedNodes.length },
     });
+
+    const recsToPersist = buildScenarioRecommendationRows({
+      scenarioId: id,
+      result,
+      ctx: ctx.ctx,
+      suppliers: ctx.suppliers,
+    });
+    if (recsToPersist.length > 0) {
+      await db.insert(recsTable).values(recsToPersist).onConflictDoNothing();
+    }
+
     const envelope = buildScenarioResultEnvelope({
       id,
       name: body.name,
@@ -229,6 +260,8 @@ router.post("/scenarios", async (req, res, next) => {
       result,
       coaBrief,
       ctx: ctx.ctx,
+      suppliers: ctx.suppliers,
+      promotedByRecId: new Map(),
     });
     res.json({
       // Legacy fields first (no `kind` here — envelope owns it)
@@ -259,8 +292,21 @@ function buildScenarioResultEnvelope(args: {
   result: ReturnType<typeof runScenario>;
   coaBrief: string;
   ctx: ScenarioCtxLite;
+  suppliers: SimSupplier[];
+  promotedByRecId: Map<string, string | null>;
 }) {
-  const { id, name, summary, kind, runAt, result, coaBrief, ctx } = args;
+  const {
+    id,
+    name,
+    summary,
+    kind,
+    runAt,
+    result,
+    coaBrief,
+    ctx,
+    suppliers,
+    promotedByRecId,
+  } = args;
   const nodeMap = new Map(ctx.nodes.map((n) => [n.id, n]));
   const itemMap = new Map(ctx.items.map((i) => [i.id, i]));
   const peakRiskNodeRow = result.impactedNodes[0];
@@ -382,11 +428,155 @@ function buildScenarioResultEnvelope(args: {
     },
     perNode,
     perItem,
-    recommendations: [],
+    recommendations: buildScenarioRecommendationsView({
+      scenarioId: id,
+      result,
+      ctx,
+      suppliers,
+      promotedByRecId,
+      runAt,
+    }),
     timeline,
     narrative: coaBrief || null,
     kind,
   };
+}
+
+type ScenarioRecRow = typeof recsTable.$inferInsert;
+
+function pickSupplierForNode(
+  nodeId: string,
+  ctx: ScenarioCtxLite,
+  suppliers: SimSupplier[],
+): SimSupplier | undefined {
+  if (suppliers.length === 0) return undefined;
+  const upstream = findUpstreamRoute(nodeId, ctx.routes);
+  if (upstream) {
+    const matched = suppliers.find((s) => s.id === upstream.fromNode);
+    if (matched) return matched;
+  }
+  return suppliers[0];
+}
+
+function priorityForDOS(dos: number, criticalDays: number): "FLASH" | "URGENT" | "ROUTINE" {
+  if (dos <= criticalDays) return "FLASH";
+  if (dos <= criticalDays * 2) return "URGENT";
+  return "ROUTINE";
+}
+
+function recKindForDOS(dos: number, criticalDays: number): string {
+  if (dos <= criticalDays) return "ESCALATE";
+  return "REORDER";
+}
+
+function buildScenarioRecRationale(args: {
+  itemName: string;
+  unitOfIssue: string;
+  nodeName: string;
+  qty: number;
+  dos: number;
+  burn: number;
+  supplierName?: string;
+  etaDays: number;
+}): string {
+  const supplierClause = args.supplierName
+    ? ` via ${args.supplierName} (~${args.etaDays.toFixed(0)}d ETA)`
+    : "";
+  return `Pre-position ${args.qty.toLocaleString()} ${args.unitOfIssue} ${args.itemName} to ${args.nodeName} — projected DOS ${args.dos.toFixed(1)} d at ${args.burn.toFixed(1)}/d burn${supplierClause}.`;
+}
+
+function buildScenarioRecommendationRows(args: {
+  scenarioId: string;
+  result: ReturnType<typeof runScenario>;
+  ctx: ScenarioCtxLite;
+  suppliers: SimSupplier[];
+}): ScenarioRecRow[] {
+  const { scenarioId, result, ctx, suppliers } = args;
+  const nodeMap = new Map(ctx.nodes.map((n) => [n.id, n]));
+  const itemMap = new Map(ctx.items.map((i) => [i.id, i]));
+  const rows: ScenarioRecRow[] = [];
+  const shortlist = result.perItemShortfall.slice(0, 8);
+  for (const sf of shortlist) {
+    const node = nodeMap.get(sf.nodeId);
+    const item = itemMap.get(sf.itemId);
+    if (!node || !item) continue;
+    const supplier = pickSupplierForNode(sf.nodeId, ctx, suppliers);
+    const upstream = findUpstreamRoute(sf.nodeId, ctx.routes);
+    const eta = Math.round(
+      ((supplier?.leadTimeDaysMean ?? item.leadTimeDays) + (upstream?.days ?? 2)) * 10,
+    ) / 10;
+    const expectedRiskReduction = Math.min(
+      90,
+      Math.round(((ctx.watchDays - sf.projectedDOS) / Math.max(1, ctx.watchDays)) * 60) +
+        (sf.projectedDOS <= ctx.criticalDays ? 25 : 0),
+    );
+    rows.push({
+      id: `rec-sc-${scenarioId}-${sf.nodeId}-${sf.itemId}`,
+      nodeId: sf.nodeId,
+      itemId: sf.itemId,
+      kind: recKindForDOS(sf.projectedDOS, ctx.criticalDays),
+      suggestedQty: sf.suggestedQty,
+      reason: buildScenarioRecRationale({
+        itemName: item.name,
+        unitOfIssue: item.unitOfIssue,
+        nodeName: node.name,
+        qty: sf.suggestedQty,
+        dos: sf.projectedDOS,
+        burn: sf.peakDemandPerDay,
+        supplierName: supplier?.name,
+        etaDays: eta,
+      }),
+      expectedRiskReduction,
+      sourceSupplierId: supplier?.id ?? null,
+      etaDays: eta,
+      status: "OPEN",
+      scenarioId,
+    });
+  }
+  return rows;
+}
+
+function buildScenarioRecommendationsView(args: {
+  scenarioId: string;
+  result: ReturnType<typeof runScenario>;
+  ctx: ScenarioCtxLite;
+  suppliers: SimSupplier[];
+  promotedByRecId: Map<string, string | null>;
+  runAt: Date;
+}) {
+  const { scenarioId, result, ctx, suppliers, promotedByRecId, runAt } = args;
+  const nodeMap = new Map(ctx.nodes.map((n) => [n.id, n]));
+  const itemMap = new Map(ctx.items.map((i) => [i.id, i]));
+  const rows = buildScenarioRecommendationRows({ scenarioId, result, ctx, suppliers });
+  return rows.map((row) => {
+    const node = nodeMap.get(row.nodeId);
+    const item = itemMap.get(row.itemId);
+    const supplier = suppliers.find((s) => s.id === row.sourceSupplierId);
+    const dosFromShortfall =
+      result.perItemShortfall.find(
+        (sf) => sf.nodeId === row.nodeId && sf.itemId === row.itemId,
+      )?.projectedDOS ?? 999;
+    return {
+      id: row.id,
+      kind: row.kind,
+      nodeId: row.nodeId,
+      nodeName: node?.name,
+      itemId: row.itemId,
+      itemName: item?.name,
+      quantity: row.suggestedQty ?? 0,
+      priority: priorityForDOS(dosFromShortfall, ctx.criticalDays),
+      rationale: row.reason,
+      suggestedSupplierId: row.sourceSupplierId ?? null,
+      suggestedSupplierName: supplier?.name ?? null,
+      suggestedFromNodeId: supplier?.id ?? null,
+      etaDays: row.etaDays ?? 0,
+      estimatedCost: Number(((row.suggestedQty ?? 0) * 1.5).toFixed(2)),
+      generatedAt: runAt.toISOString(),
+      confidenceScore: Math.min(0.95, 0.55 + (row.expectedRiskReduction ?? 0) / 200),
+      scenarioId,
+      promotedOrderId: promotedByRecId.get(row.id) ?? null,
+    };
+  });
 }
 
 function buildFallbackBrief(

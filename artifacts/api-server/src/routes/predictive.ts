@@ -114,20 +114,72 @@ router.post(
     try {
       const recId = req.params.recommendationId;
       const ctx = await loadSimContext();
-      const allRecs = generateRecommendations({
-        nodes: ctx.ctx.nodes,
-        routes: ctx.ctx.routes,
-        items: ctx.ctx.items,
-        balances: ctx.ctx.balances,
-        profiles: ctx.ctx.profiles,
-        states: ctx.ctx.states,
-        suppliers: ctx.suppliers,
-        itemSkew: ctx.ctx.itemSkew,
-        watchDays: ctx.ctx.watchDays,
-        criticalDays: ctx.ctx.criticalDays,
-        paddingDays: ctx.paddingDays,
-      });
-      const rec = allRecs.find((r) => r.id === recId);
+
+      // First, try to find the recommendation in the DB (covers scenario-derived recs).
+      const [persisted] = await db
+        .select()
+        .from(recsTable)
+        .where(eq(recsTable.id, recId));
+
+      let rec:
+        | {
+            id: string;
+            nodeId: string;
+            itemId: string;
+            kind: string;
+            suggestedQty: number;
+            reason: string;
+            sourceSupplierId?: string | null;
+            etaDays: number;
+            expectedRiskReduction: number;
+          }
+        | undefined;
+
+      if (persisted) {
+        if (persisted.promotedOrderId) {
+          // Already promoted — return the existing order's promotion shape.
+          return res.status(200).json({
+            id: persisted.promotedOrderId,
+            orderNo: persisted.promotedOrderId,
+            nodeId: persisted.nodeId,
+            supplierId: persisted.sourceSupplierId ?? "supplier",
+            status: "SUBMITTED",
+            priority: persisted.kind === "ESCALATE" ? "FLASH" : "ROUTINE",
+            createdAt: new Date().toISOString(),
+            requestedDeliveryAt: new Date(
+              Date.now() + Math.max(1, persisted.etaDays) * 86400_000,
+            ).toISOString(),
+            totalUsd: persisted.suggestedQty * 1.5,
+            lineCount: 1,
+          });
+        }
+        rec = {
+          id: persisted.id,
+          nodeId: persisted.nodeId,
+          itemId: persisted.itemId,
+          kind: persisted.kind,
+          suggestedQty: persisted.suggestedQty,
+          reason: persisted.reason,
+          sourceSupplierId: persisted.sourceSupplierId ?? undefined,
+          etaDays: persisted.etaDays,
+          expectedRiskReduction: persisted.expectedRiskReduction,
+        };
+      } else {
+        const allRecs = generateRecommendations({
+          nodes: ctx.ctx.nodes,
+          routes: ctx.ctx.routes,
+          items: ctx.ctx.items,
+          balances: ctx.ctx.balances,
+          profiles: ctx.ctx.profiles,
+          states: ctx.ctx.states,
+          suppliers: ctx.suppliers,
+          itemSkew: ctx.ctx.itemSkew,
+          watchDays: ctx.ctx.watchDays,
+          criticalDays: ctx.ctx.criticalDays,
+          paddingDays: ctx.paddingDays,
+        });
+        rec = allRecs.find((r) => r.id === recId);
+      }
       if (!rec) return res.status(404).json({ error: "recommendation not found" });
 
       const orderId = `o-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;

@@ -13,6 +13,7 @@ export const recommendations = pgTable("recommendations", {
   status: text("status").notNull().default("OPEN"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   promotedOrderId: text("promoted_order_id"),
+  scenarioId: text("scenario_id"),
 });
 
 export type Recommendation = typeof recommendations.$inferSelect;

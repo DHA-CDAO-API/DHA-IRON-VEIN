@@ -4,7 +4,9 @@ import {
   useListScenarios,
   useRunScenario,
   useListNodes,
+  usePromoteRecommendationToOrder,
   type PresetEvent,
+  type Recommendation,
   type ScenarioResult,
   type Node as NetworkNode,
 } from "@workspace/api-client-react";
@@ -31,6 +33,8 @@ import {
   Wrench,
   Activity,
   X,
+  CheckCircle2,
+  Truck,
 } from "lucide-react";
 import {
   CartesianGrid,
@@ -838,28 +842,168 @@ function ResultPanel({ result }: { result: ScenarioResult }) {
       {result.recommendations.length > 0 ? (
         <section>
           <SectionHeader
-            title={`Recommendations (${result.recommendations.length})`}
+            title={`Recommended Actions (${result.recommendations.length})`}
             badge={<AiBadge label="Powered by AI" />}
           />
-          <ul className="space-y-2">
-            {result.recommendations.map((r) => (
-              <li
-                key={r.id}
-                className="rounded-md border border-border bg-background/30 p-2 text-xs"
-              >
-                <div className="flex justify-between mb-0.5">
-                  <span className="font-medium">{r.kind}</span>
-                  <span className="uppercase text-[10px] text-muted-foreground">
-                    {r.priority}
-                  </span>
-                </div>
-                <div className="text-muted-foreground">{r.rationale}</div>
-              </li>
-            ))}
-          </ul>
+          <RecommendationCards recommendations={result.recommendations} />
         </section>
       ) : null}
     </div>
+  );
+}
+
+function priorityClass(priority: string | undefined): string {
+  const p = (priority ?? "").toUpperCase();
+  if (p === "FLASH")
+    return "bg-destructive/15 text-destructive border-destructive/40";
+  if (p === "URGENT")
+    return "bg-amber-500/15 text-amber-400 border-amber-500/40";
+  return "bg-emerald-500/10 text-emerald-400 border-emerald-500/30";
+}
+
+function kindClass(kind: string | undefined): string {
+  const k = (kind ?? "").toUpperCase();
+  if (k === "ESCALATE")
+    return "bg-destructive/10 text-destructive border-destructive/30";
+  if (k === "REROUTE")
+    return "bg-amber-500/10 text-amber-400 border-amber-500/30";
+  if (k === "SUBSTITUTE")
+    return "bg-sky-500/10 text-sky-400 border-sky-500/30";
+  return "bg-primary/10 text-primary border-primary/30";
+}
+
+function RecommendationCards({
+  recommendations,
+}: {
+  recommendations: Recommendation[];
+}) {
+  const promote = usePromoteRecommendationToOrder();
+  const [promotedById, setPromotedById] = React.useState<
+    Record<string, { orderId: string; orderNo: string }>
+  >({});
+  const [errorById, setErrorById] = React.useState<Record<string, string>>({});
+
+  const handlePromote = async (rec: Recommendation) => {
+    setErrorById((prev) => ({ ...prev, [rec.id]: "" }));
+    try {
+      const res = await promote.mutateAsync({ recommendationId: rec.id });
+      const order = res as { id?: string; orderNo?: string } | undefined;
+      setPromotedById((prev) => ({
+        ...prev,
+        [rec.id]: {
+          orderId: order?.id ?? "promoted",
+          orderNo: order?.orderNo ?? order?.id ?? "PROMOTED",
+        },
+      }));
+    } catch (e) {
+      setErrorById((prev) => ({
+        ...prev,
+        [rec.id]: (e as Error)?.message ?? "Promote failed",
+      }));
+    }
+  };
+
+  return (
+    <ul className="space-y-2">
+      {recommendations.map((r) => {
+        const initiallyPromoted = !!r.promotedOrderId;
+        const localPromote = promotedById[r.id];
+        const isPromoted = initiallyPromoted || !!localPromote;
+        const promotedRef =
+          localPromote?.orderNo ?? r.promotedOrderId ?? null;
+        const isPending =
+          promote.isPending && promote.variables?.recommendationId === r.id;
+        const err = errorById[r.id];
+        return (
+          <li
+            key={r.id}
+            data-testid={`rec-card-${r.id}`}
+            className={cn(
+              "rounded-md border bg-background/40 p-3 text-xs space-y-2",
+              isPromoted ? "border-emerald-500/30" : "border-border",
+            )}
+          >
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                <Badge
+                  variant="outline"
+                  className={cn("text-[10px]", kindClass(r.kind))}
+                >
+                  {r.kind}
+                </Badge>
+                <Badge
+                  variant="outline"
+                  className={cn("text-[10px]", priorityClass(r.priority))}
+                >
+                  {r.priority}
+                </Badge>
+                <span className="font-semibold text-sm leading-tight">
+                  {r.itemName ?? r.itemId}
+                </span>
+                <span className="text-muted-foreground">→</span>
+                <span className="font-medium text-sm leading-tight text-primary">
+                  {r.nodeName ?? r.nodeId}
+                </span>
+              </div>
+              <div className="text-right shrink-0">
+                <div className="font-mono text-sm font-bold">
+                  {r.quantity.toLocaleString()}
+                </div>
+                <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                  units
+                </div>
+              </div>
+            </div>
+
+            <p className="text-muted-foreground leading-snug">{r.rationale}</p>
+
+            <div className="flex items-center justify-between gap-2 pt-1.5 border-t border-border/50">
+              <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
+                {r.suggestedSupplierName ? (
+                  <span className="flex items-center gap-1">
+                    <Truck className="h-3 w-3" />
+                    {r.suggestedSupplierName}
+                  </span>
+                ) : null}
+                <span className="font-mono">ETA {r.etaDays.toFixed(0)}d</span>
+                {typeof r.estimatedCost === "number" ? (
+                  <span className="font-mono">
+                    ${r.estimatedCost.toLocaleString()}
+                  </span>
+                ) : null}
+              </div>
+              {isPromoted ? (
+                <span className="inline-flex items-center gap-1 text-[11px] text-emerald-400 font-medium">
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                  {promotedRef ? `Promoted · ${promotedRef}` : "Promoted"}
+                </span>
+              ) : (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={isPending}
+                  onClick={() => handlePromote(r)}
+                  data-testid={`rec-promote-${r.id}`}
+                  className="border-primary/50 text-primary hover:bg-primary/10 h-7"
+                >
+                  {isPending ? (
+                    <>
+                      <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                      Promoting…
+                    </>
+                  ) : (
+                    "Promote to PO"
+                  )}
+                </Button>
+              )}
+            </div>
+            {err ? (
+              <div className="text-[11px] text-destructive">{err}</div>
+            ) : null}
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 

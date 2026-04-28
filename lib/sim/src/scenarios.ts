@@ -17,6 +17,16 @@ export type ScenarioStep = {
   criticalShortByNode: Record<string, number>;
 };
 
+export type ScenarioItemShortfall = {
+  nodeId: string;
+  itemId: string;
+  peakDemandPerDay: number;
+  finalOnHand: number;
+  projectedDOS: number;
+  daysCritical: number;
+  suggestedQty: number;
+};
+
 export type ScenarioOutcome = {
   steps: ScenarioStep[];
   impactedNodes: Array<{
@@ -28,6 +38,7 @@ export type ScenarioOutcome = {
   }>;
   baselineRisk: Record<string, number>;
   peakDay: number;
+  perItemShortfall: ScenarioItemShortfall[];
 };
 
 export type ScenarioContext = {
@@ -63,6 +74,8 @@ export function runScenario(
   const peakRiskByNode: Record<string, number> = { ...baselineRisk };
   const minDOSByNode: Record<string, number> = {};
   const daysCriticalByNode: Record<string, number> = {};
+  const peakBurnByKey = new Map<string, number>();
+  const daysCriticalByKey = new Map<string, number>();
 
   let peakDay = 0;
   let peakSum = -Infinity;
@@ -108,6 +121,12 @@ export function runScenario(
         const dos = projectDaysOfSupply(Math.max(0, onHand), dem.quantity);
         if (dos < minDosForNode) minDosForNode = dos;
         if (dos <= ctx.criticalDays) critShort++;
+        if ((peakBurnByKey.get(key) ?? 0) < dem.quantity) {
+          peakBurnByKey.set(key, dem.quantity);
+        }
+        if (dos <= ctx.criticalDays) {
+          daysCriticalByKey.set(key, (daysCriticalByKey.get(key) ?? 0) + 1);
+        }
       }
       const upstreamDelay = isAffected
         ? input.perturbation.routeDelayDays ?? 0
@@ -153,7 +172,39 @@ export function runScenario(
     .sort((a, b) => b.peakRisk - b.baselineRisk - (a.peakRisk - a.baselineRisk))
     .slice(0, 12);
 
-  return { steps, impactedNodes, baselineRisk, peakDay };
+  const nodeById = new Map(ctx.nodes.map((n) => [n.id, n]));
+  const itemById = new Map(ctx.items.map((i) => [i.id, i]));
+  const perItemShortfall: ScenarioItemShortfall[] = [];
+  for (const [key, peakBurn] of peakBurnByKey.entries()) {
+    if (peakBurn <= 0) continue;
+    const [nodeId, itemId] = key.split(":");
+    const node = nodeById.get(nodeId);
+    const item = itemById.get(itemId);
+    if (!node || !item) continue;
+    const finalOnHand = onHandByKey.get(key) ?? 0;
+    const projectedDOS = projectDaysOfSupply(finalOnHand, peakBurn);
+    if (projectedDOS > ctx.watchDays) continue;
+    const targetDays = Math.max(node.stockDays, item.leadTimeDays + ctx.criticalDays);
+    const suggestedQty = Math.ceil(Math.max(0, peakBurn * targetDays - finalOnHand));
+    if (suggestedQty <= 0) continue;
+    perItemShortfall.push({
+      nodeId,
+      itemId,
+      peakDemandPerDay: Number(peakBurn.toFixed(2)),
+      finalOnHand: Number(finalOnHand.toFixed(1)),
+      projectedDOS: Number(projectedDOS.toFixed(1)),
+      daysCritical: daysCriticalByKey.get(key) ?? 0,
+      suggestedQty,
+    });
+  }
+  perItemShortfall.sort((a, b) => {
+    const aCrit = (itemById.get(a.itemId)?.criticality === "critical" ? 0 : 1);
+    const bCrit = (itemById.get(b.itemId)?.criticality === "critical" ? 0 : 1);
+    if (aCrit !== bCrit) return aCrit - bCrit;
+    return a.projectedDOS - b.projectedDOS;
+  });
+
+  return { steps, impactedNodes, baselineRisk, peakDay, perItemShortfall };
 }
 
 function computeNodeRisk(
