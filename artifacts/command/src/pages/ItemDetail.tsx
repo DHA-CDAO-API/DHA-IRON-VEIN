@@ -8,15 +8,27 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Box, Network, AlertTriangle, MapPin } from 'lucide-react';
 import { formatPercent, formatDays, formatDOS, dosClass as riskClass } from '@/lib/format';
 
+function suppliersCarryingItem<T extends { items?: string[] }>(
+  list: T[],
+  itemId: string,
+): T[] {
+  return list.filter((s) => Array.isArray(s.items) && s.items.includes(itemId));
+}
+
 export default function ItemDetail() {
   const { itemId } = useParams();
-  
+  const [showAllSuppliers, setShowAllSuppliers] = React.useState(false);
+
   const { data: detail, isLoading } = useGetItemDetail(itemId || '', {
     query: {
       enabled: !!itemId,
       queryKey: getGetItemDetailQueryKey(itemId || '')
     }
   });
+
+  React.useEffect(() => {
+    setShowAllSuppliers(false);
+  }, [itemId]);
 
   if (isLoading || !detail) {
     return <div className="p-6 space-y-4">
@@ -28,6 +40,10 @@ export default function ItemDetail() {
 
   const { item, totalOnHand, networkDaysOfSupply, perNode, suppliers } = detail;
   const criticalNodes = perNode.filter(n => (n.daysOfSupply || 0) <= 3).length;
+  const matchingSuppliers = suppliersCarryingItem(suppliers, item.id);
+  const noMatches = matchingSuppliers.length === 0;
+  const visibleSuppliers = showAllSuppliers || noMatches ? suppliers : matchingSuppliers;
+  const hiddenCount = Math.max(0, suppliers.length - matchingSuppliers.length);
 
   return (
     <div className="h-full flex flex-col p-4 gap-4 overflow-y-auto bg-background text-foreground">
@@ -165,13 +181,37 @@ export default function ItemDetail() {
         
         <div className="lg:col-span-2 flex flex-col gap-4 min-w-0">
           <Card className="bg-card/50 border-border flex-1 overflow-hidden flex flex-col">
-            <div className="p-4 border-b border-border/50 bg-muted/20 font-medium text-sm">Available Suppliers</div>
+            <div className="p-4 border-b border-border/50 bg-muted/20 flex items-center justify-between gap-2">
+              <div className="font-medium text-sm">
+                Available Suppliers
+                {!noMatches && !showAllSuppliers && hiddenCount > 0 && (
+                  <span className="ml-2 text-[11px] font-normal text-muted-foreground">
+                    showing {matchingSuppliers.length} of {suppliers.length} that carry this item
+                  </span>
+                )}
+              </div>
+              {hiddenCount > 0 && !noMatches && (
+                <button
+                  type="button"
+                  data-testid="item-detail-supplier-show-all"
+                  className="text-[11px] text-muted-foreground hover:text-foreground underline-offset-2 hover:underline"
+                  onClick={() => setShowAllSuppliers((v) => !v)}
+                >
+                  {showAllSuppliers ? 'Only matching' : 'Show all'}
+                </button>
+              )}
+            </div>
+            {noMatches && suppliers.length > 0 && (
+              <div className="px-4 py-2 text-[11px] text-muted-foreground border-b border-border/50 bg-amber-500/5">
+                No supplier in the catalog carries this item — showing all suppliers.
+              </div>
+            )}
             <div className="flex-1 overflow-auto">
               <SortableTable
                 stickyHeader
                 className="table-fixed"
                 initialSort={{ key: 'reliability', direction: 'desc' }}
-                data={suppliers}
+                data={visibleSuppliers}
                 rowKey={(sup) => sup.id}
                 emptyMessage="No suppliers mapped"
                 columns={[
@@ -181,14 +221,24 @@ export default function ItemDetail() {
                     sortAccessor: (sup) => sup.name,
                     className: 'w-[60%]',
                     headerClassName: 'w-[60%]',
-                    render: (sup) => (
-                      <div className="min-w-0">
-                        <div className="font-medium text-sm truncate" title={sup.name}>{sup.name}</div>
-                        <div className="text-[11px] text-muted-foreground truncate">
-                          {sup.region || '—'}{sup.channel ? ` · ${sup.channel}` : ''}
+                    render: (sup) => {
+                      const carries = Array.isArray(sup.items) && sup.items.includes(item.id);
+                      return (
+                        <div className="min-w-0">
+                          <div className="font-medium text-sm truncate flex items-center gap-2" title={sup.name}>
+                            <span className="truncate">{sup.name}</span>
+                            {!carries && (
+                              <span className="shrink-0 text-[10px] uppercase tracking-wide text-amber-600 dark:text-amber-400">
+                                no coverage
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[11px] text-muted-foreground truncate">
+                            {sup.region || '—'}{sup.channel ? ` · ${sup.channel}` : ''}
+                          </div>
                         </div>
-                      </div>
-                    ),
+                      );
+                    },
                   },
                   {
                     key: 'leadTime',

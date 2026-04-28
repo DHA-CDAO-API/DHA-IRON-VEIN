@@ -1859,10 +1859,21 @@ function PromoteDialog({
 
   React.useEffect(() => {
     if (rec) {
+      // Default to highest-reliability supplier that actually carries this
+      // item, so the dialog mirrors the New Order flow when the recommendation
+      // didn't come with a server-suggested supplier.
+      const covering = suppliers
+        .filter(
+          (s) => Array.isArray(s.items) && s.items.includes(rec.itemId),
+        )
+        .sort((a, b) => (b.reliability ?? 0) - (a.reliability ?? 0));
       const initial: PromoteOverrides = {
         quantity: Math.max(1, Math.round(rec.quantity)),
         supplierId:
-          rec.suggestedSupplierId ?? suppliers[0]?.id ?? "supplier",
+          rec.suggestedSupplierId ??
+          covering[0]?.id ??
+          suppliers[0]?.id ??
+          "supplier",
         etaDays: Math.max(0, Number(rec.etaDays.toFixed(1))),
         priority:
           (rec.priority?.toUpperCase() as PromoteOverrides["priority"]) ??
