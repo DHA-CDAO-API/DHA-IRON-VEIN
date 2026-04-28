@@ -3,16 +3,22 @@ import type { Supplier as DbSupplier } from "@workspace/db";
 /**
  * Map a raw DB supplier row to the OpenAPI Supplier envelope shape.
  *
- * OpenAPI required: id, name, region, leadTimeDays, reliability,
- * costIndex, channel.
+ * OpenAPI `Supplier` requires: id, name, region, leadTimeDays,
+ * reliability, costIndex, channel. Returns ONLY API-defined fields
+ * to prevent DB-internal columns (leadTimeDaysMean, reliabilityScore,
+ * itemsCovered, etc.) from leaking into responses and causing future
+ * contract drift.
  */
 export function mapSupplierToApi(row: DbSupplier) {
   return {
-    ...row,
+    id: row.id,
+    name: row.name,
     region: row.country,
     countryCode: row.country,
     leadTimeDays: row.leadTimeDaysMean,
     reliability: row.reliabilityScore,
     costIndex: 1,
+    channel: row.channel,
+    notes: row.notes ?? null,
   };
 }
