@@ -31,8 +31,34 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2 } from "lucide-react";
+import { Check, ChevronsUpDown, Loader2 } from "lucide-react";
+
+const CATEGORY_LABELS: Record<string, string> = {
+  blood_products: "Blood Products",
+  supplies: "Supplies",
+  other: "Other",
+};
+
+function formatCategory(category?: string): string | null {
+  if (!category) return null;
+  return CATEGORY_LABELS[category] ?? category;
+}
 
 const PRIORITIES = ["ROUTINE", "PRIORITY", "URGENT", "FLASH"] as const;
 
@@ -92,6 +118,7 @@ export function NewOrderDialog({ open, onOpenChange }: NewOrderDialogProps) {
   );
 
   const [itemId, setItemId] = useState("");
+  const [itemPickerOpen, setItemPickerOpen] = useState(false);
   const [toNodeId, setToNodeId] = useState("");
   const [supplierId, setSupplierId] = useState("");
   const [quantity, setQuantity] = useState("100");
@@ -105,6 +132,7 @@ export function NewOrderDialog({ open, onOpenChange }: NewOrderDialogProps) {
   useEffect(() => {
     if (open) {
       setItemId("");
+      setItemPickerOpen(false);
       setToNodeId("");
       setSupplierId("");
       setQuantity("100");
@@ -113,6 +141,11 @@ export function NewOrderDialog({ open, onOpenChange }: NewOrderDialogProps) {
       setError(null);
     }
   }, [open]);
+
+  const selectedItem = useMemo(
+    () => sortedItems.find((it) => it.id === itemId) ?? null,
+    [sortedItems, itemId],
+  );
 
   const qtyNum = Number(quantity);
   const isValid =
@@ -172,18 +205,122 @@ export function NewOrderDialog({ open, onOpenChange }: NewOrderDialogProps) {
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="new-order-item">Item</Label>
-            <Select value={itemId} onValueChange={setItemId}>
-              <SelectTrigger id="new-order-item">
-                <SelectValue placeholder="Select an item" />
-              </SelectTrigger>
-              <SelectContent className="max-h-72">
-                {sortedItems.map((it) => (
-                  <SelectItem key={it.id} value={it.id}>
-                    {it.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Popover open={itemPickerOpen} onOpenChange={setItemPickerOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  id="new-order-item"
+                  type="button"
+                  variant="outline"
+                  role="combobox"
+                  aria-expanded={itemPickerOpen}
+                  aria-haspopup="listbox"
+                  className={cn(
+                    "w-full justify-between font-normal",
+                    !selectedItem && "text-muted-foreground",
+                  )}
+                >
+                  {selectedItem ? (
+                    <span className="flex items-center gap-2 min-w-0">
+                      <span className="truncate">{selectedItem.name}</span>
+                      {formatCategory(selectedItem.category) && (
+                        <Badge
+                          variant="secondary"
+                          className="shrink-0 text-[10px] uppercase tracking-wide"
+                        >
+                          {formatCategory(selectedItem.category)}
+                        </Badge>
+                      )}
+                    </span>
+                  ) : (
+                    "Select an item"
+                  )}
+                  <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent
+                className="w-[--radix-popover-trigger-width] p-0"
+                align="start"
+              >
+                <Command
+                  filter={(value, search) => {
+                    if (!search) return 1;
+                    return value
+                      .toLowerCase()
+                      .includes(search.toLowerCase())
+                      ? 1
+                      : 0;
+                  }}
+                >
+                  <CommandInput
+                    placeholder="Search by name, NIIN/SKU, or class..."
+                  />
+                  <CommandList>
+                    <CommandEmpty>No items match your search.</CommandEmpty>
+                    <CommandGroup>
+                      {sortedItems.map((it) => {
+                        const categoryLabel = formatCategory(it.category);
+                        const classOfSupply = it.classOfSupply;
+                        const niinOrSku = it.niinOrSku;
+                        const searchValue = [
+                          it.name,
+                          categoryLabel ?? "",
+                          classOfSupply ?? "",
+                          niinOrSku ?? "",
+                          it.id,
+                        ]
+                          .filter(Boolean)
+                          .join(" ");
+                        return (
+                          <CommandItem
+                            key={it.id}
+                            value={searchValue}
+                            onSelect={() => {
+                              setItemId(it.id);
+                              setItemPickerOpen(false);
+                            }}
+                          >
+                            <Check
+                              className={cn(
+                                "mr-2 h-4 w-4",
+                                itemId === it.id
+                                  ? "opacity-100"
+                                  : "opacity-0",
+                              )}
+                            />
+                            <div className="flex flex-col gap-0.5 min-w-0 flex-1">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span className="truncate font-medium">
+                                  {it.name}
+                                </span>
+                                {categoryLabel && (
+                                  <Badge
+                                    variant="secondary"
+                                    className="shrink-0 text-[10px] uppercase tracking-wide"
+                                  >
+                                    {categoryLabel}
+                                  </Badge>
+                                )}
+                              </div>
+                              {(classOfSupply || niinOrSku) && (
+                                <div className="text-xs text-muted-foreground truncate">
+                                  {classOfSupply && (
+                                    <span>Class {classOfSupply}</span>
+                                  )}
+                                  {classOfSupply && niinOrSku && (
+                                    <span> · </span>
+                                  )}
+                                  {niinOrSku && <span>{niinOrSku}</span>}
+                                </div>
+                              )}
+                            </div>
+                          </CommandItem>
+                        );
+                      })}
+                    </CommandGroup>
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            </Popover>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
