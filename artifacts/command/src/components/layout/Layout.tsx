@@ -54,7 +54,12 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       {/* Sidebar */}
       <div className="w-16 md:w-64 border-r border-border bg-sidebar flex flex-col justify-between transition-all shrink-0">
         <div>
-          <div className="h-16 flex items-center justify-center md:justify-start md:px-3 border-b border-border shrink-0 gap-2.5">
+          <Link
+            href="/"
+            aria-label="Go to Overview"
+            data-testid="link-sidebar-home"
+            className="h-16 flex items-center justify-center md:justify-start md:px-3 border-b border-border shrink-0 gap-2.5 cursor-pointer hover:bg-secondary/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-inset transition-colors"
+          >
             <img
               src={dhaSeal}
               alt="Defense Health Agency seal"
@@ -78,7 +83,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                 for Vital Expeditionary Inventory Nodes
               </span>
             </div>
-          </div>
+          </Link>
           <nav className="flex flex-col gap-1 p-2 mt-4">
             {navItems.map((item) => {
               const active = item.matches
