@@ -443,17 +443,48 @@ router.post("/scenarios", async (req, res, next) => {
         return `${node?.name ?? n.nodeId} [node:${n.nodeId}] baseline=${n.baselineRisk} peak=${n.peakRisk} minDOS=${n.minDOS.toFixed(1)}d`;
       });
       const userMsg = `SCENARIO: ${body.name}\nKIND: ${body.kind}\nSUMMARY: ${summary}\nHORIZON: ${horizonDays} days\nPERTURBATION: ${JSON.stringify(perturbation)}\nPEAK DAY: ${result.peakDay}\nTOP IMPACTED NODES:\n${topImpacted.join("\n")}\n\nWrite the COA brief.`;
+      // Race the AI brief against a hard 12s deadline. The Replit
+      // edge proxy in front of this server cancels upstream requests
+      // that take too long and surfaces them to the browser as a
+      // generic "HTTP 502 Bad Gateway", which operators see whenever
+      // they save a scenario while the model is slow. Falling back
+      // to the deterministic brief is far better UX than a 502: the
+      // operator still gets a saved scenario plus a structured COA,
+      // and a slow model can't take down the entire scenario flow.
+      const briefDeadlineMs = 12_000;
+      let deadlineTimer: NodeJS.Timeout | null = null;
       try {
-        coaBrief = await completeChat({
-          provider: aiProvider as "openai" | "anthropic",
-          model: aiModel,
-          system: SCENARIO_BRIEF_SYSTEM,
-          messages: [{ role: "user", content: userMsg }],
-          maxOutputTokens: 800,
-        });
+        coaBrief = await Promise.race([
+          completeChat({
+            provider: aiProvider as "openai" | "anthropic",
+            model: aiModel,
+            system: SCENARIO_BRIEF_SYSTEM,
+            messages: [{ role: "user", content: userMsg }],
+            maxOutputTokens: 800,
+          }),
+          // Hard deadline guard. We cannot abort the in-flight LLM
+          // request from here (the underlying HTTP client doesn't
+          // expose an AbortController), so the losing promise's
+          // tokens still bill — but at least we always clear the
+          // timer on the happy path so we don't leak Node timers
+          // for up to 12s on every successful scenario save.
+          new Promise<string>((_resolve, reject) => {
+            deadlineTimer = setTimeout(
+              () =>
+                reject(
+                  new Error(
+                    `AI brief exceeded ${briefDeadlineMs}ms deadline`,
+                  ),
+                ),
+              briefDeadlineMs,
+            );
+          }),
+        ]);
       } catch (err) {
         req.log?.warn({ err }, "AI brief failed; emitting deterministic fallback");
         coaBrief = buildFallbackBrief(body.name, summary, result.peakDay, topImpacted);
+      } finally {
+        if (deadlineTimer) clearTimeout(deadlineTimer);
       }
     }
 

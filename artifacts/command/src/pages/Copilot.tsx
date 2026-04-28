@@ -15,22 +15,30 @@ export default function Copilot() {
   const [activeConvId, setActiveConvId] = useState<string | null>(null);
   const [input, setInput] = useState('');
   const [provider, setProvider] = useState('openai');
-  const [streamingMessage, setStreamingMessage] = useState<string>('');
-  const [isStreaming, setIsStreaming] = useState(false);
+  // All in-flight optimistic state is scoped to a conversation id.
+  // If the operator switches sidebar chats while a send is mid-
+  // stream, we want the pinned user bubble + "Thinking…" + any
+  // error to STAY with the originating conversation, not bleed
+  // into whichever chat is currently focused. Render-time guards
+  // (`pending.convId === activeConvId`, etc.) enforce that.
+  const [pending, setPending] = useState<{ convId: string; content: string } | null>(null);
+  const [streaming, setStreaming] = useState<{ convId: string; text: string } | null>(null);
+  const [lastError, setLastError] = useState<{ convId: string; message: string } | null>(null);
+  const isStreaming = streaming !== null;
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const { data: convos, isLoading: convosLoading } = useListConversations();
   const { data: activeDetail, isLoading: detailLoading } = useGetConversation(activeConvId || '', {
     query: { queryKey: getGetConversationQueryKey(activeConvId || ''), enabled: !!activeConvId },
   });
-  
+
   const createConv = useCreateConversation();
 
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [activeDetail?.messages, streamingMessage]);
+  }, [activeDetail?.messages, streaming?.text, pending?.content, activeConvId]);
 
   const handleCreate = (): Promise<string | null> => {
     return new Promise((resolve) => {
@@ -52,30 +60,34 @@ export default function Copilot() {
 
   const handleSend = async () => {
     if (!input.trim() || isStreaming) return;
+    const userMsg = input.trim();
+    setInput('');
 
-    // Auto-create a conversation on first send so the user doesn't have
-    // to click "New Chat" before they can ask anything. This was the
-    // single biggest UX trap on this page — users would type, hit Enter,
-    // and see nothing happen because the send button silently disabled
-    // itself when there was no active conversation yet.
+    // Auto-create a conversation on first send so the user doesn't
+    // have to click "New Chat" before they can ask anything. We do
+    // this BEFORE seeding optimistic state so we have a real convId
+    // to scope the bubble to — that way the optimistic UI is bound
+    // to the correct chat from the start and won't leak into another
+    // chat the operator might switch to mid-flight.
     let convId = activeConvId;
     if (!convId) {
       convId = await handleCreate();
-      if (!convId) return;
+      if (!convId) {
+        setLastError({
+          convId: '',
+          message: 'Could not start a new conversation. Please try again.',
+        });
+        return;
+      }
     }
 
-    const userMsg = input.trim();
-    setInput('');
-    setIsStreaming(true);
-    setStreamingMessage('');
-
-    // Optimistically add user message to cache
-    if (activeDetail) {
-      queryClient.setQueryData(['/api/copilot/conversations', convId], {
-        ...activeDetail,
-        messages: [...activeDetail.messages, { id: Date.now().toString(), role: 'user', content: userMsg, createdAt: new Date().toISOString() }]
-      });
-    }
+    // All optimistic state is keyed by convId. The render path checks
+    // `pending.convId === activeConvId` (etc.) so switching chats
+    // hides — but does not destroy — the in-flight bubbles for the
+    // originating conversation.
+    setLastError(null);
+    setPending({ convId, content: userMsg });
+    setStreaming({ convId, text: '' });
 
     try {
       const res = await fetch(`/api/copilot/conversations/${convId}/messages`, {
@@ -84,7 +96,9 @@ export default function Copilot() {
         body: JSON.stringify({ content: userMsg, provider })
       });
 
-      if (!res.ok || !res.body) throw new Error('Stream failed');
+      if (!res.ok || !res.body) {
+        throw new Error(`Copilot request failed (HTTP ${res.status})`);
+      }
 
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
@@ -101,7 +115,16 @@ export default function Copilot() {
               try {
                 const data = JSON.parse(line.slice(6));
                 if (data.type === 'token') {
-                  setStreamingMessage(prev => prev + data.value);
+                  setStreaming((prev) =>
+                    prev && prev.convId === convId
+                      ? { convId, text: prev.text + data.value }
+                      : prev,
+                  );
+                } else if (data.type === 'error') {
+                  setLastError({
+                    convId,
+                    message: typeof data.value === 'string' ? data.value : 'Copilot stream error',
+                  });
                 }
               } catch (e) {}
             }
@@ -110,16 +133,31 @@ export default function Copilot() {
       }
     } catch (e) {
       console.error(e);
+      setLastError({
+        convId,
+        message: (e as Error)?.message ?? 'Copilot request failed',
+      });
     } finally {
-      setIsStreaming(false);
       // Invalidate using the local `convId` (not `activeConvId`) — when
       // we just auto-created the conversation in this same tick, the
       // `activeConvId` closure value is still null because React hasn't
       // re-rendered yet. Combined with our app-wide staleTime: Infinity,
       // invalidating the wrong key would leave the freshly-streamed
       // assistant message stale on screen until a hard refresh.
-      queryClient.invalidateQueries({ queryKey: ['/api/copilot/conversations', convId] });
-      setStreamingMessage('');
+      // Wait for the refetch to complete BEFORE clearing the optimistic
+      // pending bubbles — otherwise there's a one-frame gap where the
+      // user sees an empty chat between "streaming finished" and "server
+      // messages loaded".
+      try {
+        await queryClient.invalidateQueries({ queryKey: getGetConversationQueryKey(convId) });
+      } catch {
+        /* invalidation failures are non-fatal */
+      }
+      // Only clear the optimistic state we own. If a second send for
+      // a different conversation has already replaced our state, leave
+      // it alone.
+      setStreaming((prev) => (prev && prev.convId === convId ? null : prev));
+      setPending((prev) => (prev && prev.convId === convId ? null : prev));
     }
   };
 
@@ -175,44 +213,96 @@ export default function Copilot() {
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-6" ref={scrollRef}>
-          {!activeConvId ? (
-            <div className="h-full flex flex-col items-center justify-center text-muted-foreground gap-3">
-              <Bot className="h-12 w-12 text-primary/30" />
-              <p className="text-sm">Ask Copilot anything about the theater.</p>
-              <p className="text-xs opacity-70">Type a question below — a new chat starts automatically.</p>
-            </div>
-          ) : (
-            <>
-              {activeDetail?.messages.map((m, i) => (
-                <div key={i} className={`flex gap-4 max-w-4xl mx-auto ${m.role === 'user' ? 'flex-row-reverse' : ''}`}>
-                  <div className={`h-8 w-8 rounded-full shrink-0 flex items-center justify-center ${m.role === 'user' ? 'bg-secondary' : 'bg-primary/20 text-primary'}`}>
-                    {m.role === 'user' ? <User className="h-5 w-5" /> : <Bot className="h-5 w-5" />}
-                  </div>
-                  <div className={`flex flex-col gap-1 ${m.role === 'user' ? 'items-end' : 'items-start'}`}>
-                    <div className="text-xs text-muted-foreground uppercase tracking-wider">{m.role}</div>
-                    <div className={`p-4 rounded-lg text-sm whitespace-pre-wrap ${m.role === 'user' ? 'bg-secondary text-foreground' : 'bg-card border border-border/50'}`}>
-                      {m.content}
+          {(() => {
+            // All optimistic state is scoped per conversation id, so
+            // the pinned user bubble + Thinking bubble + inline error
+            // only render in the originating chat. If the operator
+            // switches to a different chat mid-stream, the bubbles
+            // disappear from view (they stay in state, keyed by the
+            // original convId, and reappear on switch back).
+            const showPending =
+              pending &&
+              activeConvId &&
+              pending.convId === activeConvId &&
+              !(
+                activeDetail?.messages?.length &&
+                activeDetail.messages[activeDetail.messages.length - 1]?.role === 'user' &&
+                activeDetail.messages[activeDetail.messages.length - 1]?.content?.trim() === pending.content
+              );
+            const showStreaming =
+              streaming && activeConvId && streaming.convId === activeConvId;
+            const showError =
+              lastError &&
+              activeConvId &&
+              lastError.convId === activeConvId &&
+              !showStreaming;
+            // Show the empty placeholder ONLY when there's no active
+            // chat AND nothing optimistic in flight for it.
+            const showEmpty = !activeConvId && !showPending && !showStreaming;
+            if (showEmpty) {
+              return (
+                <div className="h-full flex flex-col items-center justify-center text-muted-foreground gap-3">
+                  <Bot className="h-12 w-12 text-primary/30" />
+                  <p className="text-sm">Ask Copilot anything about the theater.</p>
+                  <p className="text-xs opacity-70">Type a question below — a new chat starts automatically.</p>
+                </div>
+              );
+            }
+            return (
+              <>
+                {activeDetail?.messages.map((m, i) => (
+                  <div key={i} className={`flex gap-4 max-w-4xl mx-auto ${m.role === 'user' ? 'flex-row-reverse' : ''}`}>
+                    <div className={`h-8 w-8 rounded-full shrink-0 flex items-center justify-center ${m.role === 'user' ? 'bg-secondary' : 'bg-primary/20 text-primary'}`}>
+                      {m.role === 'user' ? <User className="h-5 w-5" /> : <Bot className="h-5 w-5" />}
+                    </div>
+                    <div className={`flex flex-col gap-1 ${m.role === 'user' ? 'items-end' : 'items-start'}`}>
+                      <div className="text-xs text-muted-foreground uppercase tracking-wider">{m.role}</div>
+                      <div className={`p-4 rounded-lg text-sm whitespace-pre-wrap ${m.role === 'user' ? 'bg-secondary text-foreground' : 'bg-card border border-border/50'}`}>
+                        {m.content}
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
-              
-              {isStreaming && (
-                <div className="flex gap-4 max-w-4xl mx-auto">
-                  <div className="h-8 w-8 rounded-full shrink-0 flex items-center justify-center bg-primary/20 text-primary">
-                    <Bot className="h-5 w-5" />
-                  </div>
-                  <div className="flex flex-col gap-1 items-start">
-                    <div className="text-xs text-muted-foreground uppercase tracking-wider">assistant</div>
-                    <div className="p-4 rounded-lg text-sm whitespace-pre-wrap bg-card border border-border/50 min-w-[60px]">
-                      {streamingMessage}
-                      <span className="inline-block w-2 h-4 ml-1 bg-primary animate-pulse align-middle"></span>
+                ))}
+
+                {showPending && (
+                  <div className="flex gap-4 max-w-4xl mx-auto flex-row-reverse">
+                    <div className="h-8 w-8 rounded-full shrink-0 flex items-center justify-center bg-secondary">
+                      <User className="h-5 w-5" />
+                    </div>
+                    <div className="flex flex-col gap-1 items-end">
+                      <div className="text-xs text-muted-foreground uppercase tracking-wider">user</div>
+                      <div className="p-4 rounded-lg text-sm whitespace-pre-wrap bg-secondary text-foreground">
+                        {pending!.content}
+                      </div>
                     </div>
                   </div>
-                </div>
-              )}
-            </>
-          )}
+                )}
+
+                {showStreaming && (
+                  <div className="flex gap-4 max-w-4xl mx-auto">
+                    <div className="h-8 w-8 rounded-full shrink-0 flex items-center justify-center bg-primary/20 text-primary">
+                      <Bot className="h-5 w-5" />
+                    </div>
+                    <div className="flex flex-col gap-1 items-start">
+                      <div className="text-xs text-muted-foreground uppercase tracking-wider">assistant</div>
+                      <div className="p-4 rounded-lg text-sm whitespace-pre-wrap bg-card border border-border/50 min-w-[60px]">
+                        {streaming!.text || (
+                          <span className="text-muted-foreground italic">Thinking…</span>
+                        )}
+                        <span className="inline-block w-2 h-4 ml-1 bg-primary animate-pulse align-middle"></span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {showError && (
+                  <div className="max-w-4xl mx-auto p-3 rounded-lg border border-destructive/40 bg-destructive/10 text-xs text-destructive">
+                    {lastError!.message}
+                  </div>
+                )}
+              </>
+            );
+          })()}
         </div>
 
         <div className="p-4 bg-background border-t border-border shrink-0">

@@ -479,25 +479,72 @@ export default function SiteDetail() {
               </TabsContent>
 
               <TabsContent value="alerts" className="m-0 p-4 space-y-4">
-                {alerts.map((alert) => (
-                  <div key={alert.id} className="flex items-start justify-between p-4 rounded-lg border border-destructive/20 bg-destructive/5">
-                    <div className="flex gap-3">
-                      <AlertTriangle className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
-                      <div>
-                        <h4 className="font-bold text-sm text-destructive">{alert.title}</h4>
-                        <p className="text-sm text-foreground/80 mt-1">{alert.body}</p>
-                        <div className="text-xs text-muted-foreground mt-2">
-                          {new Date(alert.createdAt).toLocaleString()}
+                {alerts.map((alert) => {
+                  // Find the open recommendation that matches this
+                  // alert by item — that's what "promote to order"
+                  // actually does in the data model: alerts surface a
+                  // problem, and the recommendation system carries the
+                  // actionable supply-chain proposal (qty, supplier,
+                  // ETA, priority). We only offer promotion for alerts
+                  // that have a backing recommendation; otherwise we
+                  // direct the operator to the Recommended Actions
+                  // panel so they understand the workflow.
+                  const matchingRec = alert.itemId
+                    ? recommendations.find(
+                        (r) =>
+                          r.itemId === alert.itemId &&
+                          !r.promotedOrderId &&
+                          !promotedById[r.id],
+                      )
+                    : undefined;
+                  const recPromoted = matchingRec
+                    ? promotedById[matchingRec.id]
+                    : undefined;
+                  const recPending =
+                    matchingRec &&
+                    promoteRec.isPending &&
+                    promoteRec.variables?.recommendationId === matchingRec.id;
+                  return (
+                    <div key={alert.id} className="flex items-start justify-between gap-3 p-4 rounded-lg border border-destructive/20 bg-destructive/5">
+                      <div className="flex gap-3 min-w-0">
+                        <AlertTriangle className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
+                        <div className="min-w-0">
+                          <h4 className="font-bold text-sm text-destructive">{alert.title}</h4>
+                          <p className="text-sm text-foreground/80 mt-1">{alert.body}</p>
+                          <div className="text-xs text-muted-foreground mt-2">
+                            {new Date(alert.createdAt).toLocaleString()}
+                          </div>
+                          {!matchingRec && alert.itemId && alert.status === 'open' && (
+                            <div className="text-[11px] text-muted-foreground/80 mt-2">
+                              No standing recommendation for this item — see the Recommended Actions panel for related guidance.
+                            </div>
+                          )}
                         </div>
                       </div>
+                      <div className="flex flex-col gap-2 shrink-0 items-end">
+                        {matchingRec && (
+                          <Button
+                            size="sm"
+                            onClick={() => setEditingRec(matchingRec)}
+                            disabled={!!recPromoted || recPending}
+                            data-testid={`alert-promote-${alert.id}`}
+                          >
+                            {recPromoted
+                              ? `Promoted · ${recPromoted.orderNo}`
+                              : recPending
+                                ? 'Promoting…'
+                                : 'Promote to Order'}
+                          </Button>
+                        )}
+                        {alert.status === 'open' && (
+                          <Button size="sm" variant="outline" onClick={() => ackAlert.mutate({ alertId: alert.id, data: { acknowledgedBy: 'Current User' } })}>
+                            <CheckCircle2 className="h-4 w-4 mr-2" /> Ack
+                          </Button>
+                        )}
+                      </div>
                     </div>
-                    {alert.status === 'open' && (
-                      <Button size="sm" variant="outline" onClick={() => ackAlert.mutate({ alertId: alert.id, data: { acknowledgedBy: 'Current User' } })}>
-                        <CheckCircle2 className="h-4 w-4 mr-2" /> Ack
-                      </Button>
-                    )}
-                  </div>
-                ))}
+                  );
+                })}
                 {alerts.length === 0 && (
                   <div className="text-center py-12 text-sm text-muted-foreground flex flex-col items-center gap-2">
                     <CheckCircle2 className="h-8 w-8 text-emerald-500/60" />

@@ -1219,9 +1219,15 @@ export default function NetworkGLMap(props: NetworkMapProps) {
         // hotspot itself stays visible. Without this, deck.gl anchors
         // the tooltip top-left at the cursor and the card sits directly
         // on top of the hovered node, occluding it.
+        //
+        // IMPORTANT: do NOT set `transform` here. deck.gl positions the
+        // tooltip via inline `transform: translate(x, y)`; overriding
+        // that property pins the card to the page origin (top-left
+        // corner) regardless of cursor position. Use margin offsets
+        // only — the browser composites them on top of deck.gl's
+        // translate, which is exactly the behavior we want.
         marginLeft: '18px',
         marginTop: '14px',
-        transform: 'translate(0, 0)',
       },
     };
   };
