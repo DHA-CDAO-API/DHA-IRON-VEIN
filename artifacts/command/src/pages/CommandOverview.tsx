@@ -185,7 +185,7 @@ export default function CommandOverview() {
 
       {/* Multi-column widget grid driven by persona ordering */}
       <div
-        className="grid grid-cols-1 lg:grid-cols-3 gap-4 auto-rows-[minmax(280px,auto)]"
+        className="grid grid-cols-1 lg:grid-cols-3 lg:grid-flow-row-dense gap-4 auto-rows-[minmax(280px,auto)]"
         data-testid="overview-grid"
       >
         {gridWidgets.map((w) => (
@@ -248,13 +248,13 @@ function WidgetSlot({ widget }: { widget: WidgetId }) {
       );
     case "leaderboard":
       return (
-        <div className="lg:col-span-1 row-span-2 min-h-[560px]">
+        <div className="lg:col-span-1 min-h-[420px]">
           <TimeToFailLeaderboard />
         </div>
       );
     case "cascade":
       return (
-        <div className="lg:col-span-1">
+        <div className="lg:col-span-3">
           <ConstraintCascade />
         </div>
       );
@@ -272,7 +272,7 @@ function WidgetSlot({ widget }: { widget: WidgetId }) {
       );
     case "activity_stream":
       return (
-        <div className="lg:col-span-1 row-span-2 min-h-[420px]">
+        <div className="lg:col-span-3 min-h-[360px]">
           <LiveActivityStream />
         </div>
       );

@@ -108,18 +108,21 @@ export function MissionRiskMatrix() {
                                   />
                                 </button>
                               </TooltipTrigger>
-                              <TooltipContent side="top" className="max-w-[260px]">
+                              <TooltipContent
+                                side="top"
+                                className="max-w-[260px] bg-popover text-popover-foreground border border-border shadow-lg"
+                              >
                                 <div className="text-xs space-y-1">
-                                  <div className="font-medium">
+                                  <div className="font-medium text-foreground">
                                     {row.label} · {col.label}
                                   </div>
-                                  <div className={`text-[11px] ${TIER_TEXT[tier]}`}>
+                                  <div className={`text-[11px] font-semibold ${TIER_TEXT[tier]}`}>
                                     {tier.toUpperCase()}
                                     {cell?.affectedSites
                                       ? ` · ${cell.affectedSites} site${cell.affectedSites === 1 ? "" : "s"}`
                                       : ""}
                                   </div>
-                                  <div className="text-muted-foreground text-[11px] leading-snug">
+                                  <div className="text-foreground/80 text-[11px] leading-snug">
                                     {cell?.rationale ?? "No rationale available."}
                                   </div>
                                 </div>

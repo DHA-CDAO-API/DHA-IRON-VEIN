@@ -27,7 +27,7 @@ export function ConstraintCascade() {
           Constraint Cascade
         </CardTitle>
       </CardHeader>
-      <CardContent className="p-3 space-y-2 overflow-y-auto flex-1">
+      <CardContent className="p-3 grid grid-cols-1 md:grid-cols-3 gap-2 flex-1">
         {isLoading && !data ? (
           <>
             <Skeleton className="h-20" />
@@ -35,7 +35,7 @@ export function ConstraintCascade() {
             <Skeleton className="h-20" />
           </>
         ) : top3.length === 0 ? (
-          <div className="text-xs text-muted-foreground p-6 text-center">
+          <div className="text-xs text-muted-foreground p-6 text-center md:col-span-3">
             No single-point-of-failure cascades detected.
           </div>
         ) : (
@@ -45,7 +45,7 @@ export function ConstraintCascade() {
               <Link key={s.id} href={`/sites/${s.triggerNodeId}`}>
                 <div
                   data-testid={`cascade-${s.id}`}
-                  className={`block rounded-md border ${TIER_BORDER[tier]} bg-background/40 p-3 hover:bg-muted/30 cursor-pointer transition-colors`}
+                  className={`block h-full rounded-md border ${TIER_BORDER[tier]} bg-background/40 p-3 hover:bg-muted/30 cursor-pointer transition-colors`}
                 >
                   <div className="flex items-center justify-between gap-2 mb-1.5">
                     <div className="flex items-center gap-2 min-w-0">

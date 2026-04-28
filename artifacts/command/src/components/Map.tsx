@@ -931,17 +931,52 @@ export default function NetworkGLMap(props: NetworkMapProps) {
     [staticLayers, buildAnimatedLayers, animate],
   );
 
+  // Mirror the latest layer-builder closures into refs so the rAF loop can
+  // always read the freshest version WITHOUT being torn down and rebuilt
+  // every time the data refetches (which would otherwise reset the
+  // animation clock every minute and starve the GPU of new frames — what
+  // operators saw as a "static" map).
+  const staticLayersRef = useRef(staticLayers);
+  const buildAnimatedLayersRef = useRef(buildAnimatedLayers);
+  useEffect(() => {
+    staticLayersRef.current = staticLayers;
+    buildAnimatedLayersRef.current = buildAnimatedLayers;
+
+    // When the rAF loop is suspended (`animate=false`), data refreshes
+    // would otherwise leave the still frame stale because nothing is
+    // pushing fresh layers to deck.gl. Push one still frame here so a
+    // motion-sensitive operator still sees up-to-date trip / node state
+    // after a refetch.
+    if (!animate && hasWebGL === true) {
+      const deck = deckRef.current;
+      if (deck && typeof deck.setProps === 'function') {
+        deck.setProps({
+          layers: [
+            ...staticLayers,
+            ...buildAnimatedLayers(timeRef.current, true),
+          ],
+        });
+      }
+    }
+  }, [staticLayers, buildAnimatedLayers, tripData, animate, hasWebGL]);
+
   // Animation loop. Updates the time ref and pushes a fresh layer set into
   // the deck instance directly — no React state, no component re-render.
   // Suspends entirely when `animate=false`; in that case we push one still
   // frame so any in-flight props changes (e.g. filter toggles) take effect.
+  // The effect deliberately depends ONLY on `hasWebGL` and `animate` — the
+  // builder closures are read from refs so an upstream data refetch does
+  // not cancel the rAF loop mid-flight.
   useEffect(() => {
     if (hasWebGL !== true) return;
     if (!animate) {
       const deck = deckRef.current;
       if (deck && typeof deck.setProps === 'function') {
         deck.setProps({
-          layers: [...staticLayers, ...buildAnimatedLayers(timeRef.current, true)],
+          layers: [
+            ...staticLayersRef.current,
+            ...buildAnimatedLayersRef.current(timeRef.current, true),
+          ],
         });
       }
       return;
@@ -956,7 +991,10 @@ export default function NetworkGLMap(props: NetworkMapProps) {
       const deck = deckRef.current;
       if (deck && typeof deck.setProps === 'function') {
         deck.setProps({
-          layers: [...staticLayers, ...buildAnimatedLayers(timeRef.current, false)],
+          layers: [
+            ...staticLayersRef.current,
+            ...buildAnimatedLayersRef.current(timeRef.current, false),
+          ],
         });
       }
       animRef.current = requestAnimationFrame(tick);
@@ -966,7 +1004,7 @@ export default function NetworkGLMap(props: NetworkMapProps) {
       mounted = false;
       if (animRef.current) cancelAnimationFrame(animRef.current);
     };
-  }, [hasWebGL, staticLayers, buildAnimatedLayers, animate]);
+  }, [hasWebGL, animate]);
 
   if (hasWebGL === null) return null;
   if (!hasWebGL) return <NetworkFallback {...props} />;
