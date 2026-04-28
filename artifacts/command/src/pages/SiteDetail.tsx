@@ -20,6 +20,7 @@ import { AiBadge } from '@/components/ui/ai-badge';
 import { Activity, AlertTriangle, Box, MapPin, CheckCircle2, TrendingDown, Droplet, Package, Shield, Layers } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { CATEGORY_ORDER, categoryKey, categoryLabel, dosClass, formatDOS, formatNumber, type ItemCategoryKey } from '@/lib/format';
+import { BloodReadinessTab } from '@/components/site/blood/BloodReadinessTab';
 
 type DosRow = DaysOfSupplyEntry & {
   category: ItemCategoryKey;
@@ -42,7 +43,7 @@ const CATEGORY_ICON: Record<ItemCategoryKey, React.ComponentType<{ className?: s
 
 export default function SiteDetail() {
   const { nodeId } = useParams();
-  const [activeTab, setActiveTab] = useState('inventory');
+  const [activeTab, setActiveTab] = useState('blood');
   const [activeCategory, setActiveCategory] = useState<ItemCategoryKey | 'all'>('all');
 
   const { data: detail, isLoading } = useGetSiteDetail(nodeId || '', {
@@ -247,6 +248,10 @@ export default function SiteDetail() {
         <div className="lg:col-span-2 flex flex-col min-h-[400px]">
           <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
             <TabsList className="w-full justify-start border-b border-border bg-transparent rounded-none p-0 h-auto">
+              <TabsTrigger value="blood" className="data-[state=active]:bg-transparent data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none px-4 py-2 flex gap-2">
+                <Droplet className="h-4 w-4" />
+                Blood Readiness
+              </TabsTrigger>
               <TabsTrigger value="inventory" className="data-[state=active]:bg-transparent data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none px-4 py-2">
                 Inventory
               </TabsTrigger>
@@ -268,6 +273,10 @@ export default function SiteDetail() {
             </TabsList>
 
             <div className="flex-1 overflow-y-auto mt-4 bg-card/30 rounded-md border border-border min-h-[300px]">
+              <TabsContent value="blood" className="m-0 h-full p-0">
+                <BloodReadinessTab data={detail.bloodReadiness} isLoading={isLoading} />
+              </TabsContent>
+
               <TabsContent value="inventory" className="m-0 h-full p-0 flex flex-col">
                 {/* Category sub-tabs */}
                 <div className="border-b border-border/50 bg-muted/10 px-2 py-1.5 flex flex-wrap gap-1 sticky top-0 z-20 backdrop-blur">
