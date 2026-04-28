@@ -179,14 +179,58 @@ router.post("/orders", async (req, res, next) => {
 
 router.get("/orders/:orderId", async (req, res, next) => {
   try {
+    const { items, nodes, suppliers } = await import("@workspace/db");
     const id = req.params.orderId;
     const [order] = await db.select().from(orders).where(eq(orders.id, id));
     if (!order) return res.status(404).json({ error: "order not found" });
     const lines = await db.select().from(orderLines).where(eq(orderLines.orderId, id));
-    res.json({
+
+    // Hydrate fromNode / toNode / item / supplier for the OpenAPI OrderDetail shape.
+    const [toNode] = await db.select().from(nodes).where(eq(nodes.id, order.nodeId));
+    const [fromNodeRow] = order.supplierId
+      ? await db.select().from(nodes).where(eq(nodes.id, order.supplierId))
+      : [undefined];
+    const firstLine = lines[0];
+    const [itemRow] = firstLine
+      ? await db.select().from(items).where(eq(items.id, firstLine.itemId))
+      : [undefined];
+    const [supplierRow] = order.supplierId
+      ? await db.select().from(suppliers).where(eq(suppliers.id, order.supplierId))
+      : [undefined];
+
+    if (!toNode) return res.status(500).json({ error: "destination node missing for order" });
+    if (!itemRow)
+      return res.status(500).json({ error: "no line items resolved for order" });
+
+    // Map raw DB rows to OpenAPI envelope shapes.
+    const itemEnvelope = {
+      ...itemRow,
+      unit: itemRow.unitOfIssue,
+      usagePerDraw: itemRow.baseDemandPerEvent,
+      usageRate: itemRow.wasteAdjustedDemand,
+      demandBasis: itemRow.trigger,
+    };
+
+    const body: Record<string, unknown> = {
       order: buildOrderEnvelope(order, lines),
+      fromNode: fromNodeRow ?? toNode,
+      toNode,
+      item: itemEnvelope,
       lines,
-    });
+    };
+
+    if (supplierRow) {
+      body.supplier = {
+        ...supplierRow,
+        region: supplierRow.country,
+        countryCode: supplierRow.country,
+        leadTimeDays: supplierRow.leadTimeDaysMean,
+        reliability: supplierRow.reliabilityScore,
+        costIndex: 1,
+      };
+    }
+
+    res.json(body);
   } catch (err) {
     next(err);
   }

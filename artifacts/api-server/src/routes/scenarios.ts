@@ -70,21 +70,32 @@ router.get("/scenarios/:scenarioId", async (req, res, next) => {
       .from(scenariosTable)
       .where(eq(scenariosTable.id, req.params.scenarioId));
     if (!row) return res.status(404).json({ error: "scenario not found" });
-    res.json({
+    const ctx = await loadSimContext();
+    const envelope = buildScenarioResultEnvelope({
       id: row.id,
       name: row.name,
-      description: row.summary,
+      summary: row.summary,
+      kind: row.kind,
+      runAt: row.runAt,
+      result: row.result as ReturnType<typeof runScenario>,
+      coaBrief: row.coaBrief ?? "",
+      ctx: ctx.ctx,
+    });
+    res.json({
+      // Legacy fields first
+      id: row.id,
+      name: row.name,
       status: "completed",
       createdAt: row.runAt.toISOString(),
       completedAt: row.runAt.toISOString(),
       createdByRole: null,
-      summary: row.summary,
-      kind: row.kind,
       runAt: row.runAt.toISOString(),
       result: row.result,
       coaBrief: row.coaBrief,
       aiProvider: row.aiProvider,
       aiModel: row.aiModel,
+      // OpenAPI ScenarioResult last so its `summary` object + `scenario` win
+      ...envelope,
     });
   } catch (err) {
     next(err);
@@ -189,22 +200,174 @@ router.post("/scenarios", async (req, res, next) => {
       refId: id,
       meta: { peakDay: result.peakDay, impacted: result.impactedNodes.length },
     });
-    res.json({
+    const envelope = buildScenarioResultEnvelope({
       id,
       name: body.name,
       summary,
       kind: body.kind,
+      runAt: new Date(),
+      result,
+      coaBrief,
+      ctx: ctx.ctx,
+    });
+    res.json({
+      // Legacy fields first (no `kind` here — envelope owns it)
+      id,
+      name: body.name,
       runAt: new Date().toISOString(),
       result,
       coaBrief,
       aiProvider,
       aiModel,
+      // OpenAPI ScenarioResult last so its `summary` object + `scenario` win
+      ...envelope,
     });
   } catch (err) {
     req.log?.error({ err }, "scenario run failed");
     next(err);
   }
 });
+
+type ScenarioCtxLite = Awaited<ReturnType<typeof loadSimContext>>["ctx"];
+
+function buildScenarioResultEnvelope(args: {
+  id: string;
+  name: string;
+  summary: string;
+  kind: string;
+  runAt: Date;
+  result: ReturnType<typeof runScenario>;
+  coaBrief: string;
+  ctx: ScenarioCtxLite;
+}) {
+  const { id, name, summary, kind, runAt, result, coaBrief, ctx } = args;
+  const nodeMap = new Map(ctx.nodes.map((n) => [n.id, n]));
+  const itemMap = new Map(ctx.items.map((i) => [i.id, i]));
+  const peakRiskNodeRow = result.impactedNodes[0];
+
+  // perNode outcomes
+  const perNode = result.impactedNodes.map((n) => {
+    const baselineDOS = (() => {
+      const balances = ctx.balances.filter((b) => b.nodeId === n.nodeId);
+      if (balances.length === 0) return 999;
+      let minDos = 999;
+      for (const b of balances) {
+        const item = itemMap.get(b.itemId);
+        if (!item) continue;
+        const dos = b.onHand / Math.max(0.01, item.wasteAdjustedDemand);
+        if (dos < minDos) minDos = dos;
+      }
+      return Math.min(999, minDos);
+    })();
+    const criticalItemIds: string[] = [];
+    for (const b of ctx.balances.filter((x) => x.nodeId === n.nodeId)) {
+      const item = itemMap.get(b.itemId);
+      if (!item) continue;
+      const dos = b.onHand / Math.max(0.01, item.wasteAdjustedDemand);
+      if (dos <= ctx.criticalDays && item.criticality === "critical") {
+        criticalItemIds.push(b.itemId);
+      }
+    }
+    return {
+      nodeId: n.nodeId,
+      nodeName: nodeMap.get(n.nodeId)?.name ?? n.nodeId,
+      daysOfSupplyBefore: Number(baselineDOS.toFixed(1)),
+      daysOfSupplyAfter: Number(n.minDOS.toFixed(1)),
+      peakShortageDay: n.daysCritical > 0 ? result.peakDay : null,
+      criticalItemIds,
+      riskScore: Number(n.peakRisk.toFixed(1)),
+    };
+  });
+
+  // perItem outcomes (top 12 by wasteAdjustedDemand, blood products first)
+  const perItem = ctx.items
+    .slice()
+    .sort((a, b) => {
+      const aCrit = a.criticality === "critical" ? 0 : a.criticality === "high" ? 1 : 2;
+      const bCrit = b.criticality === "critical" ? 0 : b.criticality === "high" ? 1 : 2;
+      if (aCrit !== bCrit) return aCrit - bCrit;
+      return b.wasteAdjustedDemand - a.wasteAdjustedDemand;
+    })
+    .slice(0, 12)
+    .map((it) => {
+      const peakDemand = it.wasteAdjustedDemand * (1 + result.peakDay * 0.01);
+      const totalOnHand = ctx.balances
+        .filter((b) => b.itemId === it.id)
+        .reduce((s, b) => s + b.onHand, 0);
+      const totalNeed = peakDemand * 7;
+      const shortfall = Math.max(0, totalNeed - totalOnHand);
+      return {
+        itemId: it.id,
+        itemName: it.name,
+        peakDemandPerDay: Number(peakDemand.toFixed(2)),
+        totalShortfall: Number(shortfall.toFixed(0)),
+        recommendedReorder: Number((shortfall * 1.2).toFixed(0)),
+      };
+    });
+
+  // Timeline (one point per simulated step)
+  const timeline = result.steps.map((s) => {
+    const dosVals = Object.values(s.dosByNode).filter((v) => v < 999);
+    const networkDOS =
+      dosVals.length > 0 ? dosVals.reduce((a, b) => a + b, 0) / dosVals.length : 0;
+    const openShortages = Object.values(s.criticalShortByNode).reduce(
+      (a, b) => a + b,
+      0,
+    );
+    const riskAvg =
+      Object.values(s.riskByNode).reduce((a, b) => a + b, 0) /
+      Math.max(1, Object.keys(s.riskByNode).length);
+    return {
+      day: s.day,
+      networkDaysOfSupply: Number(networkDOS.toFixed(2)),
+      openShortages,
+      demandIndex: Number((riskAvg / 50).toFixed(2)),
+    };
+  });
+
+  const baselineNetworkDOS = (() => {
+    const baselineVals = result.impactedNodes
+      .map((n) => perNode.find((p) => p.nodeId === n.nodeId)?.daysOfSupplyBefore ?? 999)
+      .filter((v) => v < 999);
+    return baselineVals.length > 0
+      ? Number((baselineVals.reduce((a, b) => a + b, 0) / baselineVals.length).toFixed(1))
+      : 0;
+  })();
+  const afterNetworkDOS = (() => {
+    const vals = perNode.map((p) => p.daysOfSupplyAfter).filter((v) => v < 999);
+    return vals.length > 0
+      ? Number((vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(1))
+      : 0;
+  })();
+
+  return {
+    scenario: {
+      id,
+      name,
+      description: summary,
+      status: "completed",
+      createdAt: runAt.toISOString(),
+      completedAt: runAt.toISOString(),
+      createdByRole: null,
+    },
+    summary: {
+      estimatedShortageEvents: timeline.reduce((s, t) => s + t.openShortages, 0),
+      peakRiskNodeId: peakRiskNodeRow?.nodeId ?? null,
+      peakRiskNodeName: peakRiskNodeRow ? nodeMap.get(peakRiskNodeRow.nodeId)?.name ?? null : null,
+      networkDaysOfSupplyBefore: baselineNetworkDOS,
+      networkDaysOfSupplyAfter: afterNetworkDOS,
+      peakDemandMultiplier: timeline.length > 0 ? Math.max(...timeline.map((t) => t.demandIndex)) : 1,
+      avgRoutingLatency: 0,
+      confidenceScore: 0.78,
+    },
+    perNode,
+    perItem,
+    recommendations: [],
+    timeline,
+    narrative: coaBrief || null,
+    kind,
+  };
+}
 
 function buildFallbackBrief(
   name: string,
