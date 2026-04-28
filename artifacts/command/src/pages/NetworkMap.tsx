@@ -43,6 +43,8 @@ import {
   ArrowDownToLine,
   ArrowUpFromLine,
   CheckCircle2,
+  ChevronDown,
+  ChevronRight,
   Clock,
   Droplets,
   ExternalLink,
@@ -141,6 +143,26 @@ export default function NetworkMapPage() {
   const prefersReducedMotion = usePrefersReducedMotion();
   const [animateOverride, setAnimateOverride] = useState<boolean | null>(null);
   const animateMap = animateOverride ?? !prefersReducedMotion;
+
+  // Collapsible Layers card (persisted in localStorage)
+  const LAYERS_COLLAPSED_KEY = 'command:network:layers-collapsed';
+  const [layersCollapsed, setLayersCollapsed] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    try {
+      return window.localStorage.getItem(LAYERS_COLLAPSED_KEY) === '1';
+    } catch {
+      return false;
+    }
+  });
+  const toggleLayersCollapsed = () => {
+    setLayersCollapsed((prev) => {
+      const next = !prev;
+      try {
+        window.localStorage.setItem(LAYERS_COLLAPSED_KEY, next ? '1' : '0');
+      } catch {}
+      return next;
+    });
+  };
 
   // Active popup
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
@@ -310,26 +332,46 @@ export default function NetworkMapPage() {
           context and use the available height naturally. */}
       <div className="absolute top-4 bottom-4 left-4 z-10 w-72 pointer-events-auto flex flex-col gap-4 overflow-y-auto network-rail pr-1 -mr-1">
         <Card className="bg-card/85 backdrop-blur-md border-border shadow-2xl">
-          <CardContent className="p-4 flex flex-col gap-3">
+          <CardContent className={`p-4 flex flex-col ${layersCollapsed ? 'gap-0' : 'gap-3'}`}>
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={toggleLayersCollapsed}
+                aria-expanded={!layersCollapsed}
+                aria-controls="network-layers-body"
+                className="flex items-center gap-2 -ml-1 px-1 py-0.5 rounded hover:bg-muted/40 transition cursor-pointer"
+                title={layersCollapsed ? 'Expand layers' : 'Collapse layers'}
+              >
+                {layersCollapsed ? (
+                  <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+                ) : (
+                  <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+                )}
                 <Layers className="h-4 w-4 text-primary" />
                 <h3 className="font-semibold text-sm tracking-wider uppercase text-muted-foreground">
                   Layers
                 </h3>
-              </div>
-              <Button
-                size="sm"
-                variant="ghost"
-                className="h-6 px-2 text-[10px] font-mono uppercase tracking-wider"
-                onClick={() => setSelectedCats(new Set())}
-                disabled={selectedCats.size === 0}
-              >
-                All
-              </Button>
+                {layersCollapsed && (
+                  <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground/70">
+                    · {selectedCats.size} on
+                  </span>
+                )}
+              </button>
+              {!layersCollapsed && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-6 px-2 text-[10px] font-mono uppercase tracking-wider"
+                  onClick={() => setSelectedCats(new Set())}
+                  disabled={selectedCats.size === 0}
+                >
+                  All
+                </Button>
+              )}
             </div>
 
-            <div className="flex flex-col gap-1.5">
+            {!layersCollapsed && (
+            <div id="network-layers-body" className="flex flex-col gap-1.5">
               {PRIMARY_CATEGORIES.map((c) => {
                 const meta = CATEGORY_META[c];
                 const checked = selectedCats.has(c);
@@ -354,7 +396,9 @@ export default function NetworkMapPage() {
                 );
               })}
             </div>
+            )}
 
+            {!layersCollapsed && (
             <div className="border-t border-border pt-2 flex flex-col gap-2">
               <div className="flex items-center space-x-2">
                 <Checkbox
@@ -408,12 +452,15 @@ export default function NetworkMapPage() {
                 </p>
               )}
             </div>
+            )}
 
+            {!layersCollapsed && (
             <div className="border-t border-border pt-2 grid grid-cols-3 gap-1 text-[10px] font-mono uppercase tracking-wider">
               <TierPill tier="critical" count={tierCounts.critical} />
               <TierPill tier="heightened" count={tierCounts.heightened} />
               <TierPill tier="nominal" count={tierCounts.nominal} />
             </div>
+            )}
           </CardContent>
         </Card>
 
