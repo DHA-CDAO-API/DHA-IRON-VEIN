@@ -21,6 +21,26 @@ export function formatNumber(value: number | null | undefined, opts: { fractionD
   });
 }
 
+/**
+ * Format a USD amount with a leading `$` and exactly two fractional digits
+ * (e.g. `$11,965.20`, `$0.00`). Use this anywhere a dollar value is
+ * displayed so trailing zeros are never dropped — the JS default
+ * `toLocaleString()` would render `11965.2` as `"11,965.2"` which looks
+ * broken. Pass `opts.fractionDigits` only if a different precision is
+ * required (defaults to 2, the standard for cents).
+ */
+export function formatCurrency(
+  value: number | null | undefined,
+  opts: { fractionDigits?: number } = {},
+): string {
+  if (value == null || !Number.isFinite(value)) return "—";
+  const digits = opts.fractionDigits ?? 2;
+  return `$${value.toLocaleString(undefined, {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  })}`;
+}
+
 export function formatDays(value: number | null | undefined): string {
   if (value == null || !Number.isFinite(value)) return "—";
   return `${value.toFixed(value < 10 ? 1 : 0)}d`;

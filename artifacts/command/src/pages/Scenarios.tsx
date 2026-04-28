@@ -77,6 +77,7 @@ import {
   YAxis,
 } from "recharts";
 import { cn } from "@/lib/utils";
+import { formatCurrency } from "@/lib/format";
 import { useToast } from "@/hooks/use-toast";
 import {
   PromoteDialog,
@@ -2391,7 +2392,7 @@ function RecommendationCards({
                     </span>
                     {typeof r.estimatedCost === "number" ? (
                       <span className="font-mono">
-                        ${r.estimatedCost.toLocaleString()}
+                        {formatCurrency(r.estimatedCost)}
                       </span>
                     ) : null}
                   </div>

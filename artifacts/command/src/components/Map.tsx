@@ -306,6 +306,11 @@ export default function NetworkGLMap(props: NetworkMapProps) {
   );
 
   const [hasWebGL, setHasWebGL] = useState<boolean | null>(null);
+  // Tracks the route currently under the cursor so the route-network
+  // PathLayer can thicken just that one line. We deliberately do NOT make
+  // routes clickable — there is no route-detail action — so picking is used
+  // for hover-feedback only and the cursor stays 'grab' over routes.
+  const [hoveredRouteId, setHoveredRouteId] = useState<string | null>(null);
   const [internalView, setInternalView] = useState<MapViewState>(viewState ?? INITIAL_VIEW_STATE);
   const animRef = useRef<number | null>(null);
   // Animation clock is held in a ref so per-frame updates do not re-render
@@ -520,14 +525,37 @@ export default function NetworkGLMap(props: NetworkMapProps) {
         id: 'route-network',
         data: routePaths,
         getPath: (d: any) => d.path,
-        getColor: (d: any) => (d.active ? ROUTE_BASE_COLOR : ROUTE_DIM_COLOR),
-        getWidth: 1.4,
+        getColor: (d: any) =>
+          d.id === hoveredRouteId
+            ? [255, 255, 255, 230]
+            : d.active
+              ? ROUTE_BASE_COLOR
+              : ROUTE_DIM_COLOR,
+        // Real hover-thickening: the hovered route swells from ~2 px to
+        // ~4 px so the operator gets unmistakable feedback that the line
+        // they're aiming at is the one that will be acted on. Width is in
+        // pixels so it's stable across zoom levels.
+        getWidth: (d: any) => (d.id === hoveredRouteId ? 4.5 : 2.2),
         widthUnits: 'pixels',
-        widthMinPixels: 1,
+        widthMinPixels: 2,
         capRounded: true,
         jointRounded: true,
+        // `pickable` is on so we receive `onHover` events and can drive the
+        // hovered-route state, but routes are not actionable on click — the
+        // top-level `getCursor` only flips to 'pointer' for nodes/trips, so
+        // hovering a route never advertises a click that doesn't exist.
+        pickable: drawMode === null,
+        onHover: (info: any) => {
+          const next = info.object?.id ?? null;
+          setHoveredRouteId((prev) => (prev === next ? prev : next));
+        },
         updateTriggers: {
-          getColor: [allCategoriesActive, Array.from(selectedCategories ?? []).join(',')],
+          getColor: [
+            allCategoriesActive,
+            Array.from(selectedCategories ?? []).join(','),
+            hoveredRouteId,
+          ],
+          getWidth: [hoveredRouteId],
         },
       }),
     );
@@ -703,7 +731,10 @@ export default function NetworkGLMap(props: NetworkMapProps) {
         id: 'nodes-columns',
         data: decoratedNodes,
         diskResolution: 24,
-        radius: 22000,
+        // Radius bumped from 22 km → 30 km so the projected disk
+        // gives operators a noticeably larger click target without
+        // overlapping neighbouring sites at our typical theater zoom.
+        radius: 30000,
         extruded: true,
         getPosition: (d: any) => [d.raw.longitude, d.raw.latitude],
         getFillColor: nodeColor,
@@ -814,7 +845,10 @@ export default function NetworkGLMap(props: NetworkMapProps) {
     // base radius (no breathing) and trips paused mid-route. The accessor
     // logic stays identical so tier colours and per-shipment data still
     // work for picking and tooltips.
-    const pulse = frozen ? 1 : 1 + 0.45 * Math.sin((t / 30) * Math.PI);
+    // Pulse breathing rate. `t` advances by 90 units/sec (see rAF tick), so
+    // `t / 90` makes one full sin cycle every 2 seconds — a calm ~0.5 Hz
+    // breath that reads as "this site needs attention" without strobing.
+    const pulse = frozen ? 1 : 1 + 0.45 * Math.sin((t / 90) * Math.PI);
     const currentTime = frozen ? TRIP_LENGTH * 0.5 : t;
 
     // Compute alpha per trip from its fade-in / fade-out state and drop
@@ -881,9 +915,12 @@ export default function NetworkGLMap(props: NetworkMapProps) {
         getTimestamps: (d: any) => d.timestamps,
         getColor: (d: any) => d.color,
         opacity: 0.95,
-        widthMinPixels: 3,
+        // Bumped from 3px → 6px so the click target is large enough that
+        // operators can reliably hit a moving shipment particle without
+        // overshooting. autoHighlight (below) thickens it further on hover.
+        widthMinPixels: 6,
         widthUnits: 'pixels',
-        getWidth: 4,
+        getWidth: 5,
         trailLength: 220,
         currentTime,
         loopLength: TRIP_LENGTH,
@@ -1088,8 +1125,20 @@ export default function NetworkGLMap(props: NetworkMapProps) {
         layers={layers}
         onClick={handleMapClick}
         onHover={handleMapHover}
-        getCursor={({ isDragging }: { isDragging: boolean }) =>
-          drawMode !== null ? 'crosshair' : isDragging ? 'grabbing' : 'grab'
+        getCursor={({
+          isDragging,
+          isHovering,
+        }: {
+          isDragging: boolean;
+          isHovering: boolean;
+        }) =>
+          drawMode !== null
+            ? 'crosshair'
+            : isDragging
+              ? 'grabbing'
+              : isHovering
+                ? 'pointer'
+                : 'grab'
         }
       >
         <MapLibre mapStyle={MAP_STYLE} />
