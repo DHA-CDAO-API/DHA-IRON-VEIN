@@ -23,6 +23,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import {
   ArrowLeft,
@@ -76,11 +86,18 @@ function statusClass(status: string) {
   return "border-muted-foreground/50 text-muted-foreground";
 }
 
+type PendingChange =
+  | { kind: "priority"; from: string; to: UpdateOrderStatusInputPriority }
+  | { kind: "status"; from: string; to: UpdateOrderStatusInputStatus };
+
 export default function OrderDetail() {
   const { id } = useParams();
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const queryKey = getGetOrderQueryKey(id || "");
+
+  const [pendingChange, setPendingChange] = React.useState<PendingChange | null>(null);
+  const [noteDraft, setNoteDraft] = React.useState("");
 
   const { data, isLoading, error } = useGetOrder(id || "", {
     query: {
@@ -119,6 +136,34 @@ export default function OrderDetail() {
       },
     },
   });
+
+  const closeDialog = () => {
+    if (updateOrder.isPending) return;
+    setPendingChange(null);
+    setNoteDraft("");
+  };
+
+  const confirmPendingChange = () => {
+    if (!pendingChange || !id) return;
+    const trimmed = noteDraft.trim();
+    const data: {
+      priority?: UpdateOrderStatusInputPriority;
+      status?: UpdateOrderStatusInputStatus;
+      note?: string;
+    } = {};
+    if (pendingChange.kind === "priority") data.priority = pendingChange.to;
+    else data.status = pendingChange.to;
+    if (trimmed.length > 0) data.note = trimmed;
+    updateOrder.mutate(
+      { orderId: id, data },
+      {
+        onSuccess: () => {
+          setPendingChange(null);
+          setNoteDraft("");
+        },
+      },
+    );
+  };
 
   if (isLoading) {
     return (
@@ -196,9 +241,11 @@ export default function OrderDetail() {
                   disabled={updateOrder.isPending}
                   onValueChange={(value) => {
                     if (value === order.priority) return;
-                    updateOrder.mutate({
-                      orderId: order.id,
-                      data: { priority: value as UpdateOrderStatusInputPriority },
+                    setNoteDraft("");
+                    setPendingChange({
+                      kind: "priority",
+                      from: order.priority,
+                      to: value as UpdateOrderStatusInputPriority,
                     });
                   }}
                 >
@@ -221,9 +268,11 @@ export default function OrderDetail() {
                   disabled={updateOrder.isPending}
                   onValueChange={(value) => {
                     if (value === order.status) return;
-                    updateOrder.mutate({
-                      orderId: order.id,
-                      data: { status: value as UpdateOrderStatusInputStatus },
+                    setNoteDraft("");
+                    setPendingChange({
+                      kind: "status",
+                      from: order.status,
+                      to: value as UpdateOrderStatusInputStatus,
                     });
                   }}
                 >
@@ -484,6 +533,67 @@ export default function OrderDetail() {
         {" · "}
         Total qty {formatNumber(order.quantity)} {order.unit || item.unit || ""}
       </div>
+
+      <Dialog
+        open={pendingChange !== null}
+        onOpenChange={(open) => {
+          if (!open) closeDialog();
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          {pendingChange && (
+            <>
+              <DialogHeader>
+                <DialogTitle>
+                  {pendingChange.kind === "priority"
+                    ? "Change priority"
+                    : "Change status"}
+                </DialogTitle>
+                <DialogDescription>
+                  {pendingChange.kind === "priority" ? "Priority" : "Status"}{" "}
+                  <span className="font-semibold text-foreground">
+                    {pendingChange.from.replace(/_/g, " ")}
+                  </span>{" "}
+                  → {" "}
+                  <span className="font-semibold text-foreground">
+                    {pendingChange.to.replace(/_/g, " ")}
+                  </span>
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-2">
+                <Label htmlFor="order-change-note">
+                  Note <span className="text-muted-foreground font-normal">(optional)</span>
+                </Label>
+                <Textarea
+                  id="order-change-note"
+                  placeholder='e.g. "bumped to FLASH after MEDEVAC tasking"'
+                  value={noteDraft}
+                  onChange={(e) => setNoteDraft(e.target.value)}
+                  rows={3}
+                  maxLength={280}
+                  autoFocus
+                  disabled={updateOrder.isPending}
+                />
+              </div>
+              <DialogFooter>
+                <Button
+                  variant="ghost"
+                  onClick={closeDialog}
+                  disabled={updateOrder.isPending}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={confirmPendingChange}
+                  disabled={updateOrder.isPending}
+                >
+                  {updateOrder.isPending ? "Saving..." : "Confirm"}
+                </Button>
+              </DialogFooter>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
