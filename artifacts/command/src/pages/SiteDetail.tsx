@@ -13,8 +13,10 @@ import {
   type Item,
   type DaysOfSupplyEntry,
   type Recommendation,
+  type HistoryPoint,
 } from '@workspace/api-client-react';
 import { PromoteDialog, type PromoteOverrides } from '@/components/PromoteDialog';
+import { Area, AreaChart, ResponsiveContainer, Tooltip as RechartsTooltip, YAxis } from 'recharts';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
@@ -198,18 +200,30 @@ export default function SiteDetail() {
 
   const forecastShortages = useMemo(() => {
     if (forecastSeries.length === 0) {
-      // Fallback: use static dosByItem to surface items at risk in the next 7 days
+      // Fallback: use static dosByItem to surface items at risk in the next 7 days.
+      // Synthesize a simple linear burn-down from current on-hand to zero so the chart
+      // still renders something useful when the live forecast hasn't returned yet.
       return categorizedDos
         .filter((d) => Number.isFinite(d.daysOfSupply) && d.daysOfSupply <= forecastHorizon)
-        .map((d) => ({
-          itemId: d.itemId,
-          itemName: d.itemName,
-          category: d.category,
-          categoryLabelText: d.categoryLabelText,
-          stockoutDay: Math.max(0, Math.floor(d.daysOfSupply)),
-          daysOfSupply: d.daysOfSupply,
-          status: d.status,
-        }))
+        .map((d) => {
+          const stockoutDay = Math.max(0, Math.floor(d.daysOfSupply));
+          const onHand = d.onHand ?? 0;
+          const points: HistoryPoint[] = Array.from({ length: forecastHorizon + 1 }, (_, day) => {
+            const remaining = stockoutDay > 0 ? Math.max(0, onHand * (1 - day / stockoutDay)) : 0;
+            return { day, value: Number(remaining.toFixed(2)) };
+          });
+          return {
+            itemId: d.itemId,
+            itemName: d.itemName,
+            category: d.category,
+            categoryLabelText: d.categoryLabelText,
+            stockoutDay,
+            daysOfSupply: d.daysOfSupply,
+            status: d.status,
+            unit: d.unit,
+            points,
+          };
+        })
         .sort((a, b) => a.stockoutDay - b.stockoutDay);
     }
     const itemNameById = new Map(categorizedDos.map((d) => [d.itemId, d]));
@@ -221,6 +235,8 @@ export default function SiteDetail() {
       stockoutDay: number;
       daysOfSupply: number;
       status: string;
+      unit: string;
+      points: HistoryPoint[];
     }> = [];
     for (const s of forecastSeries) {
       const stockoutPoint = s.points.find((p) => p.value <= 0);
@@ -236,6 +252,8 @@ export default function SiteDetail() {
         stockoutDay: day,
         daysOfSupply: meta?.daysOfSupply ?? day,
         status: meta?.status ?? 'critical',
+        unit: meta?.unit ?? '',
+        points: s.points,
       });
     }
     return result.sort((a, b) => a.stockoutDay - b.stockoutDay);
@@ -526,21 +544,27 @@ export default function SiteDetail() {
                   <div className="space-y-2">
                     {forecastShortages.map((s) => {
                       const Icon = CATEGORY_ICON[s.category] ?? Layers;
+                      const critical = s.stockoutDay <= 3;
                       return (
                         <Link
                           key={s.itemId}
                           href={`/items/${s.itemId}`}
-                          className="flex items-center justify-between p-3 rounded-md border border-amber-500/20 bg-amber-500/5 hover:border-amber-500/40 transition-colors"
+                          className="flex items-center justify-between gap-3 p-3 rounded-md border border-amber-500/20 bg-amber-500/5 hover:border-amber-500/40 transition-colors"
                         >
-                          <div className="flex items-center gap-3 min-w-0">
+                          <div className="flex items-center gap-3 min-w-0 flex-1">
                             <Icon className="h-5 w-5 text-amber-500 shrink-0" />
                             <div className="min-w-0">
                               <div className="font-medium text-sm truncate">{s.itemName}</div>
                               <div className="text-xs text-muted-foreground">{s.categoryLabelText}</div>
                             </div>
                           </div>
-                          <div className="text-right shrink-0 ml-3">
-                            <div className={`text-sm font-bold ${s.stockoutDay <= 3 ? 'text-destructive' : 'text-amber-500'}`}>
+                          <BurnDownSparkline
+                            points={s.points}
+                            unit={s.unit}
+                            critical={critical}
+                          />
+                          <div className="text-right shrink-0">
+                            <div className={`text-sm font-bold ${critical ? 'text-destructive' : 'text-amber-500'}`}>
                               Stockout in {s.stockoutDay}d
                             </div>
                             <div className="text-xs text-muted-foreground">DOS {formatDOS(s.daysOfSupply)}</div>
@@ -794,6 +818,84 @@ function CategorySection({
           },
         ]}
       />
+    </div>
+  );
+}
+
+function BurnDownSparkline({
+  points,
+  unit,
+  critical,
+}: {
+  points: HistoryPoint[];
+  unit: string;
+  critical: boolean;
+}) {
+  const reactId = React.useId();
+  if (!points || points.length === 0) return null;
+
+  const stroke = critical ? 'hsl(var(--destructive))' : 'rgb(245 158 11)'; // amber-500
+  const gradientId = `burndown-${critical ? 'crit' : 'warn'}-${reactId.replace(/:/g, '')}`;
+  const maxValue = points.reduce((m, p) => (p.value > m ? p.value : m), 0);
+
+  return (
+    <div
+      className="hidden sm:block w-[120px] h-10 shrink-0"
+      // Stop the surrounding <Link> from intercepting hover/scroll while the user
+      // is exploring tooltip points; clicks still bubble so navigation works.
+      onMouseDown={(e) => e.stopPropagation()}
+    >
+      <ResponsiveContainer width="100%" height="100%">
+        <AreaChart data={points} margin={{ top: 2, right: 2, bottom: 2, left: 2 }}>
+          <defs>
+            <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={stroke} stopOpacity={0.45} />
+              <stop offset="100%" stopColor={stroke} stopOpacity={0.02} />
+            </linearGradient>
+          </defs>
+          <YAxis hide domain={[0, maxValue > 0 ? maxValue : 1]} />
+          <RechartsTooltip
+            cursor={{ stroke: 'hsl(var(--muted-foreground))', strokeDasharray: '3 3', strokeOpacity: 0.5 }}
+            content={<BurnDownTooltipContent unit={unit} />}
+          />
+          <Area
+            type="monotone"
+            dataKey="value"
+            stroke={stroke}
+            strokeWidth={1.5}
+            fill={`url(#${gradientId})`}
+            isAnimationActive={false}
+            dot={false}
+            activeDot={{ r: 3, stroke, fill: 'hsl(var(--background))', strokeWidth: 1.5 }}
+          />
+        </AreaChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+function BurnDownTooltipContent({
+  active,
+  payload,
+  unit,
+}: {
+  active?: boolean;
+  payload?: Array<{ payload: HistoryPoint }>;
+  unit?: string;
+}) {
+  if (!active || !payload || payload.length === 0) return null;
+  const point = payload[0].payload;
+  const unitText = unit ? formatUnit(unit, point.value) : '';
+  return (
+    <div className="rounded-md border border-border bg-background/95 px-2 py-1.5 text-[11px] shadow-md">
+      <div className="font-medium">Day {point.day}</div>
+      <div className="font-mono text-foreground">
+        On hand: {formatNumber(point.value)}
+        {unitText && <span className="ml-1 text-muted-foreground">{unitText}</span>}
+      </div>
+      {point.label && (
+        <div className="text-muted-foreground">{point.label}</div>
+      )}
     </div>
   );
 }
