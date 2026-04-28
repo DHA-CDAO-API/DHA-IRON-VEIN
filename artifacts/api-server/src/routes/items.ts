@@ -3,6 +3,7 @@ import { db, items, inventoryBalances, suppliers, orders, orderLines, alerts } f
 import { eq, sql, and } from "drizzle-orm";
 import { loadSimContext } from "../lib/ctx";
 import { computeDailyDemand, projectDaysOfSupply, statusFromDOS } from "@workspace/sim";
+import { mapSupplierToApi } from "../lib/mappers";
 
 const router: IRouter = Router();
 
@@ -110,7 +111,7 @@ router.get("/items/:itemId", async (req, res, next) => {
       networkDaysOfSupply,
       perNode,
       dosByNode,
-      suppliers: supplierRows,
+      suppliers: supplierRows.map(mapSupplierToApi),
       alerts: itemAlerts,
       recommendations: [],
       recentOrders: recentOrderRows.map((o) => ({

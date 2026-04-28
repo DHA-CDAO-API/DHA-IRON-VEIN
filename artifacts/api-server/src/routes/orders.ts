@@ -220,14 +220,8 @@ router.get("/orders/:orderId", async (req, res, next) => {
     };
 
     if (supplierRow) {
-      body.supplier = {
-        ...supplierRow,
-        region: supplierRow.country,
-        countryCode: supplierRow.country,
-        leadTimeDays: supplierRow.leadTimeDaysMean,
-        reliability: supplierRow.reliabilityScore,
-        costIndex: 1,
-      };
+      const { mapSupplierToApi } = await import("../lib/mappers");
+      body.supplier = mapSupplierToApi(supplierRow);
     }
 
     res.json(body);
