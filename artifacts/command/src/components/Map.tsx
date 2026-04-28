@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect, useRef } from 'react';
+import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import { Map as MapLibre } from 'react-map-gl/maplibre';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import DeckGL from '@deck.gl/react';
@@ -208,9 +208,13 @@ export default function NetworkGLMap(props: NetworkMapProps) {
   } = props;
 
   const [hasWebGL, setHasWebGL] = useState<boolean | null>(null);
-  const [time, setTime] = useState(0);
   const [internalView, setInternalView] = useState<MapViewState>(viewState ?? INITIAL_VIEW_STATE);
   const animRef = useRef<number | null>(null);
+  // Animation clock is held in a ref so per-frame updates do not re-render
+  // React or rebuild the layer array. The deck instance is poked directly
+  // via `setProps` from the rAF tick.
+  const timeRef = useRef(0);
+  const deckRef = useRef<any>(null);
 
   useEffect(() => {
     setHasWebGL(detectWebGL());
@@ -218,23 +222,6 @@ export default function NetworkGLMap(props: NetworkMapProps) {
 
   // The basemap stays still; only the trip particles move.
   const TRIP_LENGTH = 1800;
-  useEffect(() => {
-    if (hasWebGL !== true) return;
-    let mounted = true;
-    let last = performance.now();
-    const tick = (now: number) => {
-      if (!mounted) return;
-      const dt = (now - last) / 1000;
-      last = now;
-      setTime((t) => (t + dt * 90) % TRIP_LENGTH);
-      animRef.current = requestAnimationFrame(tick);
-    };
-    animRef.current = requestAnimationFrame(tick);
-    return () => {
-      mounted = false;
-      if (animRef.current) cancelAnimationFrame(animRef.current);
-    };
-  }, [hasWebGL]);
 
   const nodeIndex = useMemo(
     () => new Map(nodes.map((n: any) => [n.id, n])),
@@ -399,10 +386,12 @@ export default function NetworkGLMap(props: NetworkMapProps) {
     return [...rgb, 235];
   };
 
-  // Pulse phase used by the alert-halo layer.
-  const pulse = 1 + 0.45 * Math.sin((time / 30) * Math.PI);
-
-  const layers = useMemo(() => {
+  // ---------------------------------------------------------------------------
+  // Static layers — rebuilt only when the underlying data or filters change.
+  // These never depend on the animation clock, so they are stable across the
+  // 60fps tick loop and deck.gl can keep their GPU buffers warm.
+  // ---------------------------------------------------------------------------
+  const staticLayers = useMemo(() => {
     const out: any[] = [];
 
     // 1. AOR boundary outline (drawn first, sits beneath everything)
@@ -487,48 +476,6 @@ export default function NetworkGLMap(props: NetworkMapProps) {
       }
     }
 
-    // 5. Animated convoys (trip particles flowing along routes)
-    out.push(
-      new TripsLayer({
-        id: 'shipment-trips',
-        data: tripData,
-        getPath: (d: any) => d.path,
-        getTimestamps: (d: any) => d.timestamps,
-        getColor: (d: any) => d.color,
-        opacity: 0.95,
-        widthMinPixels: 3,
-        widthUnits: 'pixels',
-        getWidth: 4,
-        trailLength: 220,
-        currentTime: time,
-        loopLength: TRIP_LENGTH,
-        capRounded: true,
-        jointRounded: true,
-      }),
-    );
-
-    // 6. Pulse halos for at-risk nodes (only tier > nominal)
-    out.push(
-      new ScatterplotLayer({
-        id: 'node-pulse',
-        data: decoratedNodes.filter((d) => d.tier !== 'nominal'),
-        getPosition: (d: any) => [d.raw.longitude, d.raw.latitude],
-        getFillColor: (d: any): [number, number, number, number] => {
-          const tier = d.tier as ThreatTier;
-          const c = TIER_COLOR[tier];
-          return [c[0], c[1], c[2], tier === 'critical' ? 70 : 50];
-        },
-        getRadius: (d: any) => {
-          const base = d.tier === 'critical' ? 140000 : 90000;
-          return base * pulse;
-        },
-        radiusUnits: 'meters',
-        stroked: false,
-        pickable: false,
-        updateTriggers: { getRadius: [time], getFillColor: [decoratedNodes] },
-      }),
-    );
-
     // 7. 3D node columns. Extruded height encodes site importance + risk.
     out.push(
       new ColumnLayer({
@@ -570,10 +517,95 @@ export default function NetworkGLMap(props: NetworkMapProps) {
 
     return out;
   }, [
-    routePaths, tripData, decoratedNodes, threats, time, pulse,
+    routePaths, decoratedNodes, threats,
     aorBoundary, showAOR, showThreats, onNodeClick,
     allCategoriesActive, selectedCategories,
   ]);
+
+  // ---------------------------------------------------------------------------
+  // Animated layers — rebuilt every frame inside the rAF loop. The pulse halo
+  // uses `radiusScale` (a shader uniform) so the per-node `getRadius` accessor
+  // only runs once per node, not 60×/sec. The TripsLayer's `currentTime` is
+  // also a uniform on the GPU side, so updating it per frame is essentially
+  // free. Layers are pushed via `deck.setProps` so React never re-renders.
+  // ---------------------------------------------------------------------------
+  const pulseNodes = useMemo(
+    () => decoratedNodes.filter((d) => d.tier !== 'nominal'),
+    [decoratedNodes],
+  );
+
+  const buildAnimatedLayers = useCallback((t: number) => {
+    const pulse = 1 + 0.45 * Math.sin((t / 30) * Math.PI);
+    return [
+      // 5. Animated convoys (trip particles flowing along routes)
+      new TripsLayer({
+        id: 'shipment-trips',
+        data: tripData,
+        getPath: (d: any) => d.path,
+        getTimestamps: (d: any) => d.timestamps,
+        getColor: (d: any) => d.color,
+        opacity: 0.95,
+        widthMinPixels: 3,
+        widthUnits: 'pixels',
+        getWidth: 4,
+        trailLength: 220,
+        currentTime: t,
+        loopLength: TRIP_LENGTH,
+        capRounded: true,
+        jointRounded: true,
+      }),
+      // 6. Pulse halos for at-risk nodes (only tier > nominal)
+      new ScatterplotLayer({
+        id: 'node-pulse',
+        data: pulseNodes,
+        getPosition: (d: any) => [d.raw.longitude, d.raw.latitude],
+        getFillColor: (d: any): [number, number, number, number] => {
+          const tier = d.tier as ThreatTier;
+          const c = TIER_COLOR[tier];
+          return [c[0], c[1], c[2], tier === 'critical' ? 70 : 50];
+        },
+        getRadius: (d: any) => (d.tier === 'critical' ? 140000 : 90000),
+        radiusScale: pulse,
+        radiusUnits: 'meters',
+        stroked: false,
+        pickable: false,
+        updateTriggers: { getFillColor: [pulseNodes] },
+      }),
+    ];
+  }, [tripData, pulseNodes]);
+
+  // Initial layer array for the first React render (before the rAF loop kicks
+  // in). Subsequent updates are pushed via `deck.setProps` from the loop.
+  const layers = useMemo(
+    () => [...staticLayers, ...buildAnimatedLayers(timeRef.current)],
+    [staticLayers, buildAnimatedLayers],
+  );
+
+  // Animation loop. Updates the time ref and pushes a fresh layer set into
+  // the deck instance directly — no React state, no component re-render.
+  useEffect(() => {
+    if (hasWebGL !== true) return;
+    let mounted = true;
+    let last = performance.now();
+    const tick = (now: number) => {
+      if (!mounted) return;
+      const dt = (now - last) / 1000;
+      last = now;
+      timeRef.current = (timeRef.current + dt * 90) % TRIP_LENGTH;
+      const deck = deckRef.current;
+      if (deck && typeof deck.setProps === 'function') {
+        deck.setProps({
+          layers: [...staticLayers, ...buildAnimatedLayers(timeRef.current)],
+        });
+      }
+      animRef.current = requestAnimationFrame(tick);
+    };
+    animRef.current = requestAnimationFrame(tick);
+    return () => {
+      mounted = false;
+      if (animRef.current) cancelAnimationFrame(animRef.current);
+    };
+  }, [hasWebGL, staticLayers, buildAnimatedLayers]);
 
   if (hasWebGL === null) return null;
   if (!hasWebGL) return <NetworkFallback {...props} />;
@@ -587,6 +619,7 @@ export default function NetworkGLMap(props: NetworkMapProps) {
   return (
     <WebGLBoundary fallback={<NetworkFallback {...props} />}>
       <DeckGL
+        ref={deckRef}
         viewState={effectiveViewState}
         onViewStateChange={handleViewStateChange as any}
         controller={true}
