@@ -33,6 +33,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import {
   Loader2,
   PlayCircle,
@@ -45,6 +46,7 @@ import {
   RotateCw,
   Upload,
   Save,
+  Search,
 } from "lucide-react";
 import {
   CartesianGrid,
@@ -1165,10 +1167,6 @@ function ResultPanel({ result }: { result: ScenarioResult }) {
 
       {result.recommendations.length > 0 ? (
         <section>
-          <SectionHeader
-            title={`Recommended Actions (${result.recommendations.length})`}
-            badge={<AiBadge label="Powered by AI" />}
-          />
           <RecommendationCards recommendations={result.recommendations} />
         </section>
       ) : null}
@@ -1196,6 +1194,12 @@ function kindClass(kind: string | undefined): string {
   return "bg-primary/10 text-primary border-primary/30";
 }
 
+const PRIORITY_FILTERS: Array<{ value: string; label: string }> = [
+  { value: "FLASH", label: "FLASH" },
+  { value: "URGENT", label: "URGENT" },
+  { value: "ROUTINE", label: "ROUTINE" },
+];
+
 function RecommendationCards({
   recommendations,
 }: {
@@ -1206,6 +1210,27 @@ function RecommendationCards({
     Record<string, { orderId: string; orderNo: string }>
   >({});
   const [errorById, setErrorById] = React.useState<Record<string, string>>({});
+
+  const [priorityFilter, setPriorityFilter] = React.useState<Set<string>>(
+    new Set(),
+  );
+  const [searchQuery, setSearchQuery] = React.useState("");
+  const [hidePromoted, setHidePromoted] = React.useState(false);
+
+  const togglePriority = (value: string) => {
+    setPriorityFilter((prev) => {
+      const next = new Set(prev);
+      if (next.has(value)) next.delete(value);
+      else next.add(value);
+      return next;
+    });
+  };
+
+  const clearFilters = () => {
+    setPriorityFilter(new Set());
+    setSearchQuery("");
+    setHidePromoted(false);
+  };
 
   const handlePromote = async (rec: Recommendation) => {
     setErrorById((prev) => ({ ...prev, [rec.id]: "" }));
@@ -1227,9 +1252,113 @@ function RecommendationCards({
     }
   };
 
+  const filtered = React.useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    return recommendations.filter((r) => {
+      if (priorityFilter.size > 0) {
+        const p = (r.priority ?? "").toUpperCase();
+        if (!priorityFilter.has(p)) return false;
+      }
+      if (q) {
+        const haystack = [
+          r.itemName,
+          r.itemId,
+          r.nodeName,
+          r.nodeId,
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+        if (!haystack.includes(q)) return false;
+      }
+      if (hidePromoted) {
+        const isPromoted = !!r.promotedOrderId || !!promotedById[r.id];
+        if (isPromoted) return false;
+      }
+      return true;
+    });
+  }, [recommendations, priorityFilter, searchQuery, hidePromoted, promotedById]);
+
+  const total = recommendations.length;
+  const visible = filtered.length;
+  const hasActiveFilters =
+    priorityFilter.size > 0 || searchQuery.trim().length > 0 || hidePromoted;
+  const headerTitle = hasActiveFilters
+    ? `Recommended Actions (${visible} of ${total})`
+    : `Recommended Actions (${total})`;
+
   return (
-    <ul className="space-y-2">
-      {recommendations.map((r) => {
+    <>
+      <SectionHeader
+        title={headerTitle}
+        badge={<AiBadge label="Powered by AI" />}
+      />
+      <div className="mb-2 space-y-2 rounded-md border border-border bg-background/30 p-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
+            Priority
+          </span>
+          {PRIORITY_FILTERS.map((p) => {
+            const active = priorityFilter.has(p.value);
+            return (
+              <button
+                key={p.value}
+                type="button"
+                onClick={() => togglePriority(p.value)}
+                data-testid={`rec-filter-priority-${p.value}`}
+                aria-pressed={active}
+                className={cn(
+                  "px-2 py-0.5 rounded-full border text-[10px] font-medium uppercase tracking-wider transition-colors",
+                  active
+                    ? priorityClass(p.value)
+                    : "bg-transparent text-muted-foreground border-border hover:border-primary/40",
+                )}
+              >
+                {p.label}
+              </button>
+            );
+          })}
+          {hasActiveFilters ? (
+            <button
+              type="button"
+              onClick={clearFilters}
+              data-testid="rec-filter-clear"
+              className="ml-auto text-[11px] text-muted-foreground hover:text-foreground inline-flex items-center gap-1"
+            >
+              <X className="h-3 w-3" /> Clear
+            </button>
+          ) : null}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative flex-1 min-w-[180px]">
+            <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+            <Input
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Filter by node or item…"
+              data-testid="rec-filter-search"
+              className="h-7 pl-7 text-xs"
+            />
+          </div>
+          <label className="inline-flex items-center gap-2 text-[11px] text-muted-foreground cursor-pointer">
+            <Switch
+              checked={hidePromoted}
+              onCheckedChange={setHidePromoted}
+              data-testid="rec-filter-hide-promoted"
+            />
+            Hide promoted
+          </label>
+        </div>
+      </div>
+
+      {filtered.length === 0 ? (
+        <div className="rounded-md border border-border bg-background/30 px-3 py-6 text-center text-xs text-muted-foreground">
+          No recommendations match the current filters.
+        </div>
+      ) : (
+        <ul className="space-y-2">
+          {filtered.map((r) => {
         const initiallyPromoted = !!r.promotedOrderId;
         const localPromote = promotedById[r.id];
         const isPromoted = initiallyPromoted || !!localPromote;
@@ -1327,7 +1456,9 @@ function RecommendationCards({
           </li>
         );
       })}
-    </ul>
+        </ul>
+      )}
+    </>
   );
 }
 
