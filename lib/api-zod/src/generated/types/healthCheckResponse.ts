@@ -9,4 +9,5 @@ import type { HealthCheckResponseStatus } from "./healthCheckResponseStatus";
 
 export interface HealthCheckResponse {
   status: HealthCheckResponseStatus;
+  ts: Date;
 }

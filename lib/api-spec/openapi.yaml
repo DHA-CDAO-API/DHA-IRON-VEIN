@@ -804,9 +804,10 @@ components:
   schemas:
     HealthCheckResponse:
       type: object
-      required: [status]
+      required: [status, ts]
       properties:
         status: { type: string, enum: [ok] }
+        ts: { type: string, format: date-time }
 
     DatabaseHealth:
       type: object
@@ -1741,38 +1742,38 @@ components:
 
     AppSettings:
       type: object
-      required: [provider, model, autoFlyEnabled, autoFlyIntervalSec, riskThresholds, dmlssCompatible]
+      required:
+        - id
+        - aiProvider
+        - aiModel
+        - autoFlyMap
+        - demandPaddingDays
+        - wasteFactor
+        - dmlssConnectorEnabled
+        - alertWatchThresholdDays
+        - alertCriticalThresholdDays
       properties:
-        provider: { type: string, enum: [openai, anthropic] }
-        model: { type: string }
-        autoFlyEnabled: { type: boolean }
-        autoFlyIntervalSec: { type: integer }
-        operationalState: { type: string }
-        riskThresholds:
-          type: object
-          required: [warnDays, criticalDays]
-          properties:
-            warnDays: { type: number }
-            criticalDays: { type: number }
-        dmlssCompatible: { type: boolean }
-        dmlssEndpoint: { type: ["string", "null"] }
-        dmlssApiKey: { type: ["string", "null"] }
-        timezone: { type: string }
+        id: { type: integer }
+        aiProvider: { type: string, enum: [openai, anthropic] }
+        aiModel: { type: string }
+        autoFlyMap: { type: boolean }
+        demandPaddingDays: { type: integer }
+        wasteFactor: { type: number }
+        dmlssConnectorEnabled: { type: boolean }
+        alertWatchThresholdDays: { type: integer }
+        alertCriticalThresholdDays: { type: integer }
 
     UpdateSettingsInput:
       type: object
       properties:
-        provider: { type: ["string", "null"], enum: [openai, anthropic, null] }
-        model: { type: ["string", "null"] }
-        autoFlyEnabled: { type: ["boolean", "null"] }
-        autoFlyIntervalSec: { type: ["integer", "null"] }
-        operationalState: { type: ["string", "null"] }
-        warnDays: { type: ["number", "null"] }
-        criticalDays: { type: ["number", "null"] }
-        dmlssCompatible: { type: ["boolean", "null"] }
-        dmlssEndpoint: { type: ["string", "null"] }
-        dmlssApiKey: { type: ["string", "null"] }
-        timezone: { type: ["string", "null"] }
+        aiProvider: { type: string, enum: [openai, anthropic] }
+        aiModel: { type: string }
+        autoFlyMap: { type: boolean }
+        demandPaddingDays: { type: integer }
+        wasteFactor: { type: number }
+        dmlssConnectorEnabled: { type: boolean }
+        alertWatchThresholdDays: { type: integer }
+        alertCriticalThresholdDays: { type: integer }
 
     Profile:
       type: object

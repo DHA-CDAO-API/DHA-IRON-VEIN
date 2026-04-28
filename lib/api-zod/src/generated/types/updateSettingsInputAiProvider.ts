@@ -6,14 +6,10 @@
  * OpenAPI spec version: 1.0.0
  */
 
-/**
- * @nullable
- */
-export type UpdateSettingsInputProvider =
-  | (typeof UpdateSettingsInputProvider)[keyof typeof UpdateSettingsInputProvider]
-  | null;
+export type UpdateSettingsInputAiProvider =
+  (typeof UpdateSettingsInputAiProvider)[keyof typeof UpdateSettingsInputAiProvider];
 
-export const UpdateSettingsInputProvider = {
+export const UpdateSettingsInputAiProvider = {
   openai: "openai",
   anthropic: "anthropic",
 } as const;

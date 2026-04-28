@@ -6,10 +6,10 @@
  * OpenAPI spec version: 1.0.0
  */
 
-export type AppSettingsProvider =
-  (typeof AppSettingsProvider)[keyof typeof AppSettingsProvider];
+export type AppSettingsAiProvider =
+  (typeof AppSettingsAiProvider)[keyof typeof AppSettingsAiProvider];
 
-export const AppSettingsProvider = {
+export const AppSettingsAiProvider = {
   openai: "openai",
   anthropic: "anthropic",
 } as const;

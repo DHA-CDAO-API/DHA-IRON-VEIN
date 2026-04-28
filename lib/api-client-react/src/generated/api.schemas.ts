@@ -14,6 +14,7 @@ export const HealthCheckResponseStatus = {
 
 export interface HealthCheckResponse {
   status: HealthCheckResponseStatus;
+  ts: string;
 }
 
 export type DatabaseHealthStatus =
@@ -1186,69 +1187,43 @@ export interface SendCopilotMessageInput {
   contextScenarioId?: string | null;
 }
 
-export type AppSettingsProvider =
-  (typeof AppSettingsProvider)[keyof typeof AppSettingsProvider];
+export type AppSettingsAiProvider =
+  (typeof AppSettingsAiProvider)[keyof typeof AppSettingsAiProvider];
 
-export const AppSettingsProvider = {
+export const AppSettingsAiProvider = {
   openai: "openai",
   anthropic: "anthropic",
 } as const;
 
-export type AppSettingsRiskThresholds = {
-  warnDays: number;
-  criticalDays: number;
-};
-
 export interface AppSettings {
-  provider: AppSettingsProvider;
-  model: string;
-  autoFlyEnabled: boolean;
-  autoFlyIntervalSec: number;
-  operationalState?: string;
-  riskThresholds: AppSettingsRiskThresholds;
-  dmlssCompatible: boolean;
-  /** @nullable */
-  dmlssEndpoint?: string | null;
-  /** @nullable */
-  dmlssApiKey?: string | null;
-  timezone?: string;
+  id: number;
+  aiProvider: AppSettingsAiProvider;
+  aiModel: string;
+  autoFlyMap: boolean;
+  demandPaddingDays: number;
+  wasteFactor: number;
+  dmlssConnectorEnabled: boolean;
+  alertWatchThresholdDays: number;
+  alertCriticalThresholdDays: number;
 }
 
-/**
- * @nullable
- */
-export type UpdateSettingsInputProvider =
-  | (typeof UpdateSettingsInputProvider)[keyof typeof UpdateSettingsInputProvider]
-  | null;
+export type UpdateSettingsInputAiProvider =
+  (typeof UpdateSettingsInputAiProvider)[keyof typeof UpdateSettingsInputAiProvider];
 
-export const UpdateSettingsInputProvider = {
+export const UpdateSettingsInputAiProvider = {
   openai: "openai",
   anthropic: "anthropic",
 } as const;
 
 export interface UpdateSettingsInput {
-  /** @nullable */
-  provider?: UpdateSettingsInputProvider;
-  /** @nullable */
-  model?: string | null;
-  /** @nullable */
-  autoFlyEnabled?: boolean | null;
-  /** @nullable */
-  autoFlyIntervalSec?: number | null;
-  /** @nullable */
-  operationalState?: string | null;
-  /** @nullable */
-  warnDays?: number | null;
-  /** @nullable */
-  criticalDays?: number | null;
-  /** @nullable */
-  dmlssCompatible?: boolean | null;
-  /** @nullable */
-  dmlssEndpoint?: string | null;
-  /** @nullable */
-  dmlssApiKey?: string | null;
-  /** @nullable */
-  timezone?: string | null;
+  aiProvider?: UpdateSettingsInputAiProvider;
+  aiModel?: string;
+  autoFlyMap?: boolean;
+  demandPaddingDays?: number;
+  wasteFactor?: number;
+  dmlssConnectorEnabled?: boolean;
+  alertWatchThresholdDays?: number;
+  alertCriticalThresholdDays?: number;
 }
 
 export type ProfileRole = (typeof ProfileRole)[keyof typeof ProfileRole];

@@ -5,20 +5,16 @@
  * Predictive Sustainment Platform API for INDOPACOM medical logistics decision support.
  * OpenAPI spec version: 1.0.0
  */
-import type { AppSettingsProvider } from "./appSettingsProvider";
-import type { AppSettingsRiskThresholds } from "./appSettingsRiskThresholds";
+import type { AppSettingsAiProvider } from "./appSettingsAiProvider";
 
 export interface AppSettings {
-  provider: AppSettingsProvider;
-  model: string;
-  autoFlyEnabled: boolean;
-  autoFlyIntervalSec: number;
-  operationalState?: string;
-  riskThresholds: AppSettingsRiskThresholds;
-  dmlssCompatible: boolean;
-  /** @nullable */
-  dmlssEndpoint?: string | null;
-  /** @nullable */
-  dmlssApiKey?: string | null;
-  timezone?: string;
+  id: number;
+  aiProvider: AppSettingsAiProvider;
+  aiModel: string;
+  autoFlyMap: boolean;
+  demandPaddingDays: number;
+  wasteFactor: number;
+  dmlssConnectorEnabled: boolean;
+  alertWatchThresholdDays: number;
+  alertCriticalThresholdDays: number;
 }

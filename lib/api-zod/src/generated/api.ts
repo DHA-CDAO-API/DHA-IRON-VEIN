@@ -9,6 +9,7 @@ import * as zod from "zod";
 
 export const GetHealthResponse = zod.object({
   status: zod.enum(["ok"]),
+  ts: zod.coerce.date(),
 });
 
 export const GetSeedStatusResponse = zod.object({
@@ -2063,51 +2064,38 @@ export const SendCopilotMessageBody = zod.object({
 });
 
 export const GetSettingsResponse = zod.object({
-  provider: zod.enum(["openai", "anthropic"]),
-  model: zod.string(),
-  autoFlyEnabled: zod.boolean(),
-  autoFlyIntervalSec: zod.number(),
-  operationalState: zod.string().optional(),
-  riskThresholds: zod.object({
-    warnDays: zod.number(),
-    criticalDays: zod.number(),
-  }),
-  dmlssCompatible: zod.boolean(),
-  dmlssEndpoint: zod.string().nullish(),
-  dmlssApiKey: zod.string().nullish(),
-  timezone: zod.string().optional(),
+  id: zod.number(),
+  aiProvider: zod.enum(["openai", "anthropic"]),
+  aiModel: zod.string(),
+  autoFlyMap: zod.boolean(),
+  demandPaddingDays: zod.number(),
+  wasteFactor: zod.number(),
+  dmlssConnectorEnabled: zod.boolean(),
+  alertWatchThresholdDays: zod.number(),
+  alertCriticalThresholdDays: zod.number(),
 });
 
 export const UpdateSettingsBody = zod.object({
-  provider: zod
-    .union([zod.literal("openai"), zod.literal("anthropic"), zod.literal(null)])
-    .nullish(),
-  model: zod.string().nullish(),
-  autoFlyEnabled: zod.boolean().nullish(),
-  autoFlyIntervalSec: zod.number().nullish(),
-  operationalState: zod.string().nullish(),
-  warnDays: zod.number().nullish(),
-  criticalDays: zod.number().nullish(),
-  dmlssCompatible: zod.boolean().nullish(),
-  dmlssEndpoint: zod.string().nullish(),
-  dmlssApiKey: zod.string().nullish(),
-  timezone: zod.string().nullish(),
+  aiProvider: zod.enum(["openai", "anthropic"]).optional(),
+  aiModel: zod.string().optional(),
+  autoFlyMap: zod.boolean().optional(),
+  demandPaddingDays: zod.number().optional(),
+  wasteFactor: zod.number().optional(),
+  dmlssConnectorEnabled: zod.boolean().optional(),
+  alertWatchThresholdDays: zod.number().optional(),
+  alertCriticalThresholdDays: zod.number().optional(),
 });
 
 export const UpdateSettingsResponse = zod.object({
-  provider: zod.enum(["openai", "anthropic"]),
-  model: zod.string(),
-  autoFlyEnabled: zod.boolean(),
-  autoFlyIntervalSec: zod.number(),
-  operationalState: zod.string().optional(),
-  riskThresholds: zod.object({
-    warnDays: zod.number(),
-    criticalDays: zod.number(),
-  }),
-  dmlssCompatible: zod.boolean(),
-  dmlssEndpoint: zod.string().nullish(),
-  dmlssApiKey: zod.string().nullish(),
-  timezone: zod.string().optional(),
+  id: zod.number(),
+  aiProvider: zod.enum(["openai", "anthropic"]),
+  aiModel: zod.string(),
+  autoFlyMap: zod.boolean(),
+  demandPaddingDays: zod.number(),
+  wasteFactor: zod.number(),
+  dmlssConnectorEnabled: zod.boolean(),
+  alertWatchThresholdDays: zod.number(),
+  alertCriticalThresholdDays: zod.number(),
 });
 
 export const GetProfileResponse = zod.object({
