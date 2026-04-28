@@ -75,126 +75,71 @@ function asString(v: unknown, def = ""): string {
   return String(v);
 }
 
-// ---- Supplier-item coverage groups (data, not channel rules) ----
-// These describe which catalog items each supplier actually carries.
-// Stored to the `supplier_items` table at seed time so coverage can be
-// queried directly from the DB rather than derived from channel names.
-const BLOOD_PRODUCT_ITEM_IDS = [
-  "ltow_pos",
-  "ltow_neg",
-  "prbc_o",
-  "ffp_ab",
-  "plasma_a",
-  "platelets",
-  "cryo",
-  "fdp",
-] as const;
+// Item ID groups used by SUPPLIER_DEFS' itemsCovered arrays. Keep in sync
+// with ITEM_CATALOG below — the recommendation engine uses itemsCovered to
+// decide which suppliers can fill a particular shortfall, and the seeded
+// `supplier_items` join table is derived from the same arrays so coverage
+// can be queried from the DB directly.
+const ITEMS_FULL_CATALOG: string[] = [
+  // blood
+  "ltow_pos","ltow_neg","prbc_o","ffp_ab","plasma_a","platelets","cryo","fdp",
+  // collection
+  "tubes","butterfly","alcohol","gauze","tourniquet","bags","labels","collection_bag","antiseptic",
+  // cold-chain
+  "cooler","coolant","chain_log",
+  // testing
+  "abo_kit","crossmatch","id_screen",
+  // transfusion
+  "iv_set","pressure_inf","warmer","transfusion_band",
+  // PPE
+  "gloves","mask","shield","gown","n95",
+  // other
+  "sharps","centrifuge_tube","biohazard_bag",
+];
+const ITEMS_BLOOD: string[] = ["ltow_pos","ltow_neg","prbc_o","ffp_ab","plasma_a","platelets","cryo","fdp"];
+const ITEMS_TESTING: string[] = ["abo_kit","crossmatch","id_screen"];
+const ITEMS_COLDCHAIN: string[] = ["cooler","coolant","chain_log"];
+const ITEMS_TRANSFUSION: string[] = ["iv_set","pressure_inf","warmer","transfusion_band","collection_bag"];
+const ITEMS_PPE: string[] = ["gloves","mask","shield","gown","n95"];
+const ITEMS_COLLECTION: string[] = ["tubes","butterfly","alcohol","gauze","tourniquet","bags","labels","collection_bag","antiseptic"];
 
-const PHLEBOTOMY_LAB_ITEM_IDS = [
-  "tubes",
-  "butterfly",
-  "alcohol",
-  "gauze",
-  "tourniquet",
-  "bags",
-  "labels",
-  "antiseptic",
-  "abo_kit",
-  "crossmatch",
-  "id_screen",
-  "sharps",
-  "centrifuge_tube",
-  "biohazard_bag",
-] as const;
+const SUPPLIER_DEFS: Array<{
+  id: string;
+  name: string;
+  channel: string;
+  country: string;
+  leadTimeDaysMean: number;
+  reliabilityScore: number;
+  unitCostUsd?: number;
+  itemsCovered: string[];
+  notes: string;
+}> = [
+  // ---- DOD channels (slow but trusted) ----
+  { id: "dla-prime", name: "DLA Prime Vendor (Class VIII)", channel: "DLA", country: "US", leadTimeDaysMean: 5, reliabilityScore: 0.94, itemsCovered: ITEMS_FULL_CATALOG, notes: "Defense Logistics Agency primary medical supply channel" },
+  { id: "ecat", name: "ECAT (Electronic Catalog)", channel: "ECAT", country: "US", leadTimeDaysMean: 7, reliabilityScore: 0.91, itemsCovered: ITEMS_FULL_CATALOG, notes: "DLA peacetime/readiness portal" },
+  { id: "gsa", name: "GSA Schedule 65", channel: "GSA", country: "US", leadTimeDaysMean: 12, reliabilityScore: 0.88, itemsCovered: [...ITEMS_PPE, ...ITEMS_COLLECTION, ...ITEMS_TRANSFUSION, "sharps","centrifuge_tube","biohazard_bag"], notes: "GSA medical schedule" },
+  { id: "fedmall", name: "FedMall", channel: "FedMall", country: "US", leadTimeDaysMean: 10, reliabilityScore: 0.86, itemsCovered: [...ITEMS_PPE, ...ITEMS_COLLECTION, "iv_set","transfusion_band","sharps","centrifuge_tube","biohazard_bag"], notes: "DoD e-commerce ordering" },
+  { id: "armed-services-blood", name: "Armed Services Blood Program", channel: "DOD", country: "US", leadTimeDaysMean: 6, reliabilityScore: 0.93, itemsCovered: ITEMS_BLOOD, notes: "ASBP collection / distribution — primary DOD blood channel" },
 
-const TRANSFUSION_SUPPLY_ITEM_IDS = [
-  "iv_set",
-  "pressure_inf",
-  "warmer",
-  "transfusion_band",
-  "collection_bag",
-] as const;
+  // ---- Commercial USA backstops (fast, expensive) ----
+  { id: "mckesson", name: "McKesson Distribution", channel: "Commercial", country: "US", leadTimeDaysMean: 4, reliabilityScore: 0.93, itemsCovered: [...ITEMS_PPE, ...ITEMS_COLLECTION, ...ITEMS_TRANSFUSION, ...ITEMS_TESTING, ...ITEMS_COLDCHAIN, "sharps","centrifuge_tube","biohazard_bag"], notes: "Commercial backstop — pharmaceuticals & supplies" },
+  { id: "cardinal", name: "Cardinal Health", channel: "Commercial", country: "US", leadTimeDaysMean: 5, reliabilityScore: 0.92, itemsCovered: [...ITEMS_PPE, ...ITEMS_COLLECTION, ...ITEMS_TRANSFUSION, "sharps"], notes: "Commercial backstop — exam/surgical gloves" },
+  { id: "henryschein", name: "Henry Schein", channel: "Commercial", country: "US", leadTimeDaysMean: 6, reliabilityScore: 0.9, itemsCovered: [...ITEMS_PPE, ...ITEMS_COLLECTION, ...ITEMS_TESTING, "iv_set","transfusion_band","cooler","coolant"], notes: "Commercial backstop — phlebotomy & lab" },
+  { id: "owensminor", name: "Owens & Minor", channel: "Commercial", country: "US", leadTimeDaysMean: 6, reliabilityScore: 0.89, itemsCovered: [...ITEMS_PPE, ...ITEMS_TRANSFUSION, ...ITEMS_COLLECTION, "sharps","centrifuge_tube","biohazard_bag"], notes: "Commercial backstop — surgical kits" },
+  { id: "vitalant-pacific", name: "Vitalant — Pacific Region", channel: "Commercial", country: "US", leadTimeDaysMean: 3, reliabilityScore: 0.9, itemsCovered: ["prbc_o","ffp_ab","plasma_a","platelets","cryo"], notes: "Commercial blood center — Pacific NW & HI distribution" },
+  { id: "abbott-coldchain", name: "Abbott Cold-Chain Solutions", channel: "Commercial", country: "US", leadTimeDaysMean: 5, reliabilityScore: 0.91, itemsCovered: [...ITEMS_COLDCHAIN, "warmer"], notes: "Commercial cold-chain hardware (Helmer/Helmer-equivalent)" },
+  { id: "ortho-diag", name: "Ortho Clinical Diagnostics", channel: "Commercial", country: "US", leadTimeDaysMean: 6, reliabilityScore: 0.92, itemsCovered: ITEMS_TESTING, notes: "Commercial reagent supplier (ABO/Rh, ID screen)" },
 
-const COLD_CHAIN_ITEM_IDS = ["cooler", "coolant", "chain_log"] as const;
+  // ---- Host nation — Japan / Korea / Australia / Philippines ----
+  { id: "hostnation-jp", name: "Host Nation — Japan (JSDF Med + JRCS)", channel: "HostNation", country: "JP", leadTimeDaysMean: 2, reliabilityScore: 0.92, itemsCovered: [...ITEMS_BLOOD, ...ITEMS_TESTING, ...ITEMS_COLDCHAIN, ...ITEMS_TRANSFUSION, ...ITEMS_PPE], notes: "Allied basing support — Okinawa / Iwakuni / Yokota; JRCS blood + JSDF medical logistics" },
+  { id: "hostnation-kr", name: "Host Nation — Korea (ROK MND Med + KRCBI)", channel: "HostNation", country: "KR", leadTimeDaysMean: 2, reliabilityScore: 0.9, itemsCovered: [...ITEMS_BLOOD, ...ITEMS_TESTING, ...ITEMS_TRANSFUSION, ...ITEMS_PPE, ...ITEMS_COLLECTION], notes: "Allied basing support — Camp Humphreys / Daegu; ROK Blood Centers + MND medical" },
+  { id: "hostnation-au", name: "Host Nation — Australia (DSTG + Lifeblood)", channel: "HostNation", country: "AU", leadTimeDaysMean: 3, reliabilityScore: 0.89, itemsCovered: [...ITEMS_BLOOD, ...ITEMS_TESTING, ...ITEMS_COLDCHAIN, ...ITEMS_TRANSFUSION, ...ITEMS_PPE], notes: "Allied basing support — Darwin / Tindal / Townsville; AU Lifeblood + DSTG" },
+  { id: "hostnation-ph", name: "Host Nation — Philippines (AFP Med)", channel: "HostNation", country: "PH", leadTimeDaysMean: 4, reliabilityScore: 0.81, itemsCovered: [...ITEMS_PPE, ...ITEMS_COLLECTION, ...ITEMS_TRANSFUSION], notes: "Allied basing support — EDCA sites" },
 
-const PPE_STYLE_ITEM_IDS = ["gloves", "mask", "shield", "gown", "n95"] as const;
-
-// Per-supplier coverage. Keyed by supplier id (NOT channel) so multiple
-// suppliers on the same channel (e.g. host-nation AU/JP/PH) can carry
-// different sets of items as their contracts evolve.
-const SUPPLIER_ITEM_COVERAGE: Record<string, ReadonlyArray<string>> = {
-  // Broad government channels — full Class VIII coverage.
-  "dla-prime": [
-    ...BLOOD_PRODUCT_ITEM_IDS,
-    ...PHLEBOTOMY_LAB_ITEM_IDS,
-    ...TRANSFUSION_SUPPLY_ITEM_IDS,
-    ...COLD_CHAIN_ITEM_IDS,
-  ],
-  ecat: [
-    ...BLOOD_PRODUCT_ITEM_IDS,
-    ...PHLEBOTOMY_LAB_ITEM_IDS,
-    ...TRANSFUSION_SUPPLY_ITEM_IDS,
-    ...COLD_CHAIN_ITEM_IDS,
-  ],
-  gsa: [
-    ...BLOOD_PRODUCT_ITEM_IDS,
-    ...PHLEBOTOMY_LAB_ITEM_IDS,
-    ...TRANSFUSION_SUPPLY_ITEM_IDS,
-    ...COLD_CHAIN_ITEM_IDS,
-  ],
-  // FedMall covers supplies but not blood products.
-  fedmall: [
-    ...PHLEBOTOMY_LAB_ITEM_IDS,
-    ...TRANSFUSION_SUPPLY_ITEM_IDS,
-    ...COLD_CHAIN_ITEM_IDS,
-  ],
-
-  // Commercial backstops — narrower coverage.
-  mckesson: [
-    ...BLOOD_PRODUCT_ITEM_IDS,
-    ...TRANSFUSION_SUPPLY_ITEM_IDS,
-    ...COLD_CHAIN_ITEM_IDS,
-  ],
-  cardinal: [...PPE_STYLE_ITEM_IDS, "gauze", "alcohol"],
-  henryschein: [...PHLEBOTOMY_LAB_ITEM_IDS],
-  owensminor: [...TRANSFUSION_SUPPLY_ITEM_IDS, ...PPE_STYLE_ITEM_IDS, "gauze"],
-
-  // Allied host-nation support — local blood programs + collection.
-  "hostnation-au": [
-    ...BLOOD_PRODUCT_ITEM_IDS,
-    ...TRANSFUSION_SUPPLY_ITEM_IDS,
-    "tubes",
-    "alcohol",
-    "gauze",
-  ],
-  "hostnation-jp": [
-    ...BLOOD_PRODUCT_ITEM_IDS,
-    ...TRANSFUSION_SUPPLY_ITEM_IDS,
-    "tubes",
-    "alcohol",
-    "gauze",
-  ],
-  "hostnation-ph": [
-    ...BLOOD_PRODUCT_ITEM_IDS,
-    ...TRANSFUSION_SUPPLY_ITEM_IDS,
-    "tubes",
-    "alcohol",
-    "gauze",
-  ],
-};
-
-const SUPPLIER_DEFS: Array<Omit<SimSupplier, "id"> & { id: string; country: string; notes: string }> = [
-  { id: "dla-prime", name: "DLA Prime Vendor (Class VIII)", channel: "DLA", country: "US", leadTimeDaysMean: 5, reliabilityScore: 0.94, notes: "Defense Logistics Agency primary medical supply channel" },
-  { id: "ecat", name: "ECAT (Electronic Catalog)", channel: "ECAT", country: "US", leadTimeDaysMean: 7, reliabilityScore: 0.91, notes: "DLA peacetime/readiness portal" },
-  { id: "gsa", name: "GSA Schedule 65", channel: "GSA", country: "US", leadTimeDaysMean: 12, reliabilityScore: 0.88, notes: "GSA medical schedule" },
-  { id: "fedmall", name: "FedMall", channel: "FedMall", country: "US", leadTimeDaysMean: 10, reliabilityScore: 0.86, notes: "DoD e-commerce ordering" },
-  { id: "mckesson", name: "McKesson Distribution", channel: "McKesson", country: "US", leadTimeDaysMean: 4, reliabilityScore: 0.93, notes: "Commercial backstop — pharmaceuticals & supplies" },
-  { id: "cardinal", name: "Cardinal Health", channel: "Cardinal", country: "US", leadTimeDaysMean: 5, reliabilityScore: 0.92, notes: "Commercial backstop — exam/surgical gloves" },
-  { id: "henryschein", name: "Henry Schein", channel: "HenrySchein", country: "US", leadTimeDaysMean: 6, reliabilityScore: 0.9, notes: "Commercial backstop — phlebotomy & lab" },
-  { id: "owensminor", name: "Owens & Minor", channel: "OwensMinor", country: "US", leadTimeDaysMean: 6, reliabilityScore: 0.89, notes: "Commercial backstop — surgical kits" },
-  { id: "hostnation-au", name: "Host Nation — Australia (DSTG)", channel: "HostNation", country: "AU", leadTimeDaysMean: 3, reliabilityScore: 0.87, notes: "Allied basing support — Darwin / Tindal" },
-  { id: "hostnation-jp", name: "Host Nation — Japan (JSDF Med)", channel: "HostNation", country: "JP", leadTimeDaysMean: 2, reliabilityScore: 0.92, notes: "Allied basing support — Okinawa / Iwakuni / Yokota" },
-  { id: "hostnation-ph", name: "Host Nation — Philippines (AFP Med)", channel: "HostNation", country: "PH", leadTimeDaysMean: 4, reliabilityScore: 0.81, notes: "Allied basing support — EDCA sites" },
+  // ---- Allied (PRC-adjacent partners) ----
+  { id: "allied-tw", name: "Allied — Taiwan (TaiwanBC + MND)", channel: "Allied", country: "TW", leadTimeDaysMean: 3, reliabilityScore: 0.84, itemsCovered: [...ITEMS_BLOOD, ...ITEMS_TESTING, ...ITEMS_TRANSFUSION], notes: "PRC-adjacent partner — Taiwan Blood Services Foundation + MND medical" },
+  { id: "allied-sg", name: "Allied — Singapore (SAF Med + HSA)", channel: "Allied", country: "SG", leadTimeDaysMean: 4, reliabilityScore: 0.9, itemsCovered: [...ITEMS_BLOOD, ...ITEMS_TESTING, ...ITEMS_COLDCHAIN, ...ITEMS_TRANSFUSION, ...ITEMS_PPE], notes: "PRC-adjacent partner — SAF medical logistics + Health Sciences Authority blood services" },
+  { id: "allied-nz", name: "Allied — New Zealand (NZBS + NZDF)", channel: "Allied", country: "NZ", leadTimeDaysMean: 5, reliabilityScore: 0.87, itemsCovered: [...ITEMS_BLOOD, ...ITEMS_PPE, ...ITEMS_COLLECTION, ...ITEMS_TRANSFUSION], notes: "Five Eyes partner — NZ Blood Service + NZDF" },
 ];
 
 // Preset events ordered with kinetic / contested scenarios first (lowest displayOrder),
@@ -384,6 +329,69 @@ const PRESET_EVENTS = [
       routeReliabilityDelta: -0.1,
       routeDelayDays: 1,
       itemSkew: { ltow_pos: 1.8, ltow_neg: 1.8, prbc_o: 1.6, plasma_a: 1.6, platelets: 2.0 },
+    },
+  },
+  {
+    id: "ev-yokosuka-coldstorage",
+    name: "Yokosuka Cold-Storage Strike",
+    kind: "infra_disruption",
+    summary:
+      "Precision strike on Yokosuka medical refrigeration plant takes the northern theater cold rooms and Helmer banks offline for 36 h — liquid PRBC, plasma, and platelet inventory is condemned and must be re-sourced.",
+    durationDays: 4,
+    displayOrder: 32,
+    parameters: {
+      affectedNodes: ["theater", "mtfDelta", "mtfGolf", "mtfHotel"],
+      wasteMultiplier: 1.4,
+      routeReliabilityDelta: -0.15,
+      routeDelayDays: 2,
+      itemSkew: { prbc_o: 1.6, plasma_a: 1.4, platelets: 2.2, ltow_pos: 1.5 },
+      coldChain: {
+        outageHours: 36,
+        initialCompromisedFraction: 0.4,
+        assetTypes: ["refrigerator", "freezer", "platelet_incubator"],
+      },
+    },
+  },
+  {
+    id: "ev-pacific-reagent-shortage",
+    name: "Pacific Reagent Shortage",
+    kind: "supply_disruption",
+    summary:
+      "Sole-source ABO/Rh and ID-screen reagent backorder strands forward labs at < 3 days of supply — donor screening throughput at northern and central hubs is gated by reagent availability for two weeks.",
+    durationDays: 14,
+    displayOrder: 90,
+    parameters: {
+      affectedNodes: ["theater", "centralHub", "mtfDelta", "mtfGolf", "mtfEcho"],
+      wasteMultiplier: 1.05,
+      routeReliabilityDelta: -0.05,
+      routeDelayDays: 1,
+      itemSkew: { abo_kit: 2.4, crossmatch: 2.0, id_screen: 2.6 },
+      reagent: {
+        reagentItemIds: ["abo_kit", "crossmatch", "id_screen"],
+        thresholdDays: 3,
+        minCapacityFraction: 0.15,
+      },
+    },
+  },
+  {
+    id: "ev-airlift-denial-pacific",
+    name: "Airlift Denial — Pacific",
+    kind: "infra_disruption",
+    summary:
+      "PRC long-range fires push C-17 / commercial-charter routes outside threat envelope; airlift transit times rise by 2-3 days and a fraction of arriving liquid blood degrades en route.",
+    durationDays: 10,
+    displayOrder: 45,
+    parameters: {
+      affectedNodes: ["theater", "centralHub", "mtfDelta", "mtfGolf", "mtfEcho", "mtfHotel"],
+      wasteMultiplier: 1.2,
+      routeReliabilityDelta: -0.3,
+      routeDelayDays: 3,
+      itemSkew: { ltow_pos: 1.5, prbc_o: 1.5, plasma_a: 1.4, platelets: 1.7 },
+      airlift: {
+        additionalTransitDays: 2.5,
+        viabilityLossPerDay: 0.12,
+        affectedModalities: ["air", "airlift"],
+      },
     },
   },
 
@@ -821,31 +829,34 @@ export async function runSeed(opts: SeedOptions = {}): Promise<void> {
   // Built up first so the inserted row count drives `suppliers.itemsCovered`.
   const seededItemIds = new Set(ITEM_CATALOG.map((it) => it.id));
   const supplierItemRows: Array<{ supplierId: string; itemId: string }> = [];
-  const coveredCountBySupplier = new Map<string, number>();
+  const coveredItemIdsBySupplier = new Map<string, string[]>();
   for (const s of SUPPLIER_DEFS) {
-    const coverage = SUPPLIER_ITEM_COVERAGE[s.id] ?? [];
     const seen = new Set<string>();
-    for (const itemId of coverage) {
+    for (const itemId of s.itemsCovered) {
       if (!seededItemIds.has(itemId)) continue;
       if (seen.has(itemId)) continue;
       seen.add(itemId);
       supplierItemRows.push({ supplierId: s.id, itemId });
     }
-    coveredCountBySupplier.set(s.id, seen.size);
+    coveredItemIdsBySupplier.set(s.id, [...seen]);
   }
 
   // ---- Suppliers ----
   await db.insert(suppliers).values(
-    SUPPLIER_DEFS.map((s) => ({
-      id: s.id,
-      name: s.name,
-      channel: s.channel,
-      country: s.country,
-      leadTimeDaysMean: s.leadTimeDaysMean,
-      reliabilityScore: s.reliabilityScore,
-      notes: s.notes,
-      itemsCovered: coveredCountBySupplier.get(s.id) ?? 0,
-    })),
+    SUPPLIER_DEFS.map((s) => {
+      const covered = coveredItemIdsBySupplier.get(s.id) ?? [];
+      return {
+        id: s.id,
+        name: s.name,
+        channel: s.channel,
+        country: s.country,
+        leadTimeDaysMean: s.leadTimeDaysMean,
+        reliabilityScore: s.reliabilityScore,
+        notes: s.notes,
+        itemsCovered: covered.length,
+        itemsCoveredIds: covered,
+      };
+    }),
   );
 
   if (supplierItemRows.length > 0) {

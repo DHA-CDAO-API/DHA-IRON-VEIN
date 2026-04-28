@@ -5,7 +5,10 @@
  * Predictive Sustainment Platform API for INDOPACOM medical logistics decision support.
  * OpenAPI spec version: 1.0.0
  */
+import type { EventParametersAirlift } from "./eventParametersAirlift";
+import type { EventParametersColdChain } from "./eventParametersColdChain";
 import type { EventParametersItemSkew } from "./eventParametersItemSkew";
+import type { EventParametersReagent } from "./eventParametersReagent";
 
 /**
  * Perturbation parameters applied by the simulation engine.
@@ -21,4 +24,10 @@ export interface EventParameters {
   routeDelayDays?: number;
   specimensMultiplier?: number;
   itemSkew?: EventParametersItemSkew;
+  /** Cold-chain failure cascade. Liquid blood lots held by the failed assets are aged out / compromised by the simulator. */
+  coldChain?: EventParametersColdChain;
+  /** Reagent / testing-supply shortage cascade. When gating reagents fall below thresholdDays at affected nodes, donor screening throughput collapses. */
+  reagent?: EventParametersReagent;
+  /** Airlift loss cascade. Lengthens routes and degrades viability of arriving liquid blood lots. */
+  airlift?: EventParametersAirlift;
 }

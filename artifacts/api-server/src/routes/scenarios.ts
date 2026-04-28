@@ -15,6 +15,9 @@ import { loadSimContext } from "../lib/ctx";
 import {
   runScenario,
   findUpstreamRoute,
+  rankSuppliersForShortfall,
+  classifySupplierChannel,
+  type RecommendationAlternative,
   type ScenarioRunInput,
   type SimSupplier,
 } from "@workspace/sim";
@@ -482,7 +485,9 @@ router.post("/scenarios", async (req, res, next) => {
       suppliers: ctx.suppliers,
     });
     if (recsToPersist.length > 0) {
-      await db.insert(recsTable).values(recsToPersist).onConflictDoNothing();
+      // Strip envelope-only field before insert
+      const dbRows = recsToPersist.map(({ alternatives: _alt, ...row }) => row);
+      await db.insert(recsTable).values(dbRows).onConflictDoNothing();
     }
 
     const envelope = buildScenarioResultEnvelope({
@@ -672,6 +677,8 @@ function buildScenarioResultEnvelope(args: {
     }),
     timeline,
     narrative: coaBrief || null,
+    cascades: result.cascades,
+    cascadeNarrative: result.cascades?.narrative ?? [],
     kind,
   };
 }
@@ -690,6 +697,17 @@ function pickSupplierForNode(
     if (matched) return matched;
   }
   return suppliers[0];
+}
+
+function pickRankedSupplierForShortfall(args: {
+  itemId: string;
+  suggestedQty: number;
+  shortfallHorizonDays: number;
+  upstreamRouteDays: number;
+  suppliers: SimSupplier[];
+}) {
+  const ranked = rankSuppliersForShortfall(args);
+  return { top: ranked[0], all: ranked };
 }
 
 function priorityForDOS(dos: number, criticalDays: number): "FLASH" | "URGENT" | "ROUTINE" {
@@ -711,34 +729,76 @@ function buildScenarioRecRationale(args: {
   dos: number;
   burn: number;
   supplierName?: string;
+  channel?: "DOD" | "COMMERCIAL" | "HOST_NATION" | "ALLIED";
   etaDays: number;
+  estimatedTotalCostUsd?: number;
 }): string {
   const supplierClause = args.supplierName
     ? ` via ${args.supplierName} (~${args.etaDays.toFixed(0)}d ETA)`
     : "";
-  return `Pre-position ${args.qty.toLocaleString()} ${args.unitOfIssue} ${args.itemName} to ${args.nodeName} — projected DOS ${args.dos.toFixed(1)} d at ${args.burn.toFixed(1)}/d burn${supplierClause}.`;
+  const channelClause = args.channel
+    ? args.channel === "COMMERCIAL"
+      ? " — Buy on market"
+      : args.channel === "HOST_NATION"
+        ? " — host-nation"
+        : args.channel === "ALLIED"
+          ? " — allied partner"
+          : " — DOD prime"
+    : "";
+  const costClause =
+    typeof args.estimatedTotalCostUsd === "number" && args.estimatedTotalCostUsd > 0
+      ? ` Est. cost $${args.estimatedTotalCostUsd.toLocaleString()}.`
+      : "";
+  return `Pre-position ${args.qty.toLocaleString()} ${args.unitOfIssue} ${args.itemName} to ${args.nodeName} — projected DOS ${args.dos.toFixed(1)} d at ${args.burn.toFixed(1)}/d burn${supplierClause}${channelClause}.${costClause}`;
 }
+
+type EnrichedRecRow = ScenarioRecRow & { alternatives: RecommendationAlternative[] };
 
 function buildScenarioRecommendationRows(args: {
   scenarioId: string;
   result: ReturnType<typeof runScenario>;
   ctx: ScenarioCtxLite;
   suppliers: SimSupplier[];
-}): ScenarioRecRow[] {
+}): EnrichedRecRow[] {
   const { scenarioId, result, ctx, suppliers } = args;
   const nodeMap = new Map(ctx.nodes.map((n) => [n.id, n]));
   const itemMap = new Map(ctx.items.map((i) => [i.id, i]));
-  const rows: ScenarioRecRow[] = [];
+  const rows: EnrichedRecRow[] = [];
   const shortlist = result.perItemShortfall.slice(0, 8);
   for (const sf of shortlist) {
     const node = nodeMap.get(sf.nodeId);
     const item = itemMap.get(sf.itemId);
     if (!node || !item) continue;
-    const supplier = pickSupplierForNode(sf.nodeId, ctx, suppliers);
     const upstream = findUpstreamRoute(sf.nodeId, ctx.routes);
-    const eta = Math.round(
-      ((supplier?.leadTimeDaysMean ?? item.leadTimeDays) + (upstream?.days ?? 2)) * 10,
-    ) / 10;
+    const ranked = rankSuppliersForShortfall({
+      itemId: sf.itemId,
+      suggestedQty: sf.suggestedQty,
+      shortfallHorizonDays: Math.max(ctx.criticalDays, sf.projectedDOS),
+      upstreamRouteDays: upstream?.days ?? 2,
+      suppliers,
+    });
+    const top = ranked[0];
+    // Fallback if no supplier carries the item: use the legacy upstream pick
+    // so we never emit a row with a missing supplier when the catalog is
+    // sparse.
+    const fallback = top
+      ? undefined
+      : pickSupplierForNode(sf.nodeId, ctx, suppliers);
+    const channel = top
+      ? top.channel
+      : fallback
+        ? classifySupplierChannel(fallback)
+        : null;
+    const eta = top
+      ? top.etaDays
+      : Math.round(
+          ((fallback?.leadTimeDaysMean ?? item.leadTimeDays) + (upstream?.days ?? 2)) * 10,
+        ) / 10;
+    const supplierName = top ? top.supplierName : fallback?.name;
+    const estimatedUnitCost = top ? top.estimatedUnitCostUsd : 1.5;
+    const estimatedTotalCost = top
+      ? top.estimatedTotalCostUsd
+      : Number((sf.suggestedQty * 1.5).toFixed(2));
     const expectedRiskReduction = Math.min(
       90,
       Math.round(((ctx.watchDays - sf.projectedDOS) / Math.max(1, ctx.watchDays)) * 60) +
@@ -757,14 +817,20 @@ function buildScenarioRecommendationRows(args: {
         qty: sf.suggestedQty,
         dos: sf.projectedDOS,
         burn: sf.peakDemandPerDay,
-        supplierName: supplier?.name,
+        supplierName,
+        channel: channel ?? undefined,
         etaDays: eta,
+        estimatedTotalCostUsd: estimatedTotalCost,
       }),
       expectedRiskReduction,
-      sourceSupplierId: supplier?.id ?? null,
+      sourceSupplierId: top?.supplierId ?? fallback?.id ?? null,
+      sourceChannel: channel ?? null,
+      estimatedUnitCostUsd: estimatedUnitCost,
+      estimatedTotalCostUsd: estimatedTotalCost,
       etaDays: eta,
       status: "OPEN",
       scenarioId,
+      alternatives: ranked.slice(0, 4),
     });
   }
   return rows;
@@ -803,8 +869,12 @@ function buildScenarioRecommendationsView(args: {
       suggestedSupplierId: row.sourceSupplierId ?? null,
       suggestedSupplierName: supplier?.name ?? null,
       suggestedFromNodeId: supplier?.id ?? null,
+      sourceChannel: row.sourceChannel ?? null,
       etaDays: row.etaDays ?? 0,
-      estimatedCost: Number(((row.suggestedQty ?? 0) * 1.5).toFixed(2)),
+      estimatedUnitCostUsd: row.estimatedUnitCostUsd ?? 0,
+      estimatedTotalCostUsd: row.estimatedTotalCostUsd ?? 0,
+      estimatedCost: row.estimatedTotalCostUsd ?? 0,
+      alternatives: row.alternatives,
       generatedAt: runAt.toISOString(),
       confidenceScore: Math.min(0.95, 0.55 + (row.expectedRiskReduction ?? 0) / 200),
       scenarioId,

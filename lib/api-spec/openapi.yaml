@@ -1360,6 +1360,36 @@ components:
         itemSkew:
           type: object
           additionalProperties: { type: number }
+        coldChain:
+          type: object
+          description: Cold-chain failure cascade. Liquid blood lots held by the failed assets are aged out / compromised by the simulator.
+          properties:
+            assetIds:
+              type: array
+              items: { type: string }
+            assetTypes:
+              type: array
+              items: { type: string }
+            outageHours: { type: number }
+            initialCompromisedFraction: { type: number }
+        reagent:
+          type: object
+          description: Reagent / testing-supply shortage cascade. When gating reagents fall below thresholdDays at affected nodes, donor screening throughput collapses.
+          properties:
+            reagentItemIds:
+              type: array
+              items: { type: string }
+            thresholdDays: { type: number }
+            minCapacityFraction: { type: number }
+        airlift:
+          type: object
+          description: Airlift loss cascade. Lengthens routes and degrades viability of arriving liquid blood lots.
+          properties:
+            additionalTransitDays: { type: number }
+            viabilityLossPerDay: { type: number }
+            affectedModalities:
+              type: array
+              items: { type: string }
 
     Scenario:
       type: object
@@ -1416,7 +1446,71 @@ components:
           type: array
           items: { $ref: "#/components/schemas/ScenarioTimelinePoint" }
         narrative: { type: ["string", "null"] }
+        cascadeNarrative:
+          type: array
+          description: Per-cascade plain-English impact lines (cold-chain, reagent, airlift).
+          items: { type: string }
+        cascades:
+          $ref: "#/components/schemas/ScenarioCascadeOutcome"
         kind: { type: string }
+
+    ScenarioCascadeOutcome:
+      type: object
+      properties:
+        coldChain:
+          type: object
+          properties:
+            failedAssetIds:
+              type: array
+              items: { type: string }
+            totalCompromisedUnits: { type: integer }
+            outageHours: { type: number }
+            perNode:
+              type: array
+              items:
+                type: object
+                properties:
+                  nodeId: { type: string }
+                  failedAssets: { type: integer }
+                  compromisedUnits: { type: integer }
+                  affectedItemIds:
+                    type: array
+                    items: { type: string }
+        reagent:
+          type: object
+          properties:
+            reagentItemIds:
+              type: array
+              items: { type: string }
+            thresholdDays: { type: number }
+            perNode:
+              type: array
+              items:
+                type: object
+                properties:
+                  nodeId: { type: string }
+                  capacityMultiplier: { type: number }
+                  bottleneckItemId: { type: ["string", "null"] }
+                  bottleneckDOS: { type: number }
+        airlift:
+          type: object
+          properties:
+            additionalTransitDays: { type: number }
+            viabilityLossPerDay: { type: number }
+            totalUnitsLost: { type: integer }
+            perNode:
+              type: array
+              items:
+                type: object
+                properties:
+                  nodeId: { type: string }
+                  unitsLost: { type: integer }
+                  affectedItemIds:
+                    type: array
+                    items: { type: string }
+        narrative:
+          type: array
+          items: { type: string }
 
     ScenarioSummary:
       type: object
@@ -1480,12 +1574,37 @@ components:
         suggestedSupplierId: { type: ["string", "null"] }
         suggestedSupplierName: { type: ["string", "null"] }
         suggestedFromNodeId: { type: ["string", "null"] }
+        sourceChannel:
+          type: ["string", "null"]
+          description: Procurement channel family of the suggested supplier.
+          enum: [DOD, COMMERCIAL, HOST_NATION, ALLIED, null]
         etaDays: { type: number }
         estimatedCost: { type: number }
+        estimatedUnitCostUsd: { type: number }
+        estimatedTotalCostUsd: { type: number }
+        alternatives:
+          type: array
+          description: Up to 4 ranked alternative suppliers across channels.
+          items: { $ref: "#/components/schemas/RecommendationAlternative" }
         generatedAt: { type: string, format: date-time }
         confidenceScore: { type: number }
         scenarioId: { type: ["string", "null"] }
         promotedOrderId: { type: ["string", "null"] }
+
+    RecommendationAlternative:
+      type: object
+      required: [supplierId, supplierName, channel, etaDays, reliabilityScore, estimatedUnitCostUsd, estimatedTotalCostUsd, rankScore]
+      properties:
+        supplierId: { type: string }
+        supplierName: { type: string }
+        channel:
+          type: string
+          enum: [DOD, COMMERCIAL, HOST_NATION, ALLIED]
+        etaDays: { type: number }
+        reliabilityScore: { type: number }
+        estimatedUnitCostUsd: { type: number }
+        estimatedTotalCostUsd: { type: number }
+        rankScore: { type: number }
 
     PromoteRecommendationOverrides:
       type: object

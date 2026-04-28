@@ -5,6 +5,8 @@
  * Predictive Sustainment Platform API for INDOPACOM medical logistics decision support.
  * OpenAPI spec version: 1.0.0
  */
+import type { RecommendationAlternative } from "./recommendationAlternative";
+import type { RecommendationSourceChannel } from "./recommendationSourceChannel";
 
 export interface Recommendation {
   id: string;
@@ -22,8 +24,17 @@ export interface Recommendation {
   suggestedSupplierName?: string | null;
   /** @nullable */
   suggestedFromNodeId?: string | null;
+  /**
+   * Procurement channel family of the suggested supplier.
+   * @nullable
+   */
+  sourceChannel?: RecommendationSourceChannel;
   etaDays: number;
   estimatedCost?: number;
+  estimatedUnitCostUsd?: number;
+  estimatedTotalCostUsd?: number;
+  /** Up to 4 ranked alternative suppliers across channels. */
+  alternatives?: RecommendationAlternative[];
   generatedAt: Date;
   confidenceScore?: number;
   /** @nullable */

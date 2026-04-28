@@ -7,6 +7,7 @@
  */
 import type { Recommendation } from "./recommendation";
 import type { Scenario } from "./scenario";
+import type { ScenarioCascadeOutcome } from "./scenarioCascadeOutcome";
 import type { ScenarioItemOutcome } from "./scenarioItemOutcome";
 import type { ScenarioNodeOutcome } from "./scenarioNodeOutcome";
 import type { ScenarioSummary } from "./scenarioSummary";
@@ -21,5 +22,8 @@ export interface ScenarioResult {
   timeline: ScenarioTimelinePoint[];
   /** @nullable */
   narrative?: string | null;
+  /** Per-cascade plain-English impact lines (cold-chain, reagent, airlift). */
+  cascadeNarrative?: string[];
+  cascades?: ScenarioCascadeOutcome;
   kind?: string;
 }

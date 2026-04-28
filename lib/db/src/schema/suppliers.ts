@@ -1,4 +1,4 @@
-import { pgTable, text, doublePrecision, integer, primaryKey } from "drizzle-orm/pg-core";
+import { pgTable, text, doublePrecision, integer, jsonb, primaryKey } from "drizzle-orm/pg-core";
 import { items } from "./items";
 
 export const suppliers = pgTable("suppliers", {
@@ -10,6 +10,7 @@ export const suppliers = pgTable("suppliers", {
   reliabilityScore: doublePrecision("reliability_score").notNull().default(0.9),
   notes: text("notes"),
   itemsCovered: integer("items_covered").notNull().default(0),
+  itemsCoveredIds: jsonb("items_covered_ids").$type<string[]>().notNull().default([]),
 });
 
 export type Supplier = typeof suppliers.$inferSelect;

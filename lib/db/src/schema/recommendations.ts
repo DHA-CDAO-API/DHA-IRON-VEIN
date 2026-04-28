@@ -14,6 +14,9 @@ export const recommendations = pgTable("recommendations", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   promotedOrderId: text("promoted_order_id"),
   scenarioId: text("scenario_id"),
+  sourceChannel: text("source_channel"),
+  estimatedUnitCostUsd: doublePrecision("estimated_unit_cost_usd").notNull().default(0),
+  estimatedTotalCostUsd: doublePrecision("estimated_total_cost_usd").notNull().default(0),
 });
 
 export type Recommendation = typeof recommendations.$inferSelect;

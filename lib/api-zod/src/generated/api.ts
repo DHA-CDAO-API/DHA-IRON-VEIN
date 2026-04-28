@@ -418,8 +418,35 @@ export const GetSiteDetailResponse = zod.object({
       suggestedSupplierId: zod.string().nullable(),
       suggestedSupplierName: zod.string().nullish(),
       suggestedFromNodeId: zod.string().nullish(),
+      sourceChannel: zod
+        .union([
+          zod.literal("DOD"),
+          zod.literal("COMMERCIAL"),
+          zod.literal("HOST_NATION"),
+          zod.literal("ALLIED"),
+          zod.literal(null),
+        ])
+        .nullish()
+        .describe("Procurement channel family of the suggested supplier."),
       etaDays: zod.number(),
       estimatedCost: zod.number().optional(),
+      estimatedUnitCostUsd: zod.number().optional(),
+      estimatedTotalCostUsd: zod.number().optional(),
+      alternatives: zod
+        .array(
+          zod.object({
+            supplierId: zod.string(),
+            supplierName: zod.string(),
+            channel: zod.enum(["DOD", "COMMERCIAL", "HOST_NATION", "ALLIED"]),
+            etaDays: zod.number(),
+            reliabilityScore: zod.number(),
+            estimatedUnitCostUsd: zod.number(),
+            estimatedTotalCostUsd: zod.number(),
+            rankScore: zod.number(),
+          }),
+        )
+        .optional()
+        .describe("Up to 4 ranked alternative suppliers across channels."),
       generatedAt: zod.coerce.date(),
       confidenceScore: zod.number().optional(),
       scenarioId: zod.string().nullish(),
@@ -682,8 +709,35 @@ export const GetItemDetailResponse = zod.object({
       suggestedSupplierId: zod.string().nullable(),
       suggestedSupplierName: zod.string().nullish(),
       suggestedFromNodeId: zod.string().nullish(),
+      sourceChannel: zod
+        .union([
+          zod.literal("DOD"),
+          zod.literal("COMMERCIAL"),
+          zod.literal("HOST_NATION"),
+          zod.literal("ALLIED"),
+          zod.literal(null),
+        ])
+        .nullish()
+        .describe("Procurement channel family of the suggested supplier."),
       etaDays: zod.number(),
       estimatedCost: zod.number().optional(),
+      estimatedUnitCostUsd: zod.number().optional(),
+      estimatedTotalCostUsd: zod.number().optional(),
+      alternatives: zod
+        .array(
+          zod.object({
+            supplierId: zod.string(),
+            supplierName: zod.string(),
+            channel: zod.enum(["DOD", "COMMERCIAL", "HOST_NATION", "ALLIED"]),
+            etaDays: zod.number(),
+            reliabilityScore: zod.number(),
+            estimatedUnitCostUsd: zod.number(),
+            estimatedTotalCostUsd: zod.number(),
+            rankScore: zod.number(),
+          }),
+        )
+        .optional()
+        .describe("Up to 4 ranked alternative suppliers across channels."),
       generatedAt: zod.coerce.date(),
       confidenceScore: zod.number().optional(),
       scenarioId: zod.string().nullish(),
@@ -920,8 +974,35 @@ export const GetOrderResponse = zod.object({
       suggestedSupplierId: zod.string().nullable(),
       suggestedSupplierName: zod.string().nullish(),
       suggestedFromNodeId: zod.string().nullish(),
+      sourceChannel: zod
+        .union([
+          zod.literal("DOD"),
+          zod.literal("COMMERCIAL"),
+          zod.literal("HOST_NATION"),
+          zod.literal("ALLIED"),
+          zod.literal(null),
+        ])
+        .nullish()
+        .describe("Procurement channel family of the suggested supplier."),
       etaDays: zod.number(),
       estimatedCost: zod.number().optional(),
+      estimatedUnitCostUsd: zod.number().optional(),
+      estimatedTotalCostUsd: zod.number().optional(),
+      alternatives: zod
+        .array(
+          zod.object({
+            supplierId: zod.string(),
+            supplierName: zod.string(),
+            channel: zod.enum(["DOD", "COMMERCIAL", "HOST_NATION", "ALLIED"]),
+            etaDays: zod.number(),
+            reliabilityScore: zod.number(),
+            estimatedUnitCostUsd: zod.number(),
+            estimatedTotalCostUsd: zod.number(),
+            rankScore: zod.number(),
+          }),
+        )
+        .optional()
+        .describe("Up to 4 ranked alternative suppliers across channels."),
       generatedAt: zod.coerce.date(),
       confidenceScore: zod.number().optional(),
       scenarioId: zod.string().nullish(),
@@ -1093,6 +1174,37 @@ export const RunScenarioBody = zod.object({
       routeDelayDays: zod.number().optional(),
       specimensMultiplier: zod.number().optional(),
       itemSkew: zod.record(zod.string(), zod.number()).optional(),
+      coldChain: zod
+        .object({
+          assetIds: zod.array(zod.string()).optional(),
+          assetTypes: zod.array(zod.string()).optional(),
+          outageHours: zod.number().optional(),
+          initialCompromisedFraction: zod.number().optional(),
+        })
+        .optional()
+        .describe(
+          "Cold-chain failure cascade. Liquid blood lots held by the failed assets are aged out \/ compromised by the simulator.",
+        ),
+      reagent: zod
+        .object({
+          reagentItemIds: zod.array(zod.string()).optional(),
+          thresholdDays: zod.number().optional(),
+          minCapacityFraction: zod.number().optional(),
+        })
+        .optional()
+        .describe(
+          "Reagent \/ testing-supply shortage cascade. When gating reagents fall below thresholdDays at affected nodes, donor screening throughput collapses.",
+        ),
+      airlift: zod
+        .object({
+          additionalTransitDays: zod.number().optional(),
+          viabilityLossPerDay: zod.number().optional(),
+          affectedModalities: zod.array(zod.string()).optional(),
+        })
+        .optional()
+        .describe(
+          "Airlift loss cascade. Lengthens routes and degrades viability of arriving liquid blood lots.",
+        ),
     })
     .optional()
     .describe("Perturbation parameters applied by the simulation engine."),
@@ -1153,8 +1265,35 @@ export const RunScenarioResponse = zod.object({
       suggestedSupplierId: zod.string().nullable(),
       suggestedSupplierName: zod.string().nullish(),
       suggestedFromNodeId: zod.string().nullish(),
+      sourceChannel: zod
+        .union([
+          zod.literal("DOD"),
+          zod.literal("COMMERCIAL"),
+          zod.literal("HOST_NATION"),
+          zod.literal("ALLIED"),
+          zod.literal(null),
+        ])
+        .nullish()
+        .describe("Procurement channel family of the suggested supplier."),
       etaDays: zod.number(),
       estimatedCost: zod.number().optional(),
+      estimatedUnitCostUsd: zod.number().optional(),
+      estimatedTotalCostUsd: zod.number().optional(),
+      alternatives: zod
+        .array(
+          zod.object({
+            supplierId: zod.string(),
+            supplierName: zod.string(),
+            channel: zod.enum(["DOD", "COMMERCIAL", "HOST_NATION", "ALLIED"]),
+            etaDays: zod.number(),
+            reliabilityScore: zod.number(),
+            estimatedUnitCostUsd: zod.number(),
+            estimatedTotalCostUsd: zod.number(),
+            rankScore: zod.number(),
+          }),
+        )
+        .optional()
+        .describe("Up to 4 ranked alternative suppliers across channels."),
       generatedAt: zod.coerce.date(),
       confidenceScore: zod.number().optional(),
       scenarioId: zod.string().nullish(),
@@ -1170,6 +1309,66 @@ export const RunScenarioResponse = zod.object({
     }),
   ),
   narrative: zod.string().nullish(),
+  cascadeNarrative: zod
+    .array(zod.string())
+    .optional()
+    .describe(
+      "Per-cascade plain-English impact lines (cold-chain, reagent, airlift).",
+    ),
+  cascades: zod
+    .object({
+      coldChain: zod
+        .object({
+          failedAssetIds: zod.array(zod.string()).optional(),
+          totalCompromisedUnits: zod.number().optional(),
+          outageHours: zod.number().optional(),
+          perNode: zod
+            .array(
+              zod.object({
+                nodeId: zod.string().optional(),
+                failedAssets: zod.number().optional(),
+                compromisedUnits: zod.number().optional(),
+                affectedItemIds: zod.array(zod.string()).optional(),
+              }),
+            )
+            .optional(),
+        })
+        .optional(),
+      reagent: zod
+        .object({
+          reagentItemIds: zod.array(zod.string()).optional(),
+          thresholdDays: zod.number().optional(),
+          perNode: zod
+            .array(
+              zod.object({
+                nodeId: zod.string().optional(),
+                capacityMultiplier: zod.number().optional(),
+                bottleneckItemId: zod.string().nullish(),
+                bottleneckDOS: zod.number().optional(),
+              }),
+            )
+            .optional(),
+        })
+        .optional(),
+      airlift: zod
+        .object({
+          additionalTransitDays: zod.number().optional(),
+          viabilityLossPerDay: zod.number().optional(),
+          totalUnitsLost: zod.number().optional(),
+          perNode: zod
+            .array(
+              zod.object({
+                nodeId: zod.string().optional(),
+                unitsLost: zod.number().optional(),
+                affectedItemIds: zod.array(zod.string()).optional(),
+              }),
+            )
+            .optional(),
+        })
+        .optional(),
+      narrative: zod.array(zod.string()).optional(),
+    })
+    .optional(),
   kind: zod.string().optional(),
 });
 
@@ -1231,8 +1430,35 @@ export const GetScenarioResponse = zod.object({
       suggestedSupplierId: zod.string().nullable(),
       suggestedSupplierName: zod.string().nullish(),
       suggestedFromNodeId: zod.string().nullish(),
+      sourceChannel: zod
+        .union([
+          zod.literal("DOD"),
+          zod.literal("COMMERCIAL"),
+          zod.literal("HOST_NATION"),
+          zod.literal("ALLIED"),
+          zod.literal(null),
+        ])
+        .nullish()
+        .describe("Procurement channel family of the suggested supplier."),
       etaDays: zod.number(),
       estimatedCost: zod.number().optional(),
+      estimatedUnitCostUsd: zod.number().optional(),
+      estimatedTotalCostUsd: zod.number().optional(),
+      alternatives: zod
+        .array(
+          zod.object({
+            supplierId: zod.string(),
+            supplierName: zod.string(),
+            channel: zod.enum(["DOD", "COMMERCIAL", "HOST_NATION", "ALLIED"]),
+            etaDays: zod.number(),
+            reliabilityScore: zod.number(),
+            estimatedUnitCostUsd: zod.number(),
+            estimatedTotalCostUsd: zod.number(),
+            rankScore: zod.number(),
+          }),
+        )
+        .optional()
+        .describe("Up to 4 ranked alternative suppliers across channels."),
       generatedAt: zod.coerce.date(),
       confidenceScore: zod.number().optional(),
       scenarioId: zod.string().nullish(),
@@ -1248,6 +1474,66 @@ export const GetScenarioResponse = zod.object({
     }),
   ),
   narrative: zod.string().nullish(),
+  cascadeNarrative: zod
+    .array(zod.string())
+    .optional()
+    .describe(
+      "Per-cascade plain-English impact lines (cold-chain, reagent, airlift).",
+    ),
+  cascades: zod
+    .object({
+      coldChain: zod
+        .object({
+          failedAssetIds: zod.array(zod.string()).optional(),
+          totalCompromisedUnits: zod.number().optional(),
+          outageHours: zod.number().optional(),
+          perNode: zod
+            .array(
+              zod.object({
+                nodeId: zod.string().optional(),
+                failedAssets: zod.number().optional(),
+                compromisedUnits: zod.number().optional(),
+                affectedItemIds: zod.array(zod.string()).optional(),
+              }),
+            )
+            .optional(),
+        })
+        .optional(),
+      reagent: zod
+        .object({
+          reagentItemIds: zod.array(zod.string()).optional(),
+          thresholdDays: zod.number().optional(),
+          perNode: zod
+            .array(
+              zod.object({
+                nodeId: zod.string().optional(),
+                capacityMultiplier: zod.number().optional(),
+                bottleneckItemId: zod.string().nullish(),
+                bottleneckDOS: zod.number().optional(),
+              }),
+            )
+            .optional(),
+        })
+        .optional(),
+      airlift: zod
+        .object({
+          additionalTransitDays: zod.number().optional(),
+          viabilityLossPerDay: zod.number().optional(),
+          totalUnitsLost: zod.number().optional(),
+          perNode: zod
+            .array(
+              zod.object({
+                nodeId: zod.string().optional(),
+                unitsLost: zod.number().optional(),
+                affectedItemIds: zod.array(zod.string()).optional(),
+              }),
+            )
+            .optional(),
+        })
+        .optional(),
+      narrative: zod.array(zod.string()).optional(),
+    })
+    .optional(),
   kind: zod.string().optional(),
 });
 
@@ -1308,6 +1594,37 @@ export const PreviewScenarioBody = zod.object({
       routeDelayDays: zod.number().optional(),
       specimensMultiplier: zod.number().optional(),
       itemSkew: zod.record(zod.string(), zod.number()).optional(),
+      coldChain: zod
+        .object({
+          assetIds: zod.array(zod.string()).optional(),
+          assetTypes: zod.array(zod.string()).optional(),
+          outageHours: zod.number().optional(),
+          initialCompromisedFraction: zod.number().optional(),
+        })
+        .optional()
+        .describe(
+          "Cold-chain failure cascade. Liquid blood lots held by the failed assets are aged out \/ compromised by the simulator.",
+        ),
+      reagent: zod
+        .object({
+          reagentItemIds: zod.array(zod.string()).optional(),
+          thresholdDays: zod.number().optional(),
+          minCapacityFraction: zod.number().optional(),
+        })
+        .optional()
+        .describe(
+          "Reagent \/ testing-supply shortage cascade. When gating reagents fall below thresholdDays at affected nodes, donor screening throughput collapses.",
+        ),
+      airlift: zod
+        .object({
+          additionalTransitDays: zod.number().optional(),
+          viabilityLossPerDay: zod.number().optional(),
+          affectedModalities: zod.array(zod.string()).optional(),
+        })
+        .optional()
+        .describe(
+          "Airlift loss cascade. Lengthens routes and degrades viability of arriving liquid blood lots.",
+        ),
     })
     .optional()
     .describe("Perturbation parameters applied by the simulation engine."),
@@ -1368,8 +1685,35 @@ export const PreviewScenarioResponse = zod.object({
       suggestedSupplierId: zod.string().nullable(),
       suggestedSupplierName: zod.string().nullish(),
       suggestedFromNodeId: zod.string().nullish(),
+      sourceChannel: zod
+        .union([
+          zod.literal("DOD"),
+          zod.literal("COMMERCIAL"),
+          zod.literal("HOST_NATION"),
+          zod.literal("ALLIED"),
+          zod.literal(null),
+        ])
+        .nullish()
+        .describe("Procurement channel family of the suggested supplier."),
       etaDays: zod.number(),
       estimatedCost: zod.number().optional(),
+      estimatedUnitCostUsd: zod.number().optional(),
+      estimatedTotalCostUsd: zod.number().optional(),
+      alternatives: zod
+        .array(
+          zod.object({
+            supplierId: zod.string(),
+            supplierName: zod.string(),
+            channel: zod.enum(["DOD", "COMMERCIAL", "HOST_NATION", "ALLIED"]),
+            etaDays: zod.number(),
+            reliabilityScore: zod.number(),
+            estimatedUnitCostUsd: zod.number(),
+            estimatedTotalCostUsd: zod.number(),
+            rankScore: zod.number(),
+          }),
+        )
+        .optional()
+        .describe("Up to 4 ranked alternative suppliers across channels."),
       generatedAt: zod.coerce.date(),
       confidenceScore: zod.number().optional(),
       scenarioId: zod.string().nullish(),
@@ -1385,6 +1729,66 @@ export const PreviewScenarioResponse = zod.object({
     }),
   ),
   narrative: zod.string().nullish(),
+  cascadeNarrative: zod
+    .array(zod.string())
+    .optional()
+    .describe(
+      "Per-cascade plain-English impact lines (cold-chain, reagent, airlift).",
+    ),
+  cascades: zod
+    .object({
+      coldChain: zod
+        .object({
+          failedAssetIds: zod.array(zod.string()).optional(),
+          totalCompromisedUnits: zod.number().optional(),
+          outageHours: zod.number().optional(),
+          perNode: zod
+            .array(
+              zod.object({
+                nodeId: zod.string().optional(),
+                failedAssets: zod.number().optional(),
+                compromisedUnits: zod.number().optional(),
+                affectedItemIds: zod.array(zod.string()).optional(),
+              }),
+            )
+            .optional(),
+        })
+        .optional(),
+      reagent: zod
+        .object({
+          reagentItemIds: zod.array(zod.string()).optional(),
+          thresholdDays: zod.number().optional(),
+          perNode: zod
+            .array(
+              zod.object({
+                nodeId: zod.string().optional(),
+                capacityMultiplier: zod.number().optional(),
+                bottleneckItemId: zod.string().nullish(),
+                bottleneckDOS: zod.number().optional(),
+              }),
+            )
+            .optional(),
+        })
+        .optional(),
+      airlift: zod
+        .object({
+          additionalTransitDays: zod.number().optional(),
+          viabilityLossPerDay: zod.number().optional(),
+          totalUnitsLost: zod.number().optional(),
+          perNode: zod
+            .array(
+              zod.object({
+                nodeId: zod.string().optional(),
+                unitsLost: zod.number().optional(),
+                affectedItemIds: zod.array(zod.string()).optional(),
+              }),
+            )
+            .optional(),
+        })
+        .optional(),
+      narrative: zod.array(zod.string()).optional(),
+    })
+    .optional(),
   kind: zod.string().optional(),
 });
 
@@ -1412,6 +1816,37 @@ export const ListPresetEventsResponseItem = zod.object({
       routeDelayDays: zod.number().optional(),
       specimensMultiplier: zod.number().optional(),
       itemSkew: zod.record(zod.string(), zod.number()).optional(),
+      coldChain: zod
+        .object({
+          assetIds: zod.array(zod.string()).optional(),
+          assetTypes: zod.array(zod.string()).optional(),
+          outageHours: zod.number().optional(),
+          initialCompromisedFraction: zod.number().optional(),
+        })
+        .optional()
+        .describe(
+          "Cold-chain failure cascade. Liquid blood lots held by the failed assets are aged out \/ compromised by the simulator.",
+        ),
+      reagent: zod
+        .object({
+          reagentItemIds: zod.array(zod.string()).optional(),
+          thresholdDays: zod.number().optional(),
+          minCapacityFraction: zod.number().optional(),
+        })
+        .optional()
+        .describe(
+          "Reagent \/ testing-supply shortage cascade. When gating reagents fall below thresholdDays at affected nodes, donor screening throughput collapses.",
+        ),
+      airlift: zod
+        .object({
+          additionalTransitDays: zod.number().optional(),
+          viabilityLossPerDay: zod.number().optional(),
+          affectedModalities: zod.array(zod.string()).optional(),
+        })
+        .optional()
+        .describe(
+          "Airlift loss cascade. Lengthens routes and degrades viability of arriving liquid blood lots.",
+        ),
     })
     .describe("Perturbation parameters applied by the simulation engine."),
 });
@@ -1461,8 +1896,35 @@ export const GetRecommendationsResponseItem = zod.object({
   suggestedSupplierId: zod.string().nullable(),
   suggestedSupplierName: zod.string().nullish(),
   suggestedFromNodeId: zod.string().nullish(),
+  sourceChannel: zod
+    .union([
+      zod.literal("DOD"),
+      zod.literal("COMMERCIAL"),
+      zod.literal("HOST_NATION"),
+      zod.literal("ALLIED"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe("Procurement channel family of the suggested supplier."),
   etaDays: zod.number(),
   estimatedCost: zod.number().optional(),
+  estimatedUnitCostUsd: zod.number().optional(),
+  estimatedTotalCostUsd: zod.number().optional(),
+  alternatives: zod
+    .array(
+      zod.object({
+        supplierId: zod.string(),
+        supplierName: zod.string(),
+        channel: zod.enum(["DOD", "COMMERCIAL", "HOST_NATION", "ALLIED"]),
+        etaDays: zod.number(),
+        reliabilityScore: zod.number(),
+        estimatedUnitCostUsd: zod.number(),
+        estimatedTotalCostUsd: zod.number(),
+        rankScore: zod.number(),
+      }),
+    )
+    .optional()
+    .describe("Up to 4 ranked alternative suppliers across channels."),
   generatedAt: zod.coerce.date(),
   confidenceScore: zod.number().optional(),
   scenarioId: zod.string().nullish(),

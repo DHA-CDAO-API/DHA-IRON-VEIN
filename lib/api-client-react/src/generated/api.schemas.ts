@@ -429,6 +429,42 @@ export interface Order {
   sourceRecommendationId?: string | null;
 }
 
+/**
+ * Procurement channel family of the suggested supplier.
+ * @nullable
+ */
+export type RecommendationSourceChannel =
+  | (typeof RecommendationSourceChannel)[keyof typeof RecommendationSourceChannel]
+  | null;
+
+export const RecommendationSourceChannel = {
+  DOD: "DOD",
+  COMMERCIAL: "COMMERCIAL",
+  HOST_NATION: "HOST_NATION",
+  ALLIED: "ALLIED",
+} as const;
+
+export type RecommendationAlternativeChannel =
+  (typeof RecommendationAlternativeChannel)[keyof typeof RecommendationAlternativeChannel];
+
+export const RecommendationAlternativeChannel = {
+  DOD: "DOD",
+  COMMERCIAL: "COMMERCIAL",
+  HOST_NATION: "HOST_NATION",
+  ALLIED: "ALLIED",
+} as const;
+
+export interface RecommendationAlternative {
+  supplierId: string;
+  supplierName: string;
+  channel: RecommendationAlternativeChannel;
+  etaDays: number;
+  reliabilityScore: number;
+  estimatedUnitCostUsd: number;
+  estimatedTotalCostUsd: number;
+  rankScore: number;
+}
+
 export interface Recommendation {
   id: string;
   kind: string;
@@ -445,8 +481,17 @@ export interface Recommendation {
   suggestedSupplierName?: string | null;
   /** @nullable */
   suggestedFromNodeId?: string | null;
+  /**
+   * Procurement channel family of the suggested supplier.
+   * @nullable
+   */
+  sourceChannel?: RecommendationSourceChannel;
   etaDays: number;
   estimatedCost?: number;
+  estimatedUnitCostUsd?: number;
+  estimatedTotalCostUsd?: number;
+  /** Up to 4 ranked alternative suppliers across channels. */
+  alternatives?: RecommendationAlternative[];
   generatedAt: string;
   confidenceScore?: number;
   /** @nullable */
@@ -819,6 +864,34 @@ export interface AcknowledgeAlertInput {
 export type EventParametersItemSkew = { [key: string]: number };
 
 /**
+ * Cold-chain failure cascade. Liquid blood lots held by the failed assets are aged out / compromised by the simulator.
+ */
+export type EventParametersColdChain = {
+  assetIds?: string[];
+  assetTypes?: string[];
+  outageHours?: number;
+  initialCompromisedFraction?: number;
+};
+
+/**
+ * Reagent / testing-supply shortage cascade. When gating reagents fall below thresholdDays at affected nodes, donor screening throughput collapses.
+ */
+export type EventParametersReagent = {
+  reagentItemIds?: string[];
+  thresholdDays?: number;
+  minCapacityFraction?: number;
+};
+
+/**
+ * Airlift loss cascade. Lengthens routes and degrades viability of arriving liquid blood lots.
+ */
+export type EventParametersAirlift = {
+  additionalTransitDays?: number;
+  viabilityLossPerDay?: number;
+  affectedModalities?: string[];
+};
+
+/**
  * Perturbation parameters applied by the simulation engine.
  */
 export interface EventParameters {
@@ -832,6 +905,12 @@ export interface EventParameters {
   routeDelayDays?: number;
   specimensMultiplier?: number;
   itemSkew?: EventParametersItemSkew;
+  /** Cold-chain failure cascade. Liquid blood lots held by the failed assets are aged out / compromised by the simulator. */
+  coldChain?: EventParametersColdChain;
+  /** Reagent / testing-supply shortage cascade. When gating reagents fall below thresholdDays at affected nodes, donor screening throughput collapses. */
+  reagent?: EventParametersReagent;
+  /** Airlift loss cascade. Lengthens routes and degrades viability of arriving liquid blood lots. */
+  airlift?: EventParametersAirlift;
 }
 
 export interface PresetEvent {
@@ -917,6 +996,54 @@ export interface ScenarioTimelinePoint {
   demandIndex: number;
 }
 
+export type ScenarioCascadeOutcomeColdChainPerNodeItem = {
+  nodeId?: string;
+  failedAssets?: number;
+  compromisedUnits?: number;
+  affectedItemIds?: string[];
+};
+
+export type ScenarioCascadeOutcomeColdChain = {
+  failedAssetIds?: string[];
+  totalCompromisedUnits?: number;
+  outageHours?: number;
+  perNode?: ScenarioCascadeOutcomeColdChainPerNodeItem[];
+};
+
+export type ScenarioCascadeOutcomeReagentPerNodeItem = {
+  nodeId?: string;
+  capacityMultiplier?: number;
+  /** @nullable */
+  bottleneckItemId?: string | null;
+  bottleneckDOS?: number;
+};
+
+export type ScenarioCascadeOutcomeReagent = {
+  reagentItemIds?: string[];
+  thresholdDays?: number;
+  perNode?: ScenarioCascadeOutcomeReagentPerNodeItem[];
+};
+
+export type ScenarioCascadeOutcomeAirliftPerNodeItem = {
+  nodeId?: string;
+  unitsLost?: number;
+  affectedItemIds?: string[];
+};
+
+export type ScenarioCascadeOutcomeAirlift = {
+  additionalTransitDays?: number;
+  viabilityLossPerDay?: number;
+  totalUnitsLost?: number;
+  perNode?: ScenarioCascadeOutcomeAirliftPerNodeItem[];
+};
+
+export interface ScenarioCascadeOutcome {
+  coldChain?: ScenarioCascadeOutcomeColdChain;
+  reagent?: ScenarioCascadeOutcomeReagent;
+  airlift?: ScenarioCascadeOutcomeAirlift;
+  narrative?: string[];
+}
+
 export interface ScenarioResult {
   scenario: Scenario;
   summary: ScenarioSummary;
@@ -926,6 +1053,9 @@ export interface ScenarioResult {
   timeline: ScenarioTimelinePoint[];
   /** @nullable */
   narrative?: string | null;
+  /** Per-cascade plain-English impact lines (cold-chain, reagent, airlift). */
+  cascadeNarrative?: string[];
+  cascades?: ScenarioCascadeOutcome;
   kind?: string;
 }
 

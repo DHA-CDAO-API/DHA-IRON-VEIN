@@ -1,13 +1,25 @@
+import {
+  applyAirliftCascade,
+  applyColdChainCascade,
+  applyReagentCascade,
+  buildCascadeNarrative,
+  type AirliftCascadeResult,
+  type ColdChainCascadeResult,
+  type ReagentCascadeResult,
+} from "./cascades";
 import { computeDailyDemand, projectDaysOfSupply } from "./forecast";
 import { computeRiskScore } from "./risk";
 import type {
+  ScenarioRunInput,
+  SimBloodLot,
+  SimColdChainAsset,
   SimDemandProfile,
+  SimDonorPool,
   SimInventoryBalance,
   SimItem,
   SimNode,
   SimOperationalState,
   SimRoute,
-  ScenarioRunInput,
 } from "./types";
 
 export type ScenarioStep = {
@@ -27,6 +39,27 @@ export type ScenarioItemShortfall = {
   suggestedQty: number;
 };
 
+export type ScenarioCascadeOutcome = {
+  coldChain: {
+    failedAssetIds: string[];
+    totalCompromisedUnits: number;
+    outageHours: number;
+    perNode: ColdChainCascadeResult["perNode"];
+  };
+  reagent: {
+    reagentItemIds: string[];
+    thresholdDays: number;
+    perNode: ReagentCascadeResult["perNode"];
+  };
+  airlift: {
+    additionalTransitDays: number;
+    viabilityLossPerDay: number;
+    totalUnitsLost: number;
+    perNode: AirliftCascadeResult["perNode"];
+  };
+  narrative: string[];
+};
+
 export type ScenarioOutcome = {
   steps: ScenarioStep[];
   impactedNodes: Array<{
@@ -39,6 +72,7 @@ export type ScenarioOutcome = {
   baselineRisk: Record<string, number>;
   peakDay: number;
   perItemShortfall: ScenarioItemShortfall[];
+  cascades: ScenarioCascadeOutcome;
 };
 
 export type ScenarioContext = {
@@ -51,6 +85,10 @@ export type ScenarioContext = {
   itemSkew: Record<string, number>;
   watchDays: number;
   criticalDays: number;
+  // New blood-readiness inputs (optional so legacy callers still work).
+  bloodLots?: SimBloodLot[];
+  coldChainAssets?: SimColdChainAsset[];
+  donorPools?: SimDonorPool[];
 };
 
 export function runScenario(
@@ -66,9 +104,53 @@ export function runScenario(
   }
 
   const baselineRisk: Record<string, number> = {};
+  const baselineDosByNode: Record<string, number> = {};
   for (const node of ctx.nodes) {
-    baselineRisk[node.id] = computeNodeRisk(ctx, node, onHandByKey, {});
+    const r = computeNodeRiskAndDos(ctx, node, onHandByKey);
+    baselineRisk[node.id] = r.risk;
+    baselineDosByNode[node.id] = r.minDos;
   }
+
+  // ---- Pre-loop cascades: cold-chain & airlift mutate on-hand directly ----
+  const coldChainResult = applyColdChainCascade({
+    perturbation: input.perturbation,
+    affected,
+    bloodLots: ctx.bloodLots ?? [],
+    coldChainAssets: ctx.coldChainAssets ?? [],
+    onHandByKey,
+  });
+  const airliftResult = applyAirliftCascade({
+    perturbation: input.perturbation,
+    affected,
+    routes: ctx.routes,
+    bloodLots: ctx.bloodLots ?? [],
+    onHandByKey,
+  });
+
+  // Reagent cascade needs per-node burn rates for the gating reagent items.
+  const reagentBurnByKey = new Map<string, number>();
+  for (const node of ctx.nodes) {
+    const profile = ctx.profiles.get(node.id);
+    if (!profile) continue;
+    const state = ctx.states.get(profile.operationalState);
+    const demands = computeDailyDemand({
+      profile,
+      items: ctx.items,
+      operationalState: state,
+      itemSkew: ctx.itemSkew,
+    });
+    for (const d of demands) {
+      reagentBurnByKey.set(`${node.id}:${d.itemId}`, d.quantity);
+    }
+  }
+  const reagentResult = applyReagentCascade({
+    perturbation: input.perturbation,
+    affected,
+    items: ctx.items,
+    onHandByKey,
+    reagentBurnByKey,
+    affectedNodes: ctx.nodes,
+  });
 
   const steps: ScenarioStep[] = [];
   const peakRiskByNode: Record<string, number> = { ...baselineRisk };
@@ -134,13 +216,23 @@ export function runScenario(
       const reliabilityDelta = isAffected
         ? input.perturbation.routeReliabilityDelta ?? 0
         : 0;
+      // The reagent cascade further degrades the receiving node's screening
+      // throughput; surface that as additional risk via reduced effective
+      // route reliability (less in-theater donations replenishing forward
+      // stock).
+      const reagentMult = reagentResult.capacityMultiplierByNode.get(node.id);
+      const reagentReliabilityHit = reagentMult !== undefined ? -(1 - reagentMult) * 0.4 : 0;
+      const airliftDelay =
+        input.perturbation.airlift && isAffected
+          ? Math.max(0, input.perturbation.airlift.additionalTransitDays ?? 2)
+          : 0;
       const risk = computeRiskScore({
         daysOfSupply: minDosForNode,
         criticalShortItems: critShort,
         openAlertsCritical: 0,
         openAlertsWarning: 0,
-        upstreamRouteDelayDays: upstreamDelay,
-        routeReliability: Math.max(0, 0.9 + reliabilityDelta),
+        upstreamRouteDelayDays: upstreamDelay + airliftDelay,
+        routeReliability: Math.max(0, 0.9 + reliabilityDelta + reagentReliabilityHit),
       });
       riskByNode[node.id] = risk;
       dosByNode[node.id] = minDosForNode;
@@ -204,17 +296,55 @@ export function runScenario(
     return a.projectedDOS - b.projectedDOS;
   });
 
-  return { steps, impactedNodes, baselineRisk, peakDay, perItemShortfall };
+  const narrative = buildCascadeNarrative({
+    scenarioName: "",
+    coldChain: coldChainResult,
+    reagent: reagentResult,
+    airlift: airliftResult,
+    donorPools: ctx.donorPools ?? [],
+    nodes: ctx.nodes,
+    dosBeforeByNode: baselineDosByNode,
+    dosAfterByNode: minDOSByNode,
+  });
+
+  const cascades: ScenarioCascadeOutcome = {
+    coldChain: {
+      failedAssetIds: Array.from(coldChainResult.failedAssetIds),
+      totalCompromisedUnits: coldChainResult.totalCompromisedUnits,
+      outageHours: coldChainResult.outageHours,
+      perNode: coldChainResult.perNode,
+    },
+    reagent: {
+      reagentItemIds: reagentResult.reagentItemIds,
+      thresholdDays: reagentResult.thresholdDays,
+      perNode: reagentResult.perNode,
+    },
+    airlift: {
+      additionalTransitDays: airliftResult.additionalTransitDays,
+      viabilityLossPerDay: airliftResult.viabilityLossPerDay,
+      totalUnitsLost: airliftResult.totalUnitsLost,
+      perNode: airliftResult.perNode,
+    },
+    narrative,
+  };
+
+  return {
+    steps,
+    impactedNodes,
+    baselineRisk,
+    peakDay,
+    perItemShortfall,
+    cascades,
+  };
 }
 
-function computeNodeRisk(
+function computeNodeRiskAndDos(
   ctx: ScenarioContext,
   node: SimNode,
   onHandByKey: Map<string, number>,
-  _opts: Record<string, never>,
-): number {
+): { risk: number; minDos: number } {
   const profile = ctx.profiles.get(node.id);
-  if (!profile) return 0;
+  if (!profile) return { risk: 0, minDos: 999 };
   const state = ctx.states.get(profile.operationalState);
   const demands = computeDailyDemand({
     profile,
@@ -230,12 +360,15 @@ function computeNodeRisk(
     if (dos < minDos) minDos = dos;
     if (dos <= ctx.criticalDays) critShort++;
   }
-  return computeRiskScore({
-    daysOfSupply: minDos,
-    criticalShortItems: critShort,
-    openAlertsCritical: 0,
-    openAlertsWarning: 0,
-    upstreamRouteDelayDays: 0,
-    routeReliability: 0.9,
-  });
+  return {
+    minDos,
+    risk: computeRiskScore({
+      daysOfSupply: minDos,
+      criticalShortItems: critShort,
+      openAlertsCritical: 0,
+      openAlertsWarning: 0,
+      upstreamRouteDelayDays: 0,
+      routeReliability: 0.9,
+    }),
+  };
 }
