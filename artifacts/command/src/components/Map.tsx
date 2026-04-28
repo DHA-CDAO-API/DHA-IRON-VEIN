@@ -296,6 +296,10 @@ export default function NetworkGLMap(props: NetworkMapProps) {
   }, [routes, nodeIndex, allCategoriesActive, selectedCategories]);
 
   // Build animated shipment trips. Filter by category + match against route data.
+  // Every trip's timestamps must fit inside [0, TRIP_LENGTH) so that when the
+  // animation loops via `loopLength`, no trip is left "in the future" and
+  // none get clipped mid-flight (which previously made routes appear to vanish
+  // into the ocean on zoom).
   const tripData = useMemo(() => {
     type Trip = {
       path: Array<[number, number]>;
@@ -303,20 +307,32 @@ export default function NetworkGLMap(props: NetworkMapProps) {
       color: [number, number, number];
     };
     const trips: Trip[] = [];
+    const SHIPMENT_SPAN = TRIP_LENGTH * 0.55;
+    const ROUTE_SPAN = TRIP_LENGTH * 0.5;
+
     // Use real in-flight shipments first; if none match the active filter, fall
     // back to a representative subset of active routes so the map always has
     // a sense of motion.
     const activeShipments = shipments.filter((s: any) => categoryActive(s.category));
     const sourceShipments = activeShipments.length > 0 ? activeShipments : [];
+
+    // Distribute offsets across the safe window [0, TRIP_LENGTH - span) so
+    // timestamps stay strictly inside the loop and trips reach their
+    // destination on every cycle.
+    const stagger = (i: number, span: number) => {
+      const maxStart = Math.max(1, TRIP_LENGTH - span);
+      // Deterministic, evenly-spread offsets via a coprime stride.
+      return (i * 137) % maxStart;
+    };
+
     let i = 0;
     for (const s of sourceShipments) {
       const a: any = nodeIndex.get(s.fromNode);
       const b: any = nodeIndex.get(s.toNode);
       if (!a || !b) continue;
       const wp = greatCircleWaypoints(a.longitude, a.latitude, b.longitude, b.latitude, 36);
-      const offset = (i * 130) % TRIP_LENGTH;
-      const span = TRIP_LENGTH * 0.55;
-      const ts = wp.map((_, k) => offset + (k / (wp.length - 1)) * span);
+      const offset = stagger(i, SHIPMENT_SPAN);
+      const ts = wp.map((_, k) => offset + (k / (wp.length - 1)) * SHIPMENT_SPAN);
       trips.push({
         path: wp,
         timestamps: ts,
@@ -330,9 +346,8 @@ export default function NetworkGLMap(props: NetworkMapProps) {
     const slice = activeRoutes.slice(0, Math.min(activeRoutes.length, 18));
     for (const rp of slice) {
       const matchedCat = rp.categories.find((c) => categoryActive(c)) ?? 'supplies';
-      const offset = (i * 130) % TRIP_LENGTH;
-      const span = TRIP_LENGTH * 0.5;
-      const ts = rp.path.map((_, k) => offset + (k / (rp.path.length - 1)) * span);
+      const offset = stagger(i, ROUTE_SPAN);
+      const ts = rp.path.map((_, k) => offset + (k / (rp.path.length - 1)) * ROUTE_SPAN);
       trips.push({
         path: rp.path,
         timestamps: ts,
@@ -486,6 +501,7 @@ export default function NetworkGLMap(props: NetworkMapProps) {
         getWidth: 4,
         trailLength: 220,
         currentTime: time,
+        loopLength: TRIP_LENGTH,
         capRounded: true,
         jointRounded: true,
       }),
