@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import RoleBadge from "@/components/RoleBadge";
 import AlertsRail from "@/components/AlertsRail";
 import LiveClock from "@/components/layout/LiveClock";
+import FpconPill from "@/components/layout/FpconPill";
 import { SearchPalette, useSearchPalette } from "@/components/SearchPalette";
 import { useGetProfile } from "@workspace/api-client-react";
 import dhaSeal from "@assets/Seal_of_War_Health_Agency_1777349167048.png";
@@ -129,9 +130,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                 ⌘K
               </kbd>
             </Button>
-            <div className="px-2 py-1 bg-destructive/20 border border-destructive/50 text-destructive text-xs font-mono rounded font-bold tracking-wider animate-pulse">
-              OPCON: HEIGHTENED
-            </div>
+            <FpconPill level="BRAVO" />
           </div>
           <div className="flex items-center gap-4">
             <RoleBadge />

@@ -6,7 +6,7 @@ The system fuses a real medical-supply catalog (DLA / DMLSS-compatible) with a t
 
 > **Operational date in the demo:** April 27, 2026
 > **AOR:** USINDOPACOM theater — supplier → DLA → 3 regional hubs → 5 MTFs → 5 BAS / clinic spokes
-> **Posture:** OPCON HEIGHTENED
+> **Posture:** FPCON BRAVO
 
 ---
 
@@ -140,7 +140,7 @@ All under `/api/*`. Full contract in `lib/api-spec/openapi.yaml`.
 
 The role switcher (top-right, persists in `localStorage`) re-weights the dashboard:
 
-- **Commander** — theater DOS, OPCON, top-risk hubs, decision recommendations.
+- **Commander** — theater DOS, FPCON, top-risk hubs, decision recommendations.
 - **Logistician** — orders pipeline, ETAs, route stress, exports.
 - **Medical Planner** — item-level burn, mass-casualty surge, scenario console.
 - **Analyst** — full data admin, model switching, raw recommendations.
