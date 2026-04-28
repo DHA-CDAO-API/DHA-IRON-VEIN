@@ -29,7 +29,7 @@ export function TestingSuppliesPanel({
               <span className={`font-mono ${dosClass(data.minDaysOfSupply)}`}>{formatDOS(data.minDaysOfSupply)}</span>
             </span>
             {constraintCount > 0 && (
-              <Badge variant="outline" className="border-amber-500/60 text-amber-500 bg-amber-500/10">
+              <Badge variant="outline" className="border-amber-400/60 text-amber-400 bg-amber-400/10">
                 {constraintCount} constraint{constraintCount === 1 ? "" : "s"}
               </Badge>
             )}
@@ -130,7 +130,7 @@ function ConstrainsBadge({
       className={
         isTransfusion
           ? "border-destructive/60 text-destructive bg-destructive/10 text-[10px]"
-          : "border-amber-500/60 text-amber-500 bg-amber-500/10 text-[10px]"
+          : "border-amber-400/60 text-amber-400 bg-amber-400/10 text-[10px]"
       }
     >
       Constrains {label.toLowerCase()}

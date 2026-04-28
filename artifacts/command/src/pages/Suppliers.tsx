@@ -45,14 +45,14 @@ function reliabilityColor(rel: number | null | undefined): string {
   if (rel == null || !Number.isFinite(rel)) return "text-muted-foreground";
   const pct = rel <= 1 ? rel * 100 : rel;
   if (pct >= 95) return "text-emerald-500 font-bold";
-  if (pct >= 85) return "text-amber-500 font-bold";
+  if (pct >= 85) return "text-amber-400 font-bold";
   return "text-destructive font-bold";
 }
 
 function leadTimeColor(days: number | null | undefined): string {
   if (days == null || !Number.isFinite(days)) return "text-muted-foreground";
   if (days <= 5) return "text-emerald-500";
-  if (days <= 14) return "text-amber-500";
+  if (days <= 14) return "text-amber-400";
   return "text-destructive";
 }
 

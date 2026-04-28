@@ -15,8 +15,8 @@ const DEFAULT_LEVEL: FpconLevel = "BRAVO";
 const LEVELS: FpconLevel[] = ["ALPHA", "BRAVO", "CHARLIE", "DELTA"];
 
 const STYLES: Record<FpconLevel, string> = {
-  ALPHA: "bg-teal-500/15 border-teal-500/40 text-teal-300",
-  BRAVO: "bg-amber-500/20 border-amber-500/50 text-amber-300 animate-pulse",
+  ALPHA: "bg-emerald-600/15 border-emerald-500/40 text-emerald-300",
+  BRAVO: "bg-amber-400/20 border-amber-400/50 text-amber-300 animate-pulse",
   CHARLIE:
     "bg-orange-500/20 border-orange-500/50 text-orange-300 animate-pulse",
   DELTA:
@@ -24,8 +24,8 @@ const STYLES: Record<FpconLevel, string> = {
 };
 
 const PICKER_STYLES: Record<FpconLevel, string> = {
-  ALPHA: "bg-teal-500/15 border-teal-500/40 text-teal-300",
-  BRAVO: "bg-amber-500/20 border-amber-500/50 text-amber-300",
+  ALPHA: "bg-emerald-600/15 border-emerald-500/40 text-emerald-300",
+  BRAVO: "bg-amber-400/20 border-amber-400/50 text-amber-300",
   CHARLIE: "bg-orange-500/20 border-orange-500/50 text-orange-300",
   DELTA: "bg-destructive/20 border-destructive/50 text-destructive",
 };

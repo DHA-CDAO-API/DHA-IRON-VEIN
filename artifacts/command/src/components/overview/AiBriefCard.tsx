@@ -86,7 +86,7 @@ export function AiBriefCard() {
               text={data?.bullets?.topRisk ?? "—"}
             />
             <Bullet
-              icon={<Lightbulb className="h-4 w-4 text-amber-500" />}
+              icon={<Lightbulb className="h-4 w-4 text-amber-400" />}
               label="Recommended action"
               text={data?.bullets?.recommendedAction ?? "—"}
             />
@@ -108,7 +108,7 @@ function ModelBadge({ data }: { data: AiOverviewBrief | undefined }) {
     return (
       <Badge
         variant="outline"
-        className="border-amber-500/40 text-amber-500 bg-amber-500/10 text-[10px] uppercase tracking-wider"
+        className="border-amber-400/40 text-amber-400 bg-amber-400/10 text-[10px] uppercase tracking-wider"
       >
         Fallback
       </Badge>

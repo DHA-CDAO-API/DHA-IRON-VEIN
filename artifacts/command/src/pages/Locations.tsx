@@ -15,7 +15,7 @@ import { formatDOS, dosClass } from "@/lib/format";
 
 function threatTier(riskScore: number): { label: string; cls: string } {
   if (riskScore >= 70) return { label: "TIER 1", cls: "border-destructive text-destructive bg-destructive/10" };
-  if (riskScore >= 40) return { label: "TIER 2", cls: "border-amber-500 text-amber-500 bg-amber-500/10" };
+  if (riskScore >= 40) return { label: "TIER 2", cls: "border-amber-400 text-amber-400 bg-amber-400/10" };
   if (riskScore >= 15) return { label: "TIER 3", cls: "border-yellow-500 text-yellow-500 bg-yellow-500/10" };
   return { label: "TIER 4", cls: "border-emerald-500 text-emerald-500 bg-emerald-500/10" };
 }
@@ -76,7 +76,7 @@ export default function Locations() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 shrink-0">
         <SummaryCard label="Total Sites" value={totals.total} icon={<Globe2 className="h-5 w-5 text-primary/60" />} />
         <SummaryCard label="Critical (≤3 DOS)" value={totals.critical} accent={totals.critical > 0 ? "destructive" : undefined} icon={<ShieldAlert className="h-5 w-5 text-destructive/60" />} />
-        <SummaryCard label="Watch (≤7 DOS)" value={totals.watch} accent={totals.watch > 0 ? "amber" : undefined} icon={<AlertTriangle className="h-5 w-5 text-amber-500/60" />} />
+        <SummaryCard label="Watch (≤7 DOS)" value={totals.watch} accent={totals.watch > 0 ? "amber" : undefined} icon={<AlertTriangle className="h-5 w-5 text-amber-400/60" />} />
         <SummaryCard label="Open Alerts" value={totals.openAlerts} accent={totals.openAlerts > 0 ? "destructive" : undefined} icon={<AlertTriangle className="h-5 w-5 text-destructive/60" />} />
       </div>
 
@@ -203,7 +203,7 @@ function SummaryCard({
     accent === "destructive"
       ? "text-destructive"
       : accent === "amber"
-      ? "text-amber-500"
+      ? "text-amber-400"
       : "text-foreground";
   return (
     <Card className="bg-card/50 border-border">

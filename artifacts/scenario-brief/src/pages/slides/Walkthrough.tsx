@@ -24,7 +24,7 @@ export default function Walkthrough() {
             <div className="font-mono text-[0.9vw] text-muted">days remaining</div>
           </div>
           <svg viewBox="0 0 800 280" className="w-full flex-1">
-            <g stroke="#1f2937" strokeWidth="1">
+            <g stroke="#2A1D22" strokeWidth="1">
               <line x1="60" y1="40" x2="760" y2="40" />
               <line x1="60" y1="100" x2="760" y2="100" />
               <line x1="60" y1="160" x2="760" y2="160" />
@@ -42,16 +42,16 @@ export default function Walkthrough() {
               <text x="570" y="258">D21</text>
               <text x="735" y="258">D30</text>
             </g>
-            <path d="M 60 65 L 130 67 L 200 70 L 270 72 L 340 75 L 410 78 L 480 80 L 550 82 L 620 84 L 690 86 L 760 88" stroke="#22d3ee" strokeWidth="2" fill="none" />
-            <path d="M 60 65 L 130 80 L 200 130 L 270 175 L 340 205 L 410 195 L 480 175 L 550 150 L 620 130 L 690 115 L 760 105" stroke="#f59e0b" strokeWidth="2.5" fill="none" />
-            <line x1="200" y1="40" x2="200" y2="240" stroke="#ef4444" strokeWidth="1" strokeDasharray="3 3" />
-            <text x="206" y="48" fill="#ef4444" fontSize="11" fontFamily="IBM Plex Mono">D5 PLA missile salvo &middot; SLOC closed</text>
-            <line x1="410" y1="40" x2="410" y2="240" stroke="#10b981" strokeWidth="1" strokeDasharray="3 3" />
-            <text x="416" y="48" fill="#10b981" fontSize="11" fontFamily="IBM Plex Mono">D14 ROLO push &amp; FDP airlift</text>
+            <path d="M 60 65 L 130 67 L 200 70 L 270 72 L 340 75 L 410 78 L 480 80 L 550 82 L 620 84 L 690 86 L 760 88" stroke="#FFCC00" strokeWidth="2" fill="none" />
+            <path d="M 60 65 L 130 80 L 200 130 L 270 175 L 340 205 L 410 195 L 480 175 L 550 150 L 620 130 L 690 115 L 760 105" stroke="#BA0C2F" strokeWidth="2.5" fill="none" />
+            <line x1="200" y1="40" x2="200" y2="240" stroke="#BA0C2F" strokeWidth="1" strokeDasharray="3 3" />
+            <text x="206" y="48" fill="#BA0C2F" fontSize="11" fontFamily="IBM Plex Mono">D5 PLA missile salvo &middot; SLOC closed</text>
+            <line x1="410" y1="40" x2="410" y2="240" stroke="#4DA374" strokeWidth="1" strokeDasharray="3 3" />
+            <text x="416" y="48" fill="#4DA374" fontSize="11" fontFamily="IBM Plex Mono">D14 ROLO push &amp; FDP airlift</text>
           </svg>
           <div className="flex items-center gap-[2vw] font-mono text-[0.9vw] text-muted mt-[1vh]">
-            <span className="flex items-center gap-[0.5vw]"><span className="w-[1.5vw] h-[2px] bg-cyan inline-block" /> Baseline (peacetime)</span>
-            <span className="flex items-center gap-[0.5vw]"><span className="w-[1.5vw] h-[2px] bg-amber inline-block" /> PRC contingency w/ recommendations</span>
+            <span className="flex items-center gap-[0.5vw]"><span className="w-[1.5vw] h-[2px] bg-amber inline-block" /> Baseline (peacetime)</span>
+            <span className="flex items-center gap-[0.5vw]"><span className="w-[1.5vw] h-[2px] bg-cyan inline-block" /> PRC contingency w/ recommendations</span>
           </div>
         </div>
 

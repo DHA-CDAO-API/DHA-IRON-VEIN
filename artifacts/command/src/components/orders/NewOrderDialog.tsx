@@ -494,9 +494,9 @@ export function NewOrderDialog({ open, onOpenChange, prefill }: NewOrderDialogPr
                                   <Badge
                                     variant="outline"
                                     data-testid={`item-stock-pill-${it.id}`}
-                                    className="shrink-0 text-[10px] uppercase tracking-wide border-amber-500/40 text-amber-600 dark:text-amber-400 bg-amber-500/10"
+                                    className="shrink-0 text-[10px] uppercase tracking-wide border-amber-400/40 text-amber-600 dark:text-amber-400 bg-amber-400/10"
                                   >
-                                    <span className="inline-block h-1.5 w-1.5 rounded-full bg-amber-500 mr-1" />
+                                    <span className="inline-block h-1.5 w-1.5 rounded-full bg-amber-400 mr-1" />
                                     Low stock
                                   </Badge>
                                 )}
@@ -710,7 +710,7 @@ export function NewOrderDialog({ open, onOpenChange, prefill }: NewOrderDialogPr
                         ) && (
                           <Badge
                             variant="outline"
-                            className="shrink-0 text-[10px] uppercase tracking-wide border-amber-500/60 text-amber-600 dark:text-amber-400"
+                            className="shrink-0 text-[10px] uppercase tracking-wide border-amber-400/60 text-amber-600 dark:text-amber-400"
                           >
                             no coverage
                           </Badge>
@@ -792,7 +792,7 @@ export function NewOrderDialog({ open, onOpenChange, prefill }: NewOrderDialogPr
                                   {!carries && (
                                     <Badge
                                       variant="outline"
-                                      className="shrink-0 text-[10px] uppercase tracking-wide border-amber-500/60 text-amber-600 dark:text-amber-400"
+                                      className="shrink-0 text-[10px] uppercase tracking-wide border-amber-400/60 text-amber-600 dark:text-amber-400"
                                     >
                                       no coverage
                                     </Badge>
@@ -868,7 +868,7 @@ export function NewOrderDialog({ open, onOpenChange, prefill }: NewOrderDialogPr
           {!supplierCarriesItem && selectedSupplier && (
             <div
               data-testid="supplier-coverage-warning"
-              className="rounded border border-amber-500/50 bg-amber-50 dark:bg-amber-950/40 px-3 py-2 space-y-2"
+              className="rounded border border-amber-400/50 bg-amber-50 dark:bg-amber-950/40 px-3 py-2 space-y-2"
             >
               <div className="flex items-start gap-2 text-xs text-amber-900 dark:text-amber-200">
                 <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />

@@ -31,9 +31,9 @@ export interface TheaterZone {
 }
 
 export const ZONE_SEVERITY_COLOR: Record<ZoneSeverity, [number, number, number]> = {
-  WATCH: [232, 168, 76],
-  WARNING: [232, 120, 76],
-  CRITICAL: [220, 64, 76],
+  WATCH: [255, 204, 0],     // USMC Gold — heightened observation
+  WARNING: [232, 140, 40],  // amber bridge between gold and scarlet
+  CRITICAL: [186, 12, 47],  // USMC Scarlet — highest severity
 };
 
 interface NetworkMapProps {
@@ -103,11 +103,13 @@ const MAP_STYLE = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.j
 
 // Centralised threat-tier palette. Used by node fills, halos, popup badges,
 // and the route-end colour gradient on at-risk shipments so the same node
-// reads consistently everywhere on the map.
+// reads consistently everywhere on the map. USMC-coordinated: NOMINAL is
+// a desaturated sage so it does not fight the brand scarlet, WATCH is USMC
+// Gold, and CRITICAL is USMC Scarlet.
 export const TIER_COLOR: Record<ThreatTier, [number, number, number]> = {
-  nominal: [88, 196, 158],     // emerald / nominal
-  heightened: [232, 168, 76],  // warm amber / WATCH
-  critical: [220, 64, 76],     // blood crimson / CRITICAL
+  nominal: [100, 180, 130],    // desaturated sage / NOMINAL
+  heightened: [255, 204, 0],   // USMC Gold / WATCH
+  critical: [186, 12, 47],     // USMC Scarlet / CRITICAL
 };
 
 export const TIER_LABEL: Record<ThreatTier, string> = {
@@ -122,10 +124,13 @@ export function tierForRisk(score: number, openAlerts = 0): ThreatTier {
   return 'nominal';
 }
 
-// Per-category palette for arcs/animated trips so the user can tell flows apart
+// Per-category palette for arcs/animated trips so the user can tell flows
+// apart. USMC-coordinated: blood reads as Scarlet (the brand's "life"
+// channel), bulk supplies as USMC Gold, PPE keeps a barrier-violet so it
+// stays distinguishable, and "other" stays a muted slate so it recedes.
 const CATEGORY_COLOR: Record<SupplyCategory, [number, number, number]> = {
-  blood_products: [220, 64, 76],     // crimson — life-saving
-  supplies: [76, 196, 196],          // teal — primary
+  blood_products: [186, 12, 47],     // USMC Scarlet — life-saving
+  supplies: [255, 204, 0],           // USMC Gold — primary bulk flow
   ppe: [180, 130, 230],              // violet — barrier
   other: [148, 163, 184],            // muted slate
 };
@@ -211,7 +216,7 @@ function NetworkFallback({ nodes = [], riskByNode = [], onNodeClick }: NetworkMa
           const tier: ThreatTier = (r?.tier as ThreatTier) ?? tierForRisk(r?.riskScore ?? 0, r?.openAlerts ?? 0);
           const ring =
             tier === 'critical' ? 'border-destructive text-destructive'
-            : tier === 'heightened' ? 'border-amber-500 text-amber-400'
+            : tier === 'heightened' ? 'border-amber-400 text-amber-400'
             : 'border-primary/60 text-primary';
           // Build a one-line hover summary for the native browser
           // tooltip. The deck.gl getDeckTooltip card only renders in
@@ -524,7 +529,7 @@ export default function NetworkGLMap(props: NetworkMapProps) {
           id: 'aor-boundary',
           data: [{ path: aorBoundary }],
           getPath: (d: any) => d.path,
-          getColor: [76, 196, 196, 70],
+          getColor: [255, 204, 0, 80],
           getWidth: 2,
           widthUnits: 'pixels',
           widthMinPixels: 1,
@@ -583,8 +588,8 @@ export default function NetworkGLMap(props: NetworkMapProps) {
         data: routePaths.filter((r) => r.active),
         getSourcePosition: (d: any) => d.from,
         getTargetPosition: (d: any) => d.to,
-        getSourceColor: [76, 196, 196, 130],
-        getTargetColor: [180, 130, 230, 130],
+        getSourceColor: [255, 204, 0, 130],
+        getTargetColor: [186, 12, 47, 150],
         getWidth: 1.6,
         widthUnits: 'pixels',
         widthMinPixels: 1,
@@ -605,9 +610,9 @@ export default function NetworkGLMap(props: NetworkMapProps) {
       for (const t of threats) {
         const sev = (t.severity || '').toUpperCase();
         const col: [number, number, number, number] =
-          sev === 'CRITICAL' ? [220, 64, 76, 50]
-          : sev === 'WARNING' ? [220, 64, 76, 35]
-          : [232, 168, 76, 30];
+          sev === 'CRITICAL' ? [186, 12, 47, 60]
+          : sev === 'WARNING' ? [186, 12, 47, 40]
+          : [255, 204, 0, 35];
         out.push(
           new PathLayer({
             id: `threat-${t.id}`,
@@ -700,8 +705,8 @@ export default function NetworkGLMap(props: NetworkMapProps) {
             id: 'zone-draft-fill',
             data: [{ polygon: previewPoly }],
             getPolygon: (d: any) => d.polygon,
-            getFillColor: [76, 196, 196, 60],
-            getLineColor: [76, 196, 196, 220],
+            getFillColor: [255, 204, 0, 60],
+            getLineColor: [255, 204, 0, 220],
             getLineWidth: 2,
             lineWidthUnits: 'pixels',
             stroked: true,
@@ -715,7 +720,7 @@ export default function NetworkGLMap(props: NetworkMapProps) {
             id: 'zone-draft-path',
             data: [{ path: previewPath }],
             getPath: (d: any) => d.path,
-            getColor: [76, 196, 196, 220],
+            getColor: [255, 204, 0, 220],
             getWidth: 2,
             widthUnits: 'pixels',
             widthMinPixels: 1,
@@ -729,7 +734,7 @@ export default function NetworkGLMap(props: NetworkMapProps) {
             id: 'zone-draft-vertices',
             data: draftVertices,
             getPosition: (d: any) => d,
-            getFillColor: [76, 196, 196, 240],
+            getFillColor: [255, 204, 0, 240],
             getRadius: 4,
             radiusUnits: 'pixels',
             stroked: true,
@@ -1158,10 +1163,10 @@ export default function NetworkGLMap(props: NetworkMapProps) {
     const tier = d.tier;
     const tierColor =
       tier === 'critical'
-        ? '#ef4444'
+        ? '#BA0C2F'   // USMC Scarlet
         : tier === 'heightened'
-          ? '#f59e0b'
-          : '#22c55e';
+          ? '#FFCC00' // USMC Gold
+          : '#64B482'; // desaturated sage
     const tierLabel = tier === 'critical'
       ? 'CRITICAL'
       : tier === 'heightened'
@@ -1199,7 +1204,7 @@ export default function NetworkGLMap(props: NetworkMapProps) {
             </div>
             <div>
               <div style="font-size:9px;color:#a1a1aa;text-transform:uppercase;letter-spacing:0.06em;">Alerts</div>
-              <div style="font-size:13px;font-weight:600;color:${alerts > 0 ? '#ef4444' : '#f4f4f5'};">${alerts}</div>
+              <div style="font-size:13px;font-weight:600;color:${alerts > 0 ? '#BA0C2F' : '#f4f4f5'};">${alerts}</div>
             </div>
           </div>
           <div style="margin-top:8px;padding-top:6px;border-top:1px solid #27272a;font-size:10px;color:#a1a1aa;">
@@ -1209,7 +1214,7 @@ export default function NetworkGLMap(props: NetworkMapProps) {
       `,
       style: {
         background: 'rgba(12, 13, 16, 0.96)',
-        border: '1px solid rgba(76, 196, 196, 0.35)',
+        border: '1px solid rgba(186, 12, 47, 0.45)',
         borderRadius: '8px',
         padding: '10px 12px',
         boxShadow: '0 8px 24px rgba(0,0,0,0.6)',
@@ -1299,7 +1304,7 @@ export default function NetworkGLMap(props: NetworkMapProps) {
             style={zoomBtnStyle}
             onMouseEnter={(e) => {
               (e.currentTarget as HTMLButtonElement).style.background =
-                'rgba(76, 196, 196, 0.18)';
+                'rgba(255, 204, 0, 0.18)';
             }}
             onMouseLeave={(e) => {
               (e.currentTarget as HTMLButtonElement).style.background =
@@ -1316,7 +1321,7 @@ export default function NetworkGLMap(props: NetworkMapProps) {
             style={zoomBtnStyle}
             onMouseEnter={(e) => {
               (e.currentTarget as HTMLButtonElement).style.background =
-                'rgba(76, 196, 196, 0.18)';
+                'rgba(255, 204, 0, 0.18)';
             }}
             onMouseLeave={(e) => {
               (e.currentTarget as HTMLButtonElement).style.background =
@@ -1338,7 +1343,7 @@ const zoomBtnStyle: React.CSSProperties = {
   alignItems: 'center',
   justifyContent: 'center',
   background: 'rgba(12, 13, 16, 0.92)',
-  border: '1px solid rgba(76, 196, 196, 0.45)',
+  border: '1px solid rgba(255, 204, 0, 0.45)',
   borderRadius: 6,
   color: '#f4f4f5',
   fontSize: 18,

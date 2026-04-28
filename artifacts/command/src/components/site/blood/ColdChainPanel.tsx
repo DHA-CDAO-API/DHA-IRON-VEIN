@@ -20,7 +20,7 @@ export function ColdChainPanel({ data }: { data: NodeBloodReadiness["coldChain"]
           </CardTitle>
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             {data.activeExcursions > 0 && (
-              <Badge variant="outline" className="border-amber-500/60 text-amber-500 bg-amber-500/10">
+              <Badge variant="outline" className="border-amber-400/60 text-amber-400 bg-amber-400/10">
                 {data.activeExcursions} excursion{data.activeExcursions === 1 ? "" : "s"}
               </Badge>
             )}
@@ -91,8 +91,8 @@ export function ColdChainPanel({ data }: { data: NodeBloodReadiness["coldChain"]
                       {a.status}
                     </Badge>
                     <div className="flex items-center gap-1 text-xs font-mono">
-                      <ThermometerSun className={`h-3 w-3 ${inRange ? "text-muted-foreground" : "text-amber-500"}`} />
-                      <span className={inRange ? "text-foreground" : "text-amber-500 font-bold"}>
+                      <ThermometerSun className={`h-3 w-3 ${inRange ? "text-muted-foreground" : "text-amber-400"}`} />
+                      <span className={inRange ? "text-foreground" : "text-amber-400 font-bold"}>
                         {a.currentTempC.toFixed(1)}°C
                       </span>
                       {a.targetTempMinC != null && a.targetTempMaxC != null && (

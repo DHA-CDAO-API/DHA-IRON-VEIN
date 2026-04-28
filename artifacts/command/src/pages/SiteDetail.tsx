@@ -633,7 +633,7 @@ export default function SiteDetail() {
                     <div className="flex items-center gap-2 flex-wrap">
                       <div className="text-sm font-medium">Projected shortages — next {forecastHorizon} days</div>
                       {isSimulated && (
-                        <Badge variant="outline" className="text-amber-500 border-amber-500/40 bg-amber-500/10 gap-1">
+                        <Badge variant="outline" className="text-amber-400 border-amber-400/40 bg-amber-400/10 gap-1">
                           <FlaskConical className="h-3 w-3" />
                           Simulated under {optempoLabel(optempoOverride)}
                         </Badge>
@@ -738,10 +738,10 @@ export default function SiteDetail() {
                         <Link
                           key={s.itemId}
                           href={`/items/${s.itemId}`}
-                          className="flex items-center justify-between gap-3 p-3 rounded-md border border-amber-500/20 bg-amber-500/5 hover:border-amber-500/40 transition-colors"
+                          className="flex items-center justify-between gap-3 p-3 rounded-md border border-amber-400/20 bg-amber-400/5 hover:border-amber-400/40 transition-colors"
                         >
                           <div className="flex items-center gap-3 min-w-0 flex-1">
-                            <Icon className="h-5 w-5 text-amber-500 shrink-0" />
+                            <Icon className="h-5 w-5 text-amber-400 shrink-0" />
                             <div className="min-w-0">
                               <div className="font-medium text-sm truncate">{s.itemName}</div>
                               <div className="text-xs text-muted-foreground">{s.categoryLabelText}</div>
@@ -753,7 +753,7 @@ export default function SiteDetail() {
                             critical={critical}
                           />
                           <div className="text-right shrink-0">
-                            <div className={`text-sm font-bold ${critical ? 'text-destructive' : 'text-amber-500'}`}>
+                            <div className={`text-sm font-bold ${critical ? 'text-destructive' : 'text-amber-400'}`}>
                               Stockout in {s.stockoutDay}d
                             </div>
                             <div className="text-xs text-muted-foreground">DOS {formatDOS(s.daysOfSupply)}</div>
@@ -1072,7 +1072,7 @@ function BurnDownSparkline({
   const reactId = React.useId();
   if (!points || points.length === 0) return null;
 
-  const stroke = critical ? 'hsl(var(--destructive))' : 'rgb(245 158 11)'; // amber-500
+  const stroke = critical ? 'hsl(var(--destructive))' : 'rgb(245 158 11)'; // amber-400
   const gradientId = `burndown-${critical ? 'crit' : 'warn'}-${reactId.replace(/:/g, '')}`;
   const maxValue = points.reduce((m, p) => (p.value > m ? p.value : m), 0);
 

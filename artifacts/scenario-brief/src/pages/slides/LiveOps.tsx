@@ -38,8 +38,8 @@ export default function LiveOps() {
         <div className="col-span-8 row-span-5 bg-bg2 border border-edge relative overflow-hidden">
           <div className="absolute top-[1.5vh] left-[1vw] font-mono text-[0.85vw] text-cyan tracking-widest uppercase">Live Theater Map &mdash; deck.gl + MapLibre</div>
           <svg viewBox="0 0 800 400" className="w-full h-full opacity-90">
-            <rect width="800" height="400" fill="#0b1220" />
-            <g stroke="#1f2937" strokeWidth="1">
+            <rect width="800" height="400" fill="#0E0A0C" />
+            <g stroke="#2A1D22" strokeWidth="1">
               <line x1="0" y1="100" x2="800" y2="100" />
               <line x1="0" y1="200" x2="800" y2="200" />
               <line x1="0" y1="300" x2="800" y2="300" />
@@ -47,23 +47,23 @@ export default function LiveOps() {
               <line x1="400" y1="0" x2="400" y2="400" />
               <line x1="600" y1="0" x2="600" y2="400" />
             </g>
-            <g stroke="#22d3ee" strokeWidth="1.5" opacity="0.5" fill="none">
+            <g stroke="#FFCC00" strokeWidth="1.5" opacity="0.5" fill="none">
               <path d="M 120 320 Q 300 100 480 200" />
               <path d="M 480 200 Q 580 230 660 270" />
               <path d="M 480 200 Q 540 130 620 90" />
               <path d="M 480 200 Q 380 280 280 340" />
             </g>
             <g>
-              <circle cx="120" cy="320" r="9" fill="#f59e0b" />
-              <circle cx="120" cy="320" r="18" fill="#f59e0b" opacity="0.2" />
-              <circle cx="480" cy="200" r="11" fill="#22d3ee" />
-              <circle cx="480" cy="200" r="22" fill="#22d3ee" opacity="0.15" />
-              <circle cx="280" cy="340" r="7" fill="#10b981" />
-              <circle cx="660" cy="270" r="7" fill="#ef4444" />
-              <circle cx="660" cy="270" r="14" fill="#ef4444" opacity="0.25" />
-              <circle cx="620" cy="90" r="6" fill="#10b981" />
-              <circle cx="380" cy="280" r="5" fill="#10b981" />
-              <circle cx="540" cy="160" r="5" fill="#f59e0b" />
+              <circle cx="120" cy="320" r="9" fill="#FFCC00" />
+              <circle cx="120" cy="320" r="18" fill="#FFCC00" opacity="0.2" />
+              <circle cx="480" cy="200" r="11" fill="#BA0C2F" />
+              <circle cx="480" cy="200" r="22" fill="#BA0C2F" opacity="0.15" />
+              <circle cx="280" cy="340" r="7" fill="#4DA374" />
+              <circle cx="660" cy="270" r="7" fill="#BA0C2F" />
+              <circle cx="660" cy="270" r="14" fill="#BA0C2F" opacity="0.25" />
+              <circle cx="620" cy="90" r="6" fill="#4DA374" />
+              <circle cx="380" cy="280" r="5" fill="#4DA374" />
+              <circle cx="540" cy="160" r="5" fill="#FFCC00" />
             </g>
             <g fill="#94a3b8" fontSize="11" fontFamily="IBM Plex Mono">
               <text x="138" y="318">DLA Prime</text>

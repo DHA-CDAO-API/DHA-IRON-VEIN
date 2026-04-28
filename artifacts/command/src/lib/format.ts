@@ -75,7 +75,7 @@ export const CATEGORY_ORDER: ItemCategoryKey[] = ["blood_products", "supplies", 
 export function dosClass(dos: number | null | undefined): string {
   if (dos == null || !Number.isFinite(dos)) return "text-muted-foreground";
   if (dos <= 3) return "text-destructive font-bold";
-  if (dos <= 7) return "text-amber-500 font-bold";
+  if (dos <= 7) return "text-amber-400 font-bold";
   return "text-emerald-500 font-bold";
 }
 
@@ -119,10 +119,10 @@ export function inventoryStatusBadgeClasses(
     case "critical":
       return "border-destructive text-destructive";
     case "warn":
-      return "border-amber-500 text-amber-500";
+      return "border-amber-400 text-amber-400";
     case "watch":
       // Distinct from healthy but lower-urgency than `warn`: muted amber.
-      return "border-amber-500/50 text-amber-500/90";
+      return "border-amber-400/50 text-amber-400/90";
     case "healthy":
       return "border-emerald-500 text-emerald-500";
     default:

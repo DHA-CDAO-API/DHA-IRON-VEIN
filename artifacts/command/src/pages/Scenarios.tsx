@@ -135,9 +135,9 @@ const DEFAULT_BUILDER: CustomBuilderState = {
 };
 
 const ZONE_SEVERITY_COLOR: Record<string, [number, number, number]> = {
-  WATCH: [232, 168, 76],
-  WARNING: [232, 120, 76],
-  CRITICAL: [220, 64, 76],
+  WATCH: [255, 204, 0],
+  WARNING: [232, 140, 40],
+  CRITICAL: [186, 12, 47],
 };
 
 const KIND_OPTIONS: Array<{ value: string; label: string }> = [
@@ -155,7 +155,7 @@ function severityClass(severity: string): string {
   if (s === "CRITICAL")
     return "bg-destructive/15 text-destructive border-destructive/40";
   if (s === "HIGH")
-    return "bg-amber-500/15 text-amber-400 border-amber-500/40";
+    return "bg-amber-400/15 text-amber-400 border-amber-400/40";
   return "bg-muted text-muted-foreground border-border";
 }
 
@@ -1531,7 +1531,7 @@ function ScenarioTimelineCard({ result }: { result: ScenarioResult }) {
             className={cn(
               "rounded-md border p-3",
               direction === "lower"
-                ? "border-amber-500/30 bg-amber-500/10"
+                ? "border-amber-400/30 bg-amber-400/10"
                 : direction === "higher"
                   ? "border-emerald-500/30 bg-emerald-500/10"
                   : "border-border bg-card/40",
@@ -2104,7 +2104,7 @@ function priorityClass(priority: string | undefined): string {
   if (p === "FLASH")
     return "bg-destructive/15 text-destructive border-destructive/40";
   if (p === "URGENT")
-    return "bg-amber-500/15 text-amber-400 border-amber-500/40";
+    return "bg-amber-400/15 text-amber-400 border-amber-400/40";
   return "bg-emerald-500/10 text-emerald-400 border-emerald-500/30";
 }
 
@@ -2113,7 +2113,7 @@ function kindClass(kind: string | undefined): string {
   if (k === "ESCALATE")
     return "bg-destructive/10 text-destructive border-destructive/30";
   if (k === "REROUTE")
-    return "bg-amber-500/10 text-amber-400 border-amber-500/30";
+    return "bg-amber-400/10 text-amber-400 border-amber-400/30";
   if (k === "SUBSTITUTE")
     return "bg-sky-500/10 text-sky-400 border-sky-500/30";
   return "bg-primary/10 text-primary border-primary/30";

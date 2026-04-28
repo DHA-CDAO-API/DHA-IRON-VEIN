@@ -19,8 +19,8 @@ import { PanelHeader } from "./PanelHeader";
 
 const SEVERITY_BADGE: Record<string, string> = {
   critical: "border-destructive/50 text-destructive",
-  warning: "border-amber-500/50 text-amber-500",
-  watch: "border-amber-500/40 text-amber-400",
+  warning: "border-amber-400/50 text-amber-400",
+  watch: "border-amber-400/40 text-amber-400",
   info: "border-border/60 text-muted-foreground",
 };
 

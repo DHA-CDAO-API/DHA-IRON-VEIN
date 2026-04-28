@@ -18,8 +18,8 @@ const STATUS_PALETTE: Record<OrderStatusKey, StatusPalette> = {
   },
   ACKNOWLEDGED: {
     label: "Acknowledged",
-    badge: "bg-amber-500/20 text-amber-200 border-amber-500/40",
-    pill: "border-amber-500/40 bg-amber-500/15 text-amber-200",
+    badge: "bg-amber-400/20 text-amber-200 border-amber-400/40",
+    pill: "border-amber-400/40 bg-amber-400/15 text-amber-200",
   },
   IN_TRANSIT: {
     label: "In Transit",

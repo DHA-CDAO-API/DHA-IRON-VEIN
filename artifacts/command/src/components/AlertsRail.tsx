@@ -142,12 +142,12 @@ export default function AlertsRail() {
           )}
 
           {all.map(alert => (
-            <div key={alert.id} className={`p-4 rounded-lg border bg-card/50 ${alert.severity === 'critical' ? 'border-destructive/30' : alert.severity === 'warn' ? 'border-amber-500/30' : 'border-primary/30'}`}>
+            <div key={alert.id} className={`p-4 rounded-lg border bg-card/50 ${alert.severity === 'critical' ? 'border-destructive/30' : alert.severity === 'warn' ? 'border-amber-400/30' : 'border-primary/30'}`}>
               <div className="flex justify-between items-start mb-2">
                 <div className="flex items-center gap-2">
                   <Badge variant="outline" className={
                     alert.severity === 'critical' ? 'border-destructive text-destructive' :
-                    alert.severity === 'warn' ? 'border-amber-500 text-amber-500' :
+                    alert.severity === 'warn' ? 'border-amber-400 text-amber-400' :
                     'border-primary text-primary'
                   }>
                     {alert.severity.toUpperCase()}

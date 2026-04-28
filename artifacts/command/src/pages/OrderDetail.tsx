@@ -84,7 +84,7 @@ const STATUS_OPTIONS = [
 function priorityClass(priority: string) {
   const p = priority?.toUpperCase();
   if (p === "FLASH") return "border-destructive bg-destructive/20 text-destructive";
-  if (p === "URGENT") return "border-amber-500 bg-amber-500/20 text-amber-500";
+  if (p === "URGENT") return "border-amber-400 bg-amber-400/20 text-amber-400";
   return "border-primary/40 bg-primary/10 text-primary";
 }
 
@@ -566,7 +566,7 @@ export default function OrderDetail() {
                         <span className="font-mono text-xs text-muted-foreground">
                           {ln.itemId}
                         </span>
-                        <span className="inline-flex items-center gap-1 rounded border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-amber-500">
+                        <span className="inline-flex items-center gap-1 rounded border border-amber-400/40 bg-amber-400/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-amber-400">
                           <AlertTriangle className="h-3 w-3" />
                           Not in catalog
                         </span>
@@ -686,7 +686,7 @@ export default function OrderDetail() {
           </Link>
         )}
         {itemMissing && (
-          <span className="ml-2 text-amber-500">
+          <span className="ml-2 text-amber-400">
             (item not found in catalog)
           </span>
         )}

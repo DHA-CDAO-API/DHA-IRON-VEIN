@@ -2,25 +2,25 @@ export type Tier = "nominal" | "watch" | "critical";
 
 export const TIER_TEXT: Record<Tier, string> = {
   nominal: "text-emerald-500",
-  watch: "text-amber-500",
+  watch: "text-amber-400",
   critical: "text-destructive",
 };
 
 export const TIER_BORDER: Record<Tier, string> = {
   nominal: "border-emerald-500/40",
-  watch: "border-amber-500/40",
+  watch: "border-amber-400/40",
   critical: "border-destructive/50",
 };
 
 export const TIER_BG: Record<Tier, string> = {
   nominal: "bg-emerald-500/10",
-  watch: "bg-amber-500/10",
+  watch: "bg-amber-400/10",
   critical: "bg-destructive/10",
 };
 
 export const TIER_DOT: Record<Tier, string> = {
   nominal: "bg-emerald-500",
-  watch: "bg-amber-500",
+  watch: "bg-amber-400",
   critical: "bg-destructive",
 };
 

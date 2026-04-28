@@ -39,7 +39,7 @@ function StatusBadge({ status }: { status: DatabaseHealth['status'] }) {
     return (
       <Badge
         variant="outline"
-        className="text-amber-500 border-amber-500/30 bg-amber-500/10 uppercase tracking-wider"
+        className="text-amber-400 border-amber-400/30 bg-amber-400/10 uppercase tracking-wider"
         data-testid={`db-status-degraded`}
       >
         Degraded
