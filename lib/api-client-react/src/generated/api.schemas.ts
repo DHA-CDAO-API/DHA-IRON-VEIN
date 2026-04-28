@@ -702,6 +702,8 @@ export interface OrderLineDetail {
   quantity: number;
   unitPriceUsd: number;
   lineTotalUsd: number;
+  /** True when this line's itemId has no matching row in the catalog. The UI should render a non-clickable placeholder rather than an /items/:id link. */
+  itemMissing?: boolean;
 }
 
 export interface ActivityEntry {

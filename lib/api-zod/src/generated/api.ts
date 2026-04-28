@@ -897,6 +897,12 @@ export const GetOrderResponse = zod.object({
         quantity: zod.number(),
         unitPriceUsd: zod.number(),
         lineTotalUsd: zod.number(),
+        itemMissing: zod
+          .boolean()
+          .optional()
+          .describe(
+            "True when this line's itemId has no matching row in the catalog. The UI should render a non-clickable placeholder rather than an \/items\/:id link.",
+          ),
       }),
     )
     .optional(),

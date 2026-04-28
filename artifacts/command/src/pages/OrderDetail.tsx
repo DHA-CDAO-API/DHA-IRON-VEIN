@@ -411,14 +411,25 @@ export default function OrderDetail() {
                   key: "item",
                   label: "Item",
                   sortAccessor: (ln) => ln.itemName ?? ln.itemId,
-                  render: (ln) => (
-                    <Link
-                      href={`/items/${ln.itemId}`}
-                      className="font-medium hover:text-primary hover:underline"
-                    >
-                      {ln.itemName || ln.itemId}
-                    </Link>
-                  ),
+                  render: (ln) =>
+                    ln.itemMissing ? (
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-mono text-xs text-muted-foreground">
+                          {ln.itemId}
+                        </span>
+                        <span className="inline-flex items-center gap-1 rounded border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-amber-500">
+                          <AlertTriangle className="h-3 w-3" />
+                          Not in catalog
+                        </span>
+                      </div>
+                    ) : (
+                      <Link
+                        href={`/items/${ln.itemId}`}
+                        className="font-medium hover:text-primary hover:underline"
+                      >
+                        {ln.itemName || ln.itemId}
+                      </Link>
+                    ),
                 },
                 {
                   key: "id",

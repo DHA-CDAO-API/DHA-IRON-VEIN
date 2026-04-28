@@ -1107,6 +1107,9 @@ components:
         quantity: { type: number }
         unitPriceUsd: { type: number }
         lineTotalUsd: { type: number }
+        itemMissing:
+          type: boolean
+          description: True when this line's itemId has no matching row in the catalog. The UI should render a non-clickable placeholder rather than an /items/:id link.
 
     OrderDetail:
       type: object

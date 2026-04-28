@@ -384,15 +384,19 @@ router.get("/orders/:orderId", async (req, res, next) => {
       }
     }
 
-    const linesEnvelope = lines.map((ln) => ({
-      id: ln.id,
-      itemId: ln.itemId,
-      itemName: itemNamesById.get(ln.itemId) ?? ln.itemId,
-      unit: itemUnitsById.get(ln.itemId) ?? null,
-      quantity: ln.quantity,
-      unitPriceUsd: Number(ln.unitPriceUsd ?? 0),
-      lineTotalUsd: Number(ln.lineTotalUsd ?? 0),
-    }));
+    const linesEnvelope = lines.map((ln) => {
+      const lineItemMissing = !itemNamesById.has(ln.itemId);
+      return {
+        id: ln.id,
+        itemId: ln.itemId,
+        itemName: lineItemMissing ? null : itemNamesById.get(ln.itemId) ?? ln.itemId,
+        unit: itemUnitsById.get(ln.itemId) ?? null,
+        quantity: ln.quantity,
+        unitPriceUsd: Number(ln.unitPriceUsd ?? 0),
+        lineTotalUsd: Number(ln.lineTotalUsd ?? 0),
+        itemMissing: lineItemMissing,
+      };
+    });
 
     const body: Record<string, unknown> = {
       order: buildOrderEnvelope(order, lines, ctx),
