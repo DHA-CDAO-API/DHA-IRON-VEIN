@@ -45,9 +45,10 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
-import { Check, ChevronsUpDown, Loader2 } from "lucide-react";
+import { AlertTriangle, Check, ChevronsUpDown, Loader2 } from "lucide-react";
 
 const CATEGORY_LABELS: Record<string, string> = {
   blood_products: "Blood Products",
@@ -130,6 +131,7 @@ export function NewOrderDialog({ open, onOpenChange }: NewOrderDialogProps) {
   const [requestedDeliveryAt, setRequestedDeliveryAt] = useState<string>(
     defaultDeliveryDate(),
   );
+  const [acknowledgeNoCoverage, setAcknowledgeNoCoverage] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Reset form when dialog opens
@@ -143,6 +145,7 @@ export function NewOrderDialog({ open, onOpenChange }: NewOrderDialogProps) {
       setQuantity("100");
       setPriority("ROUTINE");
       setRequestedDeliveryAt(defaultDeliveryDate());
+      setAcknowledgeNoCoverage(false);
       setError(null);
     }
   }, [open]);
@@ -195,8 +198,29 @@ export function NewOrderDialog({ open, onOpenChange }: NewOrderDialogProps) {
   }, [itemId, matchingSuppliers]);
 
 
+  const selectedSupplier = useMemo(
+    () => allSuppliers.find((s) => s.id === supplierId) ?? null,
+    [allSuppliers, supplierId],
+  );
+
+  const supplierCarriesItem = useMemo(() => {
+    if (!itemId || !selectedSupplier) return true;
+    return (
+      Array.isArray(selectedSupplier.items) &&
+      selectedSupplier.items.includes(itemId)
+    );
+  }, [itemId, selectedSupplier]);
+
+  // Reset the acknowledgement whenever we no longer need it (item or supplier
+  // changed to a covering combination).
+  useEffect(() => {
+    if (supplierCarriesItem && acknowledgeNoCoverage) {
+      setAcknowledgeNoCoverage(false);
+    }
+  }, [supplierCarriesItem, acknowledgeNoCoverage]);
+
   const qtyNum = Number(quantity);
-  const isValid =
+  const baseValid =
     !!itemId &&
     !!toNodeId &&
     !!supplierId &&
@@ -204,11 +228,19 @@ export function NewOrderDialog({ open, onOpenChange }: NewOrderDialogProps) {
     qtyNum > 0 &&
     !!priority &&
     !!requestedDeliveryAt;
+  const isValid =
+    baseValid && (supplierCarriesItem || acknowledgeNoCoverage);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!isValid) {
+    if (!baseValid) {
       setError("Please fill out every field with a valid value.");
+      return;
+    }
+    if (!supplierCarriesItem && !acknowledgeNoCoverage) {
+      setError(
+        "This supplier doesn't normally carry the chosen item. Confirm to continue.",
+      );
       return;
     }
     setError(null);
@@ -493,6 +525,40 @@ export function NewOrderDialog({ open, onOpenChange }: NewOrderDialogProps) {
               />
             </div>
           </div>
+
+          {!supplierCarriesItem && selectedSupplier && (
+            <div
+              data-testid="supplier-coverage-warning"
+              className="rounded border border-amber-500/50 bg-amber-50 dark:bg-amber-950/40 px-3 py-2 space-y-2"
+            >
+              <div className="flex items-start gap-2 text-xs text-amber-900 dark:text-amber-200">
+                <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+                <div>
+                  <div className="font-medium">
+                    {selectedSupplier.name} doesn't normally carry
+                    {selectedItem ? ` ${selectedItem.name}` : " this item"}.
+                  </div>
+                  <div className="text-amber-800/80 dark:text-amber-200/80">
+                    Submitting may result in a refusal or significantly longer
+                    lead time. Pick a covering supplier or confirm to proceed.
+                  </div>
+                </div>
+              </div>
+              <label className="flex items-center gap-2 text-xs text-amber-900 dark:text-amber-200 cursor-pointer">
+                <Checkbox
+                  data-testid="ack-no-coverage"
+                  checked={acknowledgeNoCoverage}
+                  onCheckedChange={(v) =>
+                    setAcknowledgeNoCoverage(v === true)
+                  }
+                  className="border-amber-600 data-[state=checked]:bg-amber-600 data-[state=checked]:text-white"
+                />
+                <span>
+                  I know this supplier doesn't normally carry this item.
+                </span>
+              </label>
+            </div>
+          )}
 
           {error && (
             <div className="text-xs text-destructive border border-destructive/40 bg-destructive/10 rounded px-3 py-2">
