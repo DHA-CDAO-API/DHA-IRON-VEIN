@@ -12,7 +12,11 @@ import { tierFromString, TIER_DOT, TIER_TEXT } from "./tier";
 import { formatDOS } from "@/lib/format";
 import { usePrefersReducedMotion } from "@/hooks/use-reduced-motion";
 
-const LIMIT = 10;
+// Show only the top 5 at-risk sites. The matrix card next to this widget
+// already devotes a lot of vertical space; keeping the leaderboard tight
+// at five rows keeps both cards comparable in height and surfaces the
+// sites operators actually need to act on first.
+const LIMIT = 5;
 
 export function TimeToFailLeaderboard() {
   const params = { limit: LIMIT };

@@ -9,10 +9,12 @@ import { Button } from "@/components/ui/button";
 import RoleBadge from "@/components/RoleBadge";
 import AlertsRail from "@/components/AlertsRail";
 import LiveClock from "@/components/layout/LiveClock";
+import { SearchPalette, useSearchPalette } from "@/components/SearchPalette";
 import { useGetProfile } from "@workspace/api-client-react";
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
+  const palette = useSearchPalette();
   const { data: profile } = useGetProfile();
 
   const navItems: Array<{
@@ -89,9 +91,18 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         {/* Top Header */}
         <header className="h-16 border-b border-border bg-background/80 backdrop-blur-md flex items-center justify-between px-4 z-10 shrink-0">
           <div className="flex items-center gap-4">
-            <Button variant="outline" size="sm" className="hidden sm:flex items-center gap-2 border-border bg-secondary/50 hover:bg-secondary">
+            <Button
+              variant="outline"
+              size="sm"
+              className="hidden sm:flex items-center gap-2 border-border bg-secondary/50 hover:bg-secondary"
+              onClick={() => palette.setOpen(true)}
+              data-testid="open-search-palette"
+            >
               <Search className="h-4 w-4" />
-              <span className="text-muted-foreground">Cmd + K</span>
+              <span className="text-muted-foreground">Search</span>
+              <kbd className="ml-1 text-[10px] font-mono px-1.5 py-0.5 rounded border border-border/60 text-muted-foreground/80">
+                ⌘K
+              </kbd>
             </Button>
             <div className="px-2 py-1 bg-destructive/20 border border-destructive/50 text-destructive text-xs font-mono rounded font-bold tracking-wider animate-pulse">
               OPCON: HEIGHTENED
@@ -117,6 +128,10 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           {children}
         </main>
       </div>
+
+      {/* Global Cmd+K palette — mounted once per layout so the keyboard
+          shortcut works on every page. */}
+      <SearchPalette open={palette.open} onOpenChange={palette.setOpen} />
     </div>
   );
 }

@@ -991,7 +991,10 @@ export interface ScenarioItemOutcome {
 
 export interface ScenarioTimelinePoint {
   day: number;
+  /** Average days-of-supply across every node in the network for this simulated day. */
   networkDaysOfSupply: number;
+  /** Average days-of-supply across only the nodes flagged as impacted by the scenario for this simulated day. Useful for visualising scenario severity without dilution by unaffected sites. */
+  impactedDaysOfSupply?: number;
   openShortages: number;
   demandIndex: number;
 }

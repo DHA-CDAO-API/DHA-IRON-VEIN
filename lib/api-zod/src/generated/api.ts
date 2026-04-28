@@ -1303,7 +1303,17 @@ export const RunScenarioResponse = zod.object({
   timeline: zod.array(
     zod.object({
       day: zod.number(),
-      networkDaysOfSupply: zod.number(),
+      networkDaysOfSupply: zod
+        .number()
+        .describe(
+          "Average days-of-supply across every node in the network for this simulated day.",
+        ),
+      impactedDaysOfSupply: zod
+        .number()
+        .optional()
+        .describe(
+          "Average days-of-supply across only the nodes flagged as impacted by the scenario for this simulated day. Useful for visualising scenario severity without dilution by unaffected sites.",
+        ),
       openShortages: zod.number(),
       demandIndex: zod.number(),
     }),
@@ -1468,7 +1478,17 @@ export const GetScenarioResponse = zod.object({
   timeline: zod.array(
     zod.object({
       day: zod.number(),
-      networkDaysOfSupply: zod.number(),
+      networkDaysOfSupply: zod
+        .number()
+        .describe(
+          "Average days-of-supply across every node in the network for this simulated day.",
+        ),
+      impactedDaysOfSupply: zod
+        .number()
+        .optional()
+        .describe(
+          "Average days-of-supply across only the nodes flagged as impacted by the scenario for this simulated day. Useful for visualising scenario severity without dilution by unaffected sites.",
+        ),
       openShortages: zod.number(),
       demandIndex: zod.number(),
     }),
@@ -1723,7 +1743,17 @@ export const PreviewScenarioResponse = zod.object({
   timeline: zod.array(
     zod.object({
       day: zod.number(),
-      networkDaysOfSupply: zod.number(),
+      networkDaysOfSupply: zod
+        .number()
+        .describe(
+          "Average days-of-supply across every node in the network for this simulated day.",
+        ),
+      impactedDaysOfSupply: zod
+        .number()
+        .optional()
+        .describe(
+          "Average days-of-supply across only the nodes flagged as impacted by the scenario for this simulated day. Useful for visualising scenario severity without dilution by unaffected sites.",
+        ),
       openShortages: zod.number(),
       demandIndex: zod.number(),
     }),

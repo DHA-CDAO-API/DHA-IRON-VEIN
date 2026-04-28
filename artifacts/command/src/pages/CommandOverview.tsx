@@ -183,17 +183,9 @@ export default function CommandOverview() {
       {/* AI Brief — full width */}
       {aiBriefFirst && <AiBriefCard />}
 
-      {/* Multi-column widget grid driven by persona ordering */}
-      <div
-        className="grid grid-cols-1 lg:grid-cols-3 lg:grid-flow-row-dense gap-4 auto-rows-[minmax(280px,auto)]"
-        data-testid="overview-grid"
-      >
-        {gridWidgets.map((w) => (
-          <WidgetSlot key={w} widget={w} />
-        ))}
-      </div>
-
-      {/* Map — peer of the cards, but spans more horizontally */}
+      {/* Live Theater Map — promoted to sit directly under the AI Brief
+          so commanders see geographic context next to the narrative
+          summary, instead of having to scroll past every widget first. */}
       {mapAfter && (
         <div
           className="rounded-xl overflow-hidden border border-border relative bg-card"
@@ -212,7 +204,7 @@ export default function CommandOverview() {
               className="bg-background/80 backdrop-blur-sm border-border text-muted-foreground shadow-lg gap-1.5 font-normal"
             >
               <MousePointerClick className="h-3 w-3" />
-              Click any node or shipment to inspect
+              Hover for site summary · click to inspect
             </Badge>
           </div>
           {snapLoading ? (
@@ -234,6 +226,16 @@ export default function CommandOverview() {
           )}
         </div>
       )}
+
+      {/* Multi-column widget grid driven by persona ordering */}
+      <div
+        className="grid grid-cols-1 lg:grid-cols-3 lg:grid-flow-row-dense gap-4 auto-rows-[minmax(280px,auto)]"
+        data-testid="overview-grid"
+      >
+        {gridWidgets.map((w) => (
+          <WidgetSlot key={w} widget={w} />
+        ))}
+      </div>
     </div>
   );
 }

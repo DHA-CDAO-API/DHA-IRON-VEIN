@@ -610,11 +610,25 @@ function buildScenarioResultEnvelope(args: {
       };
     });
 
-  // Timeline (one point per simulated step)
+  // Timeline (one point per simulated step). We surface two DOS series:
+  //   - networkDaysOfSupply: average across every node in the network.
+  //     Useful for whole-of-theater health, but a few impacted MTFs can
+  //     barely move the global average.
+  //   - impactedDaysOfSupply: average across only the nodes flagged as
+  //     impacted by the scenario. Lets the UI show a faithful picture of
+  //     how the targeted sites degrade over the horizon.
+  const impactedNodeIds = new Set(result.impactedNodes.map((n) => n.nodeId));
   const timeline = result.steps.map((s) => {
     const dosVals = Object.values(s.dosByNode).filter((v) => v < 999);
     const networkDOS =
       dosVals.length > 0 ? dosVals.reduce((a, b) => a + b, 0) / dosVals.length : 0;
+    const impactedVals = Array.from(impactedNodeIds)
+      .map((id) => s.dosByNode[id])
+      .filter((v): v is number => typeof v === "number" && v < 999);
+    const impactedDOS =
+      impactedVals.length > 0
+        ? impactedVals.reduce((a, b) => a + b, 0) / impactedVals.length
+        : networkDOS;
     const openShortages = Object.values(s.criticalShortByNode).reduce(
       (a, b) => a + b,
       0,
@@ -625,6 +639,7 @@ function buildScenarioResultEnvelope(args: {
     return {
       day: s.day,
       networkDaysOfSupply: Number(networkDOS.toFixed(2)),
+      impactedDaysOfSupply: Number(impactedDOS.toFixed(2)),
       openShortages,
       demandIndex: Number((riskAvg / 50).toFixed(2)),
     };

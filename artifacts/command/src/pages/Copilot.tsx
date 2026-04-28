@@ -32,30 +32,53 @@ export default function Copilot() {
     }
   }, [activeDetail?.messages, streamingMessage]);
 
-  const handleCreate = () => {
-    createConv.mutate({ data: { title: 'New Analysis' } }, {
-      onSuccess: (res) => setActiveConvId(res.id)
+  const handleCreate = (): Promise<string | null> => {
+    return new Promise((resolve) => {
+      createConv.mutate(
+        { data: { title: 'New Analysis' } },
+        {
+          onSuccess: (res) => {
+            setActiveConvId(res.id);
+            resolve(res.id);
+          },
+          onError: (err) => {
+            console.error('Failed to create conversation', err);
+            resolve(null);
+          },
+        },
+      );
     });
   };
 
   const handleSend = async () => {
-    if (!input.trim() || !activeConvId || isStreaming) return;
-    
+    if (!input.trim() || isStreaming) return;
+
+    // Auto-create a conversation on first send so the user doesn't have
+    // to click "New Chat" before they can ask anything. This was the
+    // single biggest UX trap on this page — users would type, hit Enter,
+    // and see nothing happen because the send button silently disabled
+    // itself when there was no active conversation yet.
+    let convId = activeConvId;
+    if (!convId) {
+      convId = await handleCreate();
+      if (!convId) return;
+    }
+
     const userMsg = input.trim();
     setInput('');
     setIsStreaming(true);
     setStreamingMessage('');
-    
+
     // Optimistically add user message to cache
     if (activeDetail) {
-      queryClient.setQueryData(['/api/copilot/conversations', activeConvId], {
+      queryClient.setQueryData(['/api/copilot/conversations', convId], {
         ...activeDetail,
         messages: [...activeDetail.messages, { id: Date.now().toString(), role: 'user', content: userMsg, createdAt: new Date().toISOString() }]
       });
     }
 
     try {
-      const res = await fetch(`/api/copilot/conversations/${activeConvId}/messages`, {
+      const res = await fetch(`/api/copilot/conversations/${convId}/messages`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content: userMsg, provider })
@@ -89,7 +112,13 @@ export default function Copilot() {
       console.error(e);
     } finally {
       setIsStreaming(false);
-      queryClient.invalidateQueries({ queryKey: ['/api/copilot/conversations', activeConvId] });
+      // Invalidate using the local `convId` (not `activeConvId`) — when
+      // we just auto-created the conversation in this same tick, the
+      // `activeConvId` closure value is still null because React hasn't
+      // re-rendered yet. Combined with our app-wide staleTime: Infinity,
+      // invalidating the wrong key would leave the freshly-streamed
+      // assistant message stale on screen until a hard refresh.
+      queryClient.invalidateQueries({ queryKey: ['/api/copilot/conversations', convId] });
       setStreamingMessage('');
     }
   };
@@ -147,9 +176,10 @@ export default function Copilot() {
 
         <div className="flex-1 overflow-y-auto p-4 space-y-6" ref={scrollRef}>
           {!activeConvId ? (
-            <div className="h-full flex flex-col items-center justify-center text-muted-foreground gap-4">
+            <div className="h-full flex flex-col items-center justify-center text-muted-foreground gap-3">
               <Bot className="h-12 w-12 text-primary/30" />
-              <p>Select or create a conversation to start</p>
+              <p className="text-sm">Ask Copilot anything about the theater.</p>
+              <p className="text-xs opacity-70">Type a question below — a new chat starts automatically.</p>
             </div>
           ) : (
             <>
@@ -207,7 +237,12 @@ export default function Copilot() {
                   }
                 }}
               />
-              <Button size="icon" className="absolute bottom-2 right-2 h-8 w-8" onClick={handleSend} disabled={!input.trim() || !activeConvId || isStreaming}>
+              {/* The send button no longer requires an existing
+                  conversation — handleSend will auto-create one if
+                  needed. Keeping !activeConvId here would mean
+                  first-message clicks (vs. Enter) silently failed
+                  because the button stayed disabled. */}
+              <Button size="icon" className="absolute bottom-2 right-2 h-8 w-8" onClick={handleSend} disabled={!input.trim() || isStreaming}>
                 <Send className="h-4 w-4" />
               </Button>
             </div>

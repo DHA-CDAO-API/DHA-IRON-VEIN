@@ -69,13 +69,22 @@ import {
 } from "lucide-react";
 import {
   CartesianGrid,
+  Label as RLabel,
+  Legend,
   Line,
   LineChart,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from "recharts";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
 import { cn } from "@/lib/utils";
 import { formatCurrency } from "@/lib/format";
 import { useToast } from "@/hooks/use-toast";
@@ -451,50 +460,119 @@ export default function Scenarios() {
 
   return (
     <div className="h-full flex p-4 gap-4 bg-background text-foreground overflow-hidden">
-      {/* Left Rail - Presets + Custom Builder */}
-      <div className="w-[340px] flex flex-col gap-4 shrink-0 overflow-y-auto pr-1">
-        <div className="text-sm font-bold uppercase tracking-wider text-muted-foreground px-1">
-          Preset Scenarios
-        </div>
+      {/* Left Rail - Presets + Saved Runs (both collapsible). The rail is
+          fixed-width so the Output Panel in the middle gets the most real
+          estate; both lists are accordions so a long roster of presets or
+          saved runs doesn't push the other section off screen. */}
+      <div className="w-[340px] flex flex-col gap-3 shrink-0 overflow-y-auto pr-1">
+        <Accordion
+          type="multiple"
+          defaultValue={["presets", "saved"]}
+          className="flex flex-col gap-3"
+        >
+          <AccordionItem
+            value="presets"
+            className="border border-border rounded-md bg-card/30 overflow-hidden"
+          >
+            <AccordionTrigger className="px-3 py-2 hover:no-underline hover:bg-muted/30 [&_svg]:text-muted-foreground">
+              <div className="flex items-center justify-between w-full pr-2">
+                <span className="text-sm font-bold uppercase tracking-wider text-muted-foreground">
+                  Preset Scenarios
+                </span>
+                <span className="text-[10px] font-mono text-muted-foreground">
+                  {presets?.length ?? 0}
+                </span>
+              </div>
+            </AccordionTrigger>
+            <AccordionContent className="px-3 pb-3 pt-1">
+              <div className="flex flex-col gap-3">
+                {presetsLoading ? (
+                  <Skeleton className="h-48" />
+                ) : presets && presets.length > 0 ? (
+                  presets.map((preset) => (
+                    <PresetCard
+                      key={preset.id}
+                      preset={preset}
+                      isRunning={
+                        runScenario.isPending &&
+                        runScenario.variables?.data?.presetEventId === preset.id
+                      }
+                      disabled={runScenario.isPending}
+                      onRun={() => handleRunPreset(preset)}
+                    />
+                  ))
+                ) : (
+                  <div className="text-center text-xs text-muted-foreground py-3">
+                    No preset scenarios available.
+                  </div>
+                )}
+              </div>
+            </AccordionContent>
+          </AccordionItem>
 
-        {presetsLoading ? (
-          <Skeleton className="h-48" />
-        ) : (
-          presets?.map((preset) => (
-            <PresetCard
-              key={preset.id}
-              preset={preset}
-              isRunning={
-                runScenario.isPending &&
-                runScenario.variables?.data?.presetEventId === preset.id
-              }
-              disabled={runScenario.isPending}
-              onRun={() => handleRunPreset(preset)}
-            />
-          ))
-        )}
-
-        <div className="text-sm font-bold uppercase tracking-wider text-muted-foreground px-1 pt-2 flex items-center gap-2">
-          <Wrench className="h-3.5 w-3.5" /> Custom Builder
-        </div>
-        <CustomBuilder
-          state={builder}
-          onChange={setBuilder}
-          nodes={focusableNodes}
-          zones={zones as TheaterZone[]}
-          isSaving={
-            runScenario.isPending &&
-            !runScenario.variables?.data?.presetEventId
-          }
-          isRunning={
-            runScenario.isPending &&
-            !runScenario.variables?.data?.presetEventId
-          }
-          isPreviewing={previewScenario.isPending}
-          savedAt={savedAt}
-          onSave={handleSaveCustom}
-          onRun={() => {}}
-        />
+          <AccordionItem
+            value="saved"
+            className="border border-border rounded-md bg-card/30 overflow-hidden"
+          >
+            <AccordionTrigger className="px-3 py-2 hover:no-underline hover:bg-muted/30 [&_svg]:text-muted-foreground">
+              <div className="flex items-center justify-between w-full pr-2">
+                <span className="text-sm font-bold uppercase tracking-wider text-muted-foreground">
+                  Saved Runs
+                </span>
+                <span className="text-[10px] font-mono text-muted-foreground">
+                  {scenarios?.length ?? 0}
+                </span>
+              </div>
+            </AccordionTrigger>
+            <AccordionContent className="px-3 pb-3 pt-1">
+              <div className="flex flex-col gap-3">
+                {scenariosLoading ? (
+                  <Skeleton className="h-48" />
+                ) : scenarios && scenarios.length > 0 ? (
+                  scenarios.map((scenario) => {
+                    const isLoadingThis = loadingSavedId === scenario.id;
+                    const isRerunningThis = rerunningSavedId === scenario.id;
+                    const isDeletingThis =
+                      deleteScenario.isPending &&
+                      pendingDelete?.id === scenario.id;
+                    const anyBusy =
+                      !!loadingSavedId ||
+                      !!rerunningSavedId ||
+                      runScenario.isPending ||
+                      deleteScenario.isPending;
+                    return (
+                      <SavedRunCard
+                        key={scenario.id}
+                        scenario={scenario}
+                        isLoading={isLoadingThis}
+                        isRerunning={isRerunningThis}
+                        isDeleting={isDeletingThis}
+                        disabled={anyBusy}
+                        isRenaming={renamingId === scenario.id}
+                        isSavingRename={
+                          updateScenario.isPending &&
+                          updateScenario.variables?.scenarioId === scenario.id
+                        }
+                        onLoad={() => handleLoadSaved(scenario.id)}
+                        onRerun={() => handleRerunSaved(scenario.id)}
+                        onStartRename={() => setRenamingId(scenario.id)}
+                        onCancelRename={() => setRenamingId(null)}
+                        onSubmitRename={(name) =>
+                          handleRenameSaved(scenario.id, name)
+                        }
+                        onRequestDelete={() => setPendingDelete(scenario)}
+                      />
+                    );
+                  })
+                ) : (
+                  <div className="text-center text-xs text-muted-foreground py-3">
+                    No saved scenarios. Build one on the right and click Save.
+                  </div>
+                )}
+              </div>
+            </AccordionContent>
+          </AccordionItem>
+        </Accordion>
       </div>
 
       {/* Center - Output Panel */}
@@ -536,52 +614,32 @@ export default function Scenarios() {
         </Card>
       </div>
 
-      {/* Right Rail - Saved Runs */}
-      <div className="w-[280px] flex flex-col gap-3 shrink-0 overflow-y-auto pr-1">
-        <div className="text-sm font-bold uppercase tracking-wider text-muted-foreground px-1">
-          Saved Runs
+      {/* Right Rail - Custom Builder. Promoted from the left rail so the
+          builder lives next to the simulation output it produces, mirroring
+          a "controls on the right, results on the left" workflow that's
+          natural for one-handed parameter sweeps. */}
+      <div className="w-[340px] flex flex-col gap-3 shrink-0 overflow-y-auto pr-1">
+        <div className="text-sm font-bold uppercase tracking-wider text-muted-foreground px-1 flex items-center gap-2">
+          <Wrench className="h-3.5 w-3.5" /> Scenario Builder
         </div>
-        {scenariosLoading ? (
-          <Skeleton className="h-48" />
-        ) : (
-          scenarios?.map((scenario) => {
-            const isLoadingThis = loadingSavedId === scenario.id;
-            const isRerunningThis = rerunningSavedId === scenario.id;
-            const isDeletingThis =
-              deleteScenario.isPending && pendingDelete?.id === scenario.id;
-            const anyBusy =
-              !!loadingSavedId ||
-              !!rerunningSavedId ||
-              runScenario.isPending ||
-              deleteScenario.isPending;
-            return (
-              <SavedRunCard
-                key={scenario.id}
-                scenario={scenario}
-                isLoading={isLoadingThis}
-                isRerunning={isRerunningThis}
-                isDeleting={isDeletingThis}
-                disabled={anyBusy}
-                isRenaming={renamingId === scenario.id}
-                isSavingRename={
-                  updateScenario.isPending &&
-                  updateScenario.variables?.scenarioId === scenario.id
-                }
-                onLoad={() => handleLoadSaved(scenario.id)}
-                onRerun={() => handleRerunSaved(scenario.id)}
-                onStartRename={() => setRenamingId(scenario.id)}
-                onCancelRename={() => setRenamingId(null)}
-                onSubmitRename={(name) => handleRenameSaved(scenario.id, name)}
-                onRequestDelete={() => setPendingDelete(scenario)}
-              />
-            );
-          })
-        )}
-        {scenarios && scenarios.length === 0 ? (
-          <div className="text-center text-sm text-muted-foreground py-4">
-            No saved scenarios
-          </div>
-        ) : null}
+        <CustomBuilder
+          state={builder}
+          onChange={setBuilder}
+          nodes={focusableNodes}
+          zones={zones as TheaterZone[]}
+          isSaving={
+            runScenario.isPending &&
+            !runScenario.variables?.data?.presetEventId
+          }
+          isRunning={
+            runScenario.isPending &&
+            !runScenario.variables?.data?.presetEventId
+          }
+          isPreviewing={previewScenario.isPending}
+          savedAt={savedAt}
+          onSave={handleSaveCustom}
+          onRun={() => {}}
+        />
       </div>
 
       <AlertDialog
@@ -1049,10 +1107,15 @@ function CustomBuilder({
           </div>
         </div>
 
+        {/* Multiplier ranges intentionally span low → extreme so even
+            modest dial movements visibly perturb the projected DOS curve.
+            Population goes up to 5x (mass-cas evac surge), encounter up
+            to 8x (peer fight optempo), waste up to 5x (cold-chain failure
+            cascade), and route delay out to 30 days (sustained denial). */}
         <SliderField
           label="Population Multiplier"
           min={0.5}
-          max={3}
+          max={5}
           step={0.05}
           value={state.populationMultiplier}
           onChange={(v) => update("populationMultiplier", v)}
@@ -1060,7 +1123,7 @@ function CustomBuilder({
         <SliderField
           label="Encounter Multiplier"
           min={0.5}
-          max={4}
+          max={8}
           step={0.05}
           value={state.encounterMultiplier}
           onChange={(v) => update("encounterMultiplier", v)}
@@ -1068,7 +1131,7 @@ function CustomBuilder({
         <SliderField
           label="Waste Multiplier"
           min={1}
-          max={3}
+          max={5}
           step={0.05}
           value={state.wasteMultiplier}
           onChange={(v) => update("wasteMultiplier", v)}
@@ -1076,7 +1139,7 @@ function CustomBuilder({
         <SliderField
           label="Route Delay (days)"
           min={0}
-          max={14}
+          max={30}
           step={1}
           value={state.routeDelayDays}
           onChange={(v) => update("routeDelayDays", v)}
@@ -1189,6 +1252,322 @@ function SliderField({
 }
 
 // ---------- Output panel ----------
+
+// ---------- Scenario Timeline Card ----------
+//
+// Replaces the stripped-down LineChart that was under "Network Risk
+// Timeline." That chart plotted three series of wildly different scales
+// (DOS in days, open shortage count, and a small ~1.0 demand index) on
+// one axis with no labels, no baseline, and no legend — so even large
+// multiplier swings looked visually flat.
+//
+// This card mirrors the reference example: a single primary chart with
+// a clearly labelled X / Y axis, a dashed baseline pinned to the
+// current-state DOS, two color-coded summary cards for baseline vs.
+// projected averages, and a Trend Analysis blurb explaining what the
+// curves mean. Open-shortage volume is moved to a secondary right-axis
+// so it stays in the picture without dominating the DOS scale.
+
+function ScenarioTimelineCard({ result }: { result: ScenarioResult }) {
+  const horizonDays = result.timeline.length > 0
+    ? result.timeline[result.timeline.length - 1].day
+    : 0;
+
+  // The timeline ships two DOS series: a network-wide average and an
+  // impacted-only average. We prefer the impacted-only series for the
+  // chart because it's what an operator actually wants to see — how the
+  // targeted MTFs degrade over the horizon — without dilution from the
+  // hundreds of unaffected nodes that flatten the curve. We fall back
+  // to the network-wide series when the API didn't return an impacted
+  // series, or when it returned the same numbers as the network series
+  // (i.e. nothing was impacted, so plotting the "impacted-only" view
+  // would be meaningless).
+  const hasDistinctImpactedSeries = result.timeline.some(
+    (t) =>
+      typeof t.impactedDaysOfSupply === "number" &&
+      Math.abs(t.impactedDaysOfSupply - t.networkDaysOfSupply) > 0.001,
+  );
+  const useImpactedSeries = hasDistinctImpactedSeries;
+  const dosSeriesLabel = useImpactedSeries
+    ? "Projected DOS (impacted nodes)"
+    : "Projected DOS (network avg)";
+  const dosFor = (t: ScenarioResult["timeline"][number]) =>
+    useImpactedSeries
+      ? (t.impactedDaysOfSupply ?? t.networkDaysOfSupply)
+      : t.networkDaysOfSupply;
+
+  // Anchor the baseline reference line to the first simulated day's
+  // value of whatever series we're plotting — that's the closest honest
+  // pre-perturbation snapshot we have on the same scale, so the chart
+  // shows a meaningful trajectory from "today" to "end of horizon".
+  const baselineDos = result.timeline.length > 0
+    ? dosFor(result.timeline[0])
+    : (result.summary.networkDaysOfSupplyBefore ?? 0);
+
+  // Build a chart-friendly series: each timeline step gets the projected
+  // DOS plus a flat baseline value so Recharts can draw both lines on
+  // the same X scale. We tag the day with a "D+N" prefix so the X axis
+  // is unambiguously mission-relative time, not absolute dates.
+  const chartData = React.useMemo(() => {
+    return result.timeline.map((t) => ({
+      day: t.day,
+      dayLabel: `D+${t.day}`,
+      projected: dosFor(t),
+      baseline: Number(baselineDos.toFixed(2)),
+      shortages: t.openShortages,
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [result.timeline, baselineDos, useImpactedSeries]);
+
+  const projectedAvg = chartData.length > 0
+    ? chartData.reduce((s, d) => s + d.projected, 0) / chartData.length
+    : baselineDos;
+
+  // Direction & magnitude of the deviation drive both the trend-analysis
+  // copy and the colour of the projected card. We treat <0.5 day swings
+  // as essentially flat to avoid overstating noise.
+  const deltaAvg = projectedAvg - baselineDos;
+  const direction: "lower" | "higher" | "flat" =
+    Math.abs(deltaAvg) < 0.5 ? "flat" : deltaAvg < 0 ? "lower" : "higher";
+  const trendCopy =
+    direction === "flat"
+      ? "Projection tracks the baseline — current operating posture is sufficient under the modeled perturbation."
+      : direction === "lower"
+        ? `Projected DOS averages ${Math.abs(deltaAvg).toFixed(1)}d below baseline — sustainment posture degrades over the horizon.`
+        : `Projected DOS averages ${deltaAvg.toFixed(1)}d above baseline — unused stock builds while demand softens.`;
+
+  // Y-axis upper bound: leave headroom above the larger of baseline and
+  // projected peak so the curve never clips the top of the chart.
+  const yMax = Math.max(
+    baselineDos,
+    ...chartData.map((d) => d.projected),
+    1,
+  );
+  const yDomain: [number, number] = [0, Math.ceil(yMax * 1.15)];
+
+  return (
+    <section>
+      <SectionHeader
+        title="Network Sustainment Timeline"
+        icon={<Activity className="h-3.5 w-3.5" />}
+      />
+      <div className="rounded-md border border-border bg-background/30 p-3 space-y-3">
+        <div>
+          <div className="text-[11px] text-muted-foreground leading-tight">
+            Network Days of Supply over the {horizonDays}-day horizon —
+            projected posture vs. current-state baseline.
+          </div>
+        </div>
+
+        <div className="h-56">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart
+              data={chartData}
+              margin={{ top: 8, right: 24, left: 12, bottom: 24 }}
+            >
+              <CartesianGrid
+                strokeDasharray="3 3"
+                stroke="hsl(var(--border))"
+                opacity={0.3}
+              />
+              <XAxis
+                dataKey="dayLabel"
+                stroke="hsl(var(--muted-foreground))"
+                tick={{ fontSize: 10 }}
+                interval="preserveStartEnd"
+              >
+                <RLabel
+                  value="Day from now"
+                  position="insideBottom"
+                  offset={-12}
+                  style={{
+                    fontSize: 10,
+                    fill: "hsl(var(--muted-foreground))",
+                  }}
+                />
+              </XAxis>
+              <YAxis
+                yAxisId="dos"
+                stroke="hsl(var(--muted-foreground))"
+                tick={{ fontSize: 10 }}
+                domain={yDomain}
+                tickFormatter={(v) => `${v}d`}
+              >
+                <RLabel
+                  value="Network Days of Supply"
+                  angle={-90}
+                  position="insideLeft"
+                  offset={4}
+                  style={{
+                    fontSize: 10,
+                    fill: "hsl(var(--muted-foreground))",
+                    textAnchor: "middle",
+                  }}
+                />
+              </YAxis>
+              <YAxis
+                yAxisId="shortages"
+                orientation="right"
+                stroke="hsl(var(--muted-foreground))"
+                tick={{ fontSize: 10 }}
+                allowDecimals={false}
+              >
+                <RLabel
+                  value="Open Shortages"
+                  angle={90}
+                  position="insideRight"
+                  offset={4}
+                  style={{
+                    fontSize: 10,
+                    fill: "hsl(var(--muted-foreground))",
+                    textAnchor: "middle",
+                  }}
+                />
+              </YAxis>
+              <Tooltip
+                contentStyle={{
+                  background: "hsl(var(--background))",
+                  border: "1px solid hsl(var(--border))",
+                  borderRadius: 6,
+                  fontSize: 11,
+                }}
+                formatter={(value: number, name: string) => {
+                  if (name === "Open Shortages") {
+                    return [Math.round(value), name];
+                  }
+                  return [`${Number(value).toFixed(1)}d`, name];
+                }}
+                labelFormatter={(label) => `${label} (mission-relative)`}
+              />
+              <Legend
+                wrapperStyle={{ fontSize: 11, paddingTop: 4 }}
+                iconType="line"
+              />
+              <ReferenceLine
+                yAxisId="dos"
+                y={baselineDos}
+                stroke="hsl(var(--muted-foreground))"
+                strokeDasharray="4 4"
+                strokeWidth={1}
+                ifOverflow="extendDomain"
+              />
+              <Line
+                yAxisId="dos"
+                type="monotone"
+                dataKey="baseline"
+                name="Baseline DOS (current state)"
+                stroke="hsl(var(--muted-foreground))"
+                strokeDasharray="5 4"
+                strokeWidth={1.5}
+                dot={false}
+                isAnimationActive={false}
+              />
+              <Line
+                yAxisId="dos"
+                type="monotone"
+                dataKey="projected"
+                name="Projected DOS"
+                stroke="hsl(var(--primary))"
+                strokeWidth={2.5}
+                dot={false}
+              />
+              <Line
+                yAxisId="shortages"
+                type="monotone"
+                dataKey="shortages"
+                name="Open Shortages"
+                stroke="hsl(var(--destructive))"
+                strokeWidth={1.5}
+                strokeDasharray="2 3"
+                dot={false}
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+
+        {/* Two summary cards mirror the reference layout: a neutral
+            baseline tile and a colored projection tile that reflects the
+            direction of the deviation. */}
+        <div className="grid grid-cols-2 gap-3">
+          <div className="rounded-md border border-border bg-muted/20 p-3">
+            <div className="text-xs font-semibold text-muted-foreground">
+              Baseline DOS
+            </div>
+            <div className="text-2xl font-bold text-muted-foreground mt-0.5">
+              {baselineDos.toFixed(1)}
+              <span className="text-sm font-normal ml-1">days</span>
+            </div>
+            <div className="text-[10px] text-muted-foreground/80 mt-0.5">
+              Network average · current state
+            </div>
+          </div>
+          <div
+            className={cn(
+              "rounded-md border p-3",
+              direction === "lower"
+                ? "border-amber-500/30 bg-amber-500/10"
+                : direction === "higher"
+                  ? "border-emerald-500/30 bg-emerald-500/10"
+                  : "border-border bg-card/40",
+            )}
+          >
+            <div
+              className={cn(
+                "text-xs font-semibold",
+                direction === "lower"
+                  ? "text-amber-300"
+                  : direction === "higher"
+                    ? "text-emerald-300"
+                    : "text-muted-foreground",
+              )}
+            >
+              Projected DOS
+            </div>
+            <div
+              className={cn(
+                "text-2xl font-bold mt-0.5",
+                direction === "lower"
+                  ? "text-amber-400"
+                  : direction === "higher"
+                    ? "text-emerald-400"
+                    : "text-foreground",
+              )}
+            >
+              {projectedAvg.toFixed(1)}
+              <span className="text-sm font-normal ml-1">days</span>
+            </div>
+            <div className="text-[10px] text-muted-foreground/80 mt-0.5">
+              {horizonDays}-day average · under scenario
+            </div>
+          </div>
+        </div>
+
+        <div className="rounded-md border border-border bg-muted/20 p-3">
+          <div className="text-xs font-semibold text-foreground mb-1.5">
+            Trend Analysis
+          </div>
+          <ul className="text-[11px] text-muted-foreground space-y-1 list-disc list-inside leading-relaxed">
+            <li>{trendCopy}</li>
+            <li>
+              Solid line is projected Network DOS under the modeled
+              perturbation; dashed line is the baseline pinned to current
+              state ({baselineDos.toFixed(1)} days).
+            </li>
+            <li>
+              Right axis tracks open shortages — positive values mean at
+              least one node fell below its critical reserve floor on that
+              day.
+            </li>
+            <li>
+              Lower DOS = thinner sustainment cushion; recommended COA
+              actions are listed below.
+            </li>
+          </ul>
+        </div>
+      </div>
+    </section>
+  );
+}
 
 function EmptyPlaceholder() {
   return (
@@ -1320,50 +1699,8 @@ function ResultPanel({
         </section>
       ) : null}
 
-      <section>
-        <SectionHeader title="Network Risk Timeline" icon={<Activity className="h-3.5 w-3.5" />} />
-        <div className="rounded-md border border-border bg-background/30 p-2 h-48">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={result.timeline} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.3} />
-              <XAxis dataKey="day" stroke="hsl(var(--muted-foreground))" tick={{ fontSize: 10 }} />
-              <YAxis stroke="hsl(var(--muted-foreground))" tick={{ fontSize: 10 }} />
-              <Tooltip
-                contentStyle={{
-                  background: "hsl(var(--background))",
-                  border: "1px solid hsl(var(--border))",
-                  borderRadius: 6,
-                  fontSize: 11,
-                }}
-              />
-              <Line
-                type="monotone"
-                dataKey="networkDaysOfSupply"
-                name="Network DOS"
-                stroke="hsl(var(--primary))"
-                strokeWidth={2}
-                dot={false}
-              />
-              <Line
-                type="monotone"
-                dataKey="openShortages"
-                name="Open Shortages"
-                stroke="hsl(var(--destructive))"
-                strokeWidth={2}
-                dot={false}
-              />
-              <Line
-                type="monotone"
-                dataKey="demandIndex"
-                name="Demand Index"
-                stroke="hsl(var(--chart-3, 220 70% 50%))"
-                strokeWidth={1.5}
-                dot={false}
-              />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      </section>
+      <ScenarioTimelineCard result={result} />
+
 
       <section>
         <SectionHeader

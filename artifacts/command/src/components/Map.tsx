@@ -213,10 +213,26 @@ function NetworkFallback({ nodes = [], riskByNode = [], onNodeClick }: NetworkMa
             tier === 'critical' ? 'border-destructive text-destructive'
             : tier === 'heightened' ? 'border-amber-500 text-amber-400'
             : 'border-primary/60 text-primary';
+          // Build a one-line hover summary for the native browser
+          // tooltip. The deck.gl getDeckTooltip card only renders in
+          // the WebGL view; this title= attribute gives the same info
+          // (tier · DOS · risk · alerts) in the fallback list view so
+          // operators always see node health on hover.
+          const dosLabel = typeof r?.daysOfSupply === 'number'
+            ? (r.daysOfSupply >= 999 ? '∞' : `${r.daysOfSupply.toFixed(1)}d`)
+            : '—';
+          const riskLabel = typeof r?.riskScore === 'number'
+            ? r.riskScore.toFixed(0)
+            : '—';
+          const alertsLabel = r?.openAlerts ?? 0;
+          const hoverSummary =
+            `${n.name || n.id} (${n.type || 'site'}) — ` +
+            `${TIER_LABEL[tier]} · DOS ${dosLabel} · Risk ${riskLabel} · Alerts ${alertsLabel}`;
           return (
             <button
               key={n.id}
               onClick={() => onNodeClick?.(n, r ?? null)}
+              title={hoverSummary}
               className={`text-left border ${ring} bg-card/70 rounded p-2 hover:bg-card transition`}
             >
               <div className="text-xs font-mono opacity-70">{n.type || 'NODE'}</div>
@@ -225,7 +241,7 @@ function NetworkFallback({ nodes = [], riskByNode = [], onNodeClick }: NetworkMa
                 {Number(n.latitude).toFixed(2)}, {Number(n.longitude).toFixed(2)}
               </div>
               <div className="text-[10px] font-mono mt-1">
-                {TIER_LABEL[tier]} · DOS {r?.daysOfSupply ?? '—'}
+                {TIER_LABEL[tier]} · DOS {dosLabel} · Risk {riskLabel}
               </div>
             </button>
           );
@@ -1110,10 +1126,98 @@ export default function NetworkGLMap(props: NetworkMapProps) {
     }
   };
 
-  // Disable map drag while drawing so clicks register cleanly.
+  // Disable map drag while drawing so clicks register cleanly. Outside
+  // of draw mode we keep all the normal MapController interactions
+  // (drag-pan, drag-rotate, touch, keyboard, double-click zoom) but turn
+  // off scroll-wheel zoom — operators repeatedly complained that trying
+  // to scroll the dashboard would accidentally zoom the embedded theater
+  // map. Holding the cmd/ctrl key still lets you zoom on demand.
   const controllerOpts = drawMode !== null
     ? { dragPan: false, doubleClickZoom: false }
-    : true;
+    : ({ scrollZoom: false } as any);
+
+  // Build a deck.gl tooltip object for the node currently under the
+  // cursor. Returning a small HTML card here is much faster than
+  // mounting a React popover, and it gives operators a quick read on
+  // node health before they decide to drill into the site detail page.
+  //
+  // NOTE: this is intentionally a plain function (not useCallback).
+  // The component has early returns above (hasWebGL gate) and adding a
+  // hook here would change the hook count between renders and trigger
+  // React's "Rendered more hooks" error. deck.gl re-reads getTooltip on
+  // every render anyway, so memoization gains nothing.
+  const getDeckTooltip = (info: any) => {
+    const obj = info?.object;
+    if (!obj || obj.layer === undefined && info.layer?.id !== 'nodes-columns') {
+      // Only show tooltip for nodes (the columns layer); skip routes/threats.
+    }
+    if (!info.layer || info.layer.id !== 'nodes-columns') return null;
+    const d = obj as DecoratedNode | undefined;
+    if (!d) return null;
+    const raw = d.raw ?? {};
+    const tier = d.tier;
+    const tierColor =
+      tier === 'critical'
+        ? '#ef4444'
+        : tier === 'heightened'
+          ? '#f59e0b'
+          : '#22c55e';
+    const tierLabel = tier === 'critical'
+      ? 'CRITICAL'
+      : tier === 'heightened'
+        ? 'HEIGHTENED'
+        : 'NOMINAL';
+    const dosNum = typeof d.daysOfSupply === 'number' ? d.daysOfSupply : null;
+    const dos = dosNum === null
+      ? '—'
+      : dosNum >= 999
+        ? '∞'
+        : `${dosNum.toFixed(1)}d`;
+    const risk = typeof d.riskScore === 'number' ? d.riskScore.toFixed(0) : '—';
+    const alerts = d.openAlerts ?? 0;
+    const type = (raw.type ?? 'site').toString();
+    const name = String(raw.name ?? raw.id ?? 'Site');
+    const escape = (s: string) =>
+      s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    return {
+      html: `
+        <div style="font-family: ui-sans-serif, system-ui; min-width: 220px;">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+            <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${tierColor};"></span>
+            <span style="font-size:11px;letter-spacing:0.08em;color:${tierColor};font-weight:700;">${tierLabel}</span>
+            <span style="font-size:10px;color:#a1a1aa;text-transform:uppercase;letter-spacing:0.06em;margin-left:auto;">${escape(type)}</span>
+          </div>
+          <div style="font-size:13px;font-weight:600;color:#f4f4f5;margin-bottom:8px;line-height:1.25;">${escape(name)}</div>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;">
+            <div>
+              <div style="font-size:9px;color:#a1a1aa;text-transform:uppercase;letter-spacing:0.06em;">DOS</div>
+              <div style="font-size:13px;font-weight:600;color:#f4f4f5;">${dos}</div>
+            </div>
+            <div>
+              <div style="font-size:9px;color:#a1a1aa;text-transform:uppercase;letter-spacing:0.06em;">Risk</div>
+              <div style="font-size:13px;font-weight:600;color:#f4f4f5;">${risk}</div>
+            </div>
+            <div>
+              <div style="font-size:9px;color:#a1a1aa;text-transform:uppercase;letter-spacing:0.06em;">Alerts</div>
+              <div style="font-size:13px;font-weight:600;color:${alerts > 0 ? '#ef4444' : '#f4f4f5'};">${alerts}</div>
+            </div>
+          </div>
+          <div style="margin-top:8px;padding-top:6px;border-top:1px solid #27272a;font-size:10px;color:#a1a1aa;">
+            Click to open site detail
+          </div>
+        </div>
+      `,
+      style: {
+        background: 'rgba(12, 13, 16, 0.96)',
+        border: '1px solid rgba(76, 196, 196, 0.35)',
+        borderRadius: '8px',
+        padding: '10px 12px',
+        boxShadow: '0 8px 24px rgba(0,0,0,0.6)',
+        color: '#f4f4f5',
+        pointerEvents: 'none',
+      },
+    };
+  };
 
   return (
     <WebGLBoundary fallback={<NetworkFallback {...props} />}>
@@ -1125,6 +1229,7 @@ export default function NetworkGLMap(props: NetworkMapProps) {
         layers={layers}
         onClick={handleMapClick}
         onHover={handleMapHover}
+        getTooltip={getDeckTooltip as any}
         getCursor={({
           isDragging,
           isHovering,
