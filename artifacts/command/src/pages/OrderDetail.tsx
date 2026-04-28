@@ -61,6 +61,7 @@ import {
   formatShortDate,
   formatShortDateTime,
 } from "@/lib/format";
+import { orderStatusPillClass } from "@/lib/orderStatus";
 
 type EnrichedOrder = Order & {
   toNodeName?: string | null;
@@ -88,11 +89,7 @@ function priorityClass(priority: string) {
 }
 
 function statusClass(status: string) {
-  const s = status?.toUpperCase();
-  if (s === "RECEIVED") return "border-emerald-500 text-emerald-500";
-  if (s === "IN_TRANSIT") return "border-primary text-primary";
-  if (s === "ACKNOWLEDGED") return "border-amber-500 text-amber-500";
-  return "border-muted-foreground/50 text-muted-foreground";
+  return orderStatusPillClass(status);
 }
 
 type PendingChange =

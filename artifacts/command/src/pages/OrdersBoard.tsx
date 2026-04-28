@@ -12,6 +12,7 @@ import { Link, useLocation } from "wouter";
 import { Clock, Plus, Printer, Sparkles, MapPin, Building2, Calendar } from "lucide-react";
 import { AiBadge } from "@/components/ui/ai-badge";
 import { formatNumber, formatShortDate } from "@/lib/format";
+import { orderStatusBadgeClass, type OrderStatusKey } from "@/lib/orderStatus";
 import { NewOrderDialog } from "@/components/orders/NewOrderDialog";
 
 type EnrichedOrder = Order & {
@@ -44,56 +45,52 @@ type ColumnTheme = {
   empty: string;
 };
 
-const COLUMNS: Array<{ status: string; label: string; theme: ColumnTheme }> = [
-  {
-    status: "SUBMITTED",
-    label: "Submitted",
-    theme: {
-      outer: "border-sky-500/30",
-      body: "bg-sky-500/[0.04]",
-      header: "bg-sky-500/15 border-b border-sky-500/40",
-      headerText: "text-sky-300",
-      badge: "bg-sky-500/20 text-sky-200 border-sky-500/40",
-      empty: "text-sky-300/60",
-    },
+const COLUMN_THEMES: Record<OrderStatusKey, Omit<ColumnTheme, "badge">> = {
+  SUBMITTED: {
+    outer: "border-sky-500/30",
+    body: "bg-sky-500/[0.04]",
+    header: "bg-sky-500/15 border-b border-sky-500/40",
+    headerText: "text-sky-300",
+    empty: "text-sky-300/60",
   },
-  {
-    status: "ACKNOWLEDGED",
-    label: "Acknowledged",
-    theme: {
-      outer: "border-amber-500/30",
-      body: "bg-amber-500/[0.04]",
-      header: "bg-amber-500/15 border-b border-amber-500/40",
-      headerText: "text-amber-300",
-      badge: "bg-amber-500/20 text-amber-200 border-amber-500/40",
-      empty: "text-amber-300/60",
-    },
+  ACKNOWLEDGED: {
+    outer: "border-amber-500/30",
+    body: "bg-amber-500/[0.04]",
+    header: "bg-amber-500/15 border-b border-amber-500/40",
+    headerText: "text-amber-300",
+    empty: "text-amber-300/60",
   },
-  {
-    status: "IN_TRANSIT",
-    label: "In Transit",
-    theme: {
-      outer: "border-indigo-500/30",
-      body: "bg-indigo-500/[0.04]",
-      header: "bg-indigo-500/15 border-b border-indigo-500/40",
-      headerText: "text-indigo-300",
-      badge: "bg-indigo-500/20 text-indigo-200 border-indigo-500/40",
-      empty: "text-indigo-300/60",
-    },
+  IN_TRANSIT: {
+    outer: "border-indigo-500/30",
+    body: "bg-indigo-500/[0.04]",
+    header: "bg-indigo-500/15 border-b border-indigo-500/40",
+    headerText: "text-indigo-300",
+    empty: "text-indigo-300/60",
   },
-  {
-    status: "RECEIVED",
-    label: "Received",
-    theme: {
-      outer: "border-emerald-500/30",
-      body: "bg-emerald-500/[0.04]",
-      header: "bg-emerald-500/15 border-b border-emerald-500/40",
-      headerText: "text-emerald-300",
-      badge: "bg-emerald-500/20 text-emerald-200 border-emerald-500/40",
-      empty: "text-emerald-300/60",
-    },
+  RECEIVED: {
+    outer: "border-emerald-500/30",
+    body: "bg-emerald-500/[0.04]",
+    header: "bg-emerald-500/15 border-b border-emerald-500/40",
+    headerText: "text-emerald-300",
+    empty: "text-emerald-300/60",
   },
-];
+};
+
+const COLUMNS: Array<{ status: OrderStatusKey; label: string; theme: ColumnTheme }> = (
+  [
+    { status: "SUBMITTED", label: "Submitted" },
+    { status: "ACKNOWLEDGED", label: "Acknowledged" },
+    { status: "IN_TRANSIT", label: "In Transit" },
+    { status: "RECEIVED", label: "Received" },
+  ] as const
+).map(({ status, label }) => ({
+  status,
+  label,
+  theme: {
+    ...COLUMN_THEMES[status],
+    badge: orderStatusBadgeClass(status),
+  },
+}));
 
 function OrderCard({ order }: { order: EnrichedOrder }) {
   const [, setLocation] = useLocation();

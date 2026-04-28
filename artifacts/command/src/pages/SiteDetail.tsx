@@ -28,6 +28,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Activity, AlertTriangle, Box, MapPin, CheckCircle2, TrendingDown, Droplet, Package, Shield, Layers, FlaskConical } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { CATEGORY_ORDER, categoryKey, categoryLabel, dosClass, formatDOS, formatNumber, type ItemCategoryKey } from '@/lib/format';
+import { orderStatusBadgeClass, orderStatusLabel } from '@/lib/orderStatus';
 import { BloodReadinessTab } from '@/components/site/blood/BloodReadinessTab';
 
 type DosRow = DaysOfSupplyEntry & {
@@ -565,7 +566,15 @@ export default function SiteDetail() {
                         <div className="font-medium text-sm">
                           {order.orderNumber} · {order.itemName ?? order.itemId}
                         </div>
-                        <div className="text-xs text-muted-foreground">Status: {order.status} · Priority: {order.priority}</div>
+                        <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+                          <Badge
+                            variant="outline"
+                            className={`text-[10px] px-1.5 py-0 h-4 uppercase tracking-wider ${orderStatusBadgeClass(order.status)}`}
+                          >
+                            {orderStatusLabel(order.status)}
+                          </Badge>
+                          <span>· Priority: {order.priority}</span>
+                        </div>
                       </div>
                       <div className="text-right">
                         <div className="font-mono text-sm">Qty: {formatNumber(order.quantity)}</div>
