@@ -7,10 +7,13 @@ import {
   useAcknowledgeAlert,
   usePromoteRecommendationToOrder,
   useListItems,
+  useListSuppliers,
   getListItemsQueryKey,
   type Item,
   type DaysOfSupplyEntry,
+  type Recommendation,
 } from '@workspace/api-client-react';
+import { PromoteDialog, type PromoteOverrides } from '@/components/PromoteDialog';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
@@ -74,6 +77,46 @@ export default function SiteDetail() {
 
   const ackAlert = useAcknowledgeAlert();
   const promoteRec = usePromoteRecommendationToOrder();
+  const { data: suppliers } = useListSuppliers();
+  const [editingRec, setEditingRec] = useState<Recommendation | null>(null);
+  const [promotedById, setPromotedById] = useState<
+    Record<string, { orderId: string; orderNo: string }>
+  >({});
+  const [promoteErrorById, setPromoteErrorById] = useState<
+    Record<string, string>
+  >({});
+
+  const handlePromoteConfirm = async (
+    rec: Recommendation,
+    overrides: PromoteOverrides,
+  ) => {
+    setPromoteErrorById((prev) => ({ ...prev, [rec.id]: '' }));
+    try {
+      const res = await promoteRec.mutateAsync({
+        recommendationId: rec.id,
+        data: {
+          quantity: overrides.quantity,
+          supplierId: overrides.supplierId,
+          etaDays: overrides.etaDays,
+          priority: overrides.priority,
+        },
+      });
+      const order = res as { id?: string; orderNo?: string } | undefined;
+      setPromotedById((prev) => ({
+        ...prev,
+        [rec.id]: {
+          orderId: order?.id ?? 'promoted',
+          orderNo: order?.orderNo ?? order?.id ?? 'PROMOTED',
+        },
+      }));
+      setEditingRec(null);
+    } catch (e) {
+      setPromoteErrorById((prev) => ({
+        ...prev,
+        [rec.id]: (e as Error)?.message ?? 'Promote failed',
+      }));
+    }
+  };
 
   const itemMap = useMemo(() => {
     const m = new Map<string, Item>();
@@ -474,28 +517,48 @@ export default function SiteDetail() {
             </CardHeader>
             <CardContent className="p-0 overflow-y-auto">
               <div className="divide-y divide-border/50">
-                {recommendations.slice(0, 5).map((rec) => (
-                  <div key={rec.id} className="p-4 space-y-3 hover:bg-muted/20 transition-colors">
-                    <div className="flex justify-between items-start">
-                      <Badge variant="outline" className="text-primary border-primary bg-primary/10">{rec.kind}</Badge>
-                      <span className="text-xs font-mono text-muted-foreground">ETA: {rec.etaDays}d</span>
+                {recommendations.slice(0, 5).map((rec) => {
+                  const localPromote = promotedById[rec.id];
+                  const isPromoted = !!rec.promotedOrderId || !!localPromote;
+                  const promotedRef =
+                    localPromote?.orderNo ?? rec.promotedOrderId ?? null;
+                  const isPending =
+                    promoteRec.isPending &&
+                    promoteRec.variables?.recommendationId === rec.id;
+                  const err = promoteErrorById[rec.id];
+                  return (
+                    <div key={rec.id} className="p-4 space-y-3 hover:bg-muted/20 transition-colors">
+                      <div className="flex justify-between items-start">
+                        <Badge variant="outline" className="text-primary border-primary bg-primary/10">{rec.kind}</Badge>
+                        <span className="text-xs font-mono text-muted-foreground">ETA: {rec.etaDays}d</span>
+                      </div>
+                      <div>
+                        <div className="font-bold text-sm">{rec.itemName}</div>
+                        <div className="text-xs text-muted-foreground mt-1 line-clamp-2">{rec.rationale}</div>
+                      </div>
+                      <div className="flex items-center justify-between mt-2 pt-2 border-t border-border/50">
+                        <div className="text-sm font-mono">Qty: {rec.quantity}</div>
+                        <Button
+                          size="sm"
+                          onClick={() => setEditingRec(rec)}
+                          disabled={isPromoted || isPending}
+                          data-testid={`rec-promote-${rec.id}`}
+                        >
+                          {isPromoted
+                            ? promotedRef
+                              ? `Promoted · ${promotedRef}`
+                              : 'Promoted'
+                            : isPending
+                              ? 'Promoting…'
+                              : 'Promote to Order'}
+                        </Button>
+                      </div>
+                      {err ? (
+                        <div className="text-[11px] text-destructive">{err}</div>
+                      ) : null}
                     </div>
-                    <div>
-                      <div className="font-bold text-sm">{rec.itemName}</div>
-                      <div className="text-xs text-muted-foreground mt-1 line-clamp-2">{rec.rationale}</div>
-                    </div>
-                    <div className="flex items-center justify-between mt-2 pt-2 border-t border-border/50">
-                      <div className="text-sm font-mono">Qty: {rec.quantity}</div>
-                      <Button
-                        size="sm"
-                        onClick={() => promoteRec.mutate({ recommendationId: rec.id, data: {} })}
-                        disabled={!!rec.promotedOrderId}
-                      >
-                        {rec.promotedOrderId ? 'Promoted' : 'Promote to Order'}
-                      </Button>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
                 {recommendations.length === 0 && (
                   <div className="p-6 text-center text-sm text-muted-foreground">No pending recommendations</div>
                 )}
@@ -504,6 +567,19 @@ export default function SiteDetail() {
           </Card>
         </div>
       </div>
+      <PromoteDialog
+        rec={editingRec}
+        suppliers={suppliers ?? []}
+        isSubmitting={
+          promoteRec.isPending &&
+          editingRec != null &&
+          promoteRec.variables?.recommendationId === editingRec.id
+        }
+        onCancel={() => setEditingRec(null)}
+        onConfirm={(overrides) => {
+          if (editingRec) handlePromoteConfirm(editingRec, overrides);
+        }}
+      />
     </div>
   );
 }
