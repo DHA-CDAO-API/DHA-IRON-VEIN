@@ -77,6 +77,7 @@ import {
   YAxis,
 } from "recharts";
 import { cn } from "@/lib/utils";
+import { useToast } from "@/hooks/use-toast";
 import {
   PromoteDialog,
   defaultPriorityForKind,
@@ -1796,6 +1797,7 @@ function RecommendationCards({
 }) {
   const promote = usePromoteRecommendationToOrder();
   const { data: suppliers } = useListSuppliers();
+  const { toast } = useToast();
   const [promotedById, setPromotedById] = React.useState<
     Record<string, { orderId: string; orderNo: string }>
   >({});
@@ -2039,10 +2041,31 @@ function RecommendationCards({
     }
     await Promise.all(workers);
     setBatchRunningIds(new Set());
-    if (cancelRequestedRef.current) {
+    const wasCancelled = cancelRequestedRef.current;
+    if (wasCancelled) {
       setBatchCancelled(true);
     }
     setBatchCancelRequested(false);
+
+    const failedSuffix = failed > 0 ? ` · ${failed} failed` : "";
+    if (wasCancelled) {
+      toast({
+        title: "Bulk promote cancelled",
+        description: `Cancelled at ${done} of ${ids.length}${failedSuffix}`,
+        variant: "destructive",
+      });
+    } else if (failed > 0) {
+      toast({
+        title: "Bulk promote finished with errors",
+        description: `Promoted ${succeeded} of ${ids.length}${failedSuffix}`,
+        variant: "destructive",
+      });
+    } else {
+      toast({
+        title: "Bulk promote complete",
+        description: `Promoted ${succeeded} of ${ids.length}`,
+      });
+    }
   };
 
   const handleCancelBatch = () => {
