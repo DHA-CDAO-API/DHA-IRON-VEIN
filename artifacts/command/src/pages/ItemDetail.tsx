@@ -5,7 +5,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Box, Network, AlertTriangle } from 'lucide-react';
+import { Box, Network, AlertTriangle, MapPin } from 'lucide-react';
 
 function riskClass(dos: number) {
   if (dos <= 3) return 'text-destructive font-bold';
@@ -168,5 +168,3 @@ export default function ItemDetail() {
   );
 }
 
-// Need to import MapPin since I forgot it
-import { MapPin } from 'lucide-react';

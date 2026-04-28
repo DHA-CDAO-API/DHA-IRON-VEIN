@@ -36,7 +36,7 @@ export default function Profile() {
 
   const handleRoleSelect = (roleId: string) => {
     form.setValue('role', roleId);
-    updateProfile.mutate({ data: { role: roleId as any } }, {
+    updateProfile.mutate({ data: { role: roleId } }, {
       onSuccess: () => {
         toast({ title: 'Role Switched', description: 'Dashboard reloaded with new perspective.' });
         queryClient.invalidateQueries(); // Invalidate all to refresh view

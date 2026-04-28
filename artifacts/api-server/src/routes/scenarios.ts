@@ -1,11 +1,20 @@
 import { Router, type IRouter } from "express";
 import { db, scenarios as scenariosTable, presetEvents, appSettings, activityEntries } from "@workspace/db";
 import { desc, eq } from "drizzle-orm";
+import { z } from "zod";
 import { loadSimContext } from "../lib/ctx";
 import { runScenario, type ScenarioRunInput } from "@workspace/sim";
 import { completeChat, resolveModel, SCENARIO_BRIEF_SYSTEM } from "@workspace/ai-orchestrator";
 
 const router: IRouter = Router();
+
+function severityFromKind(kind: string): string {
+  const k = kind.toUpperCase();
+  if (k.includes("CONFLICT") || k.includes("WAR") || k.includes("PRC") || k.includes("MASCAS")) return "CRITICAL";
+  if (k.includes("TYPHOON") || k.includes("WEATHER") || k.includes("STORM")) return "HIGH";
+  if (k.includes("COLD_CHAIN") || k.includes("OUTAGE")) return "HIGH";
+  return "MEDIUM";
+}
 
 router.get("/scenarios", async (_req, res, next) => {
   try {
@@ -14,6 +23,13 @@ router.get("/scenarios", async (_req, res, next) => {
       rows.map((s) => ({
         id: s.id,
         name: s.name,
+        // OpenAPI contract
+        description: s.summary,
+        status: "completed",
+        createdAt: s.runAt.toISOString(),
+        completedAt: s.runAt.toISOString(),
+        createdByRole: null,
+        // Legacy fields kept for older callers
         summary: s.summary,
         kind: s.kind,
         runAt: s.runAt.toISOString(),
@@ -27,7 +43,21 @@ router.get("/scenarios", async (_req, res, next) => {
 router.get("/scenarios/preset-events", async (_req, res, next) => {
   try {
     const rows = await db.select().from(presetEvents);
-    res.json(rows);
+    res.json(
+      rows.map((p) => ({
+        id: p.id,
+        // OpenAPI contract
+        label: p.name,
+        description: p.summary,
+        severity: severityFromKind(p.kind),
+        parameters: p.parameters,
+        // Legacy fields
+        name: p.name,
+        kind: p.kind,
+        summary: p.summary,
+        durationDays: p.durationDays,
+      })),
+    );
   } catch (err) {
     next(err);
   }
@@ -43,6 +73,11 @@ router.get("/scenarios/:scenarioId", async (req, res, next) => {
     res.json({
       id: row.id,
       name: row.name,
+      description: row.summary,
+      status: "completed",
+      createdAt: row.runAt.toISOString(),
+      completedAt: row.runAt.toISOString(),
+      createdByRole: null,
       summary: row.summary,
       kind: row.kind,
       runAt: row.runAt.toISOString(),
@@ -56,16 +91,36 @@ router.get("/scenarios/:scenarioId", async (req, res, next) => {
   }
 });
 
+const RunScenarioInput = z.object({
+  name: z.string().min(1),
+  kind: z.string().min(1).optional(),
+  eventId: z.string().optional(),
+  presetEventId: z.string().optional(),
+  description: z.string().nullish(),
+  summary: z.string().optional(),
+  focusNodeIds: z.array(z.string()).optional(),
+  perturbation: z.record(z.unknown()).optional(),
+  horizonDays: z.number().int().positive().max(45).optional(),
+  generateBrief: z.boolean().optional(),
+});
+
 router.post("/scenarios", async (req, res, next) => {
   try {
-    const body = req.body as {
-      name: string;
-      kind: string;
-      summary?: string;
-      presetEventId?: string;
-      perturbation?: ScenarioRunInput["perturbation"];
-      horizonDays?: number;
-      generateBrief?: boolean;
+    const parsed = RunScenarioInput.safeParse(req.body);
+    if (!parsed.success) {
+      return res
+        .status(400)
+        .json({ error: "invalid scenario payload", details: parsed.error.flatten() });
+    }
+    const raw = parsed.data;
+    const body = {
+      name: raw.name,
+      kind: raw.kind ?? "GENERIC",
+      summary: raw.summary ?? raw.description ?? undefined,
+      presetEventId: raw.presetEventId ?? raw.eventId,
+      perturbation: raw.perturbation as ScenarioRunInput["perturbation"] | undefined,
+      horizonDays: raw.horizonDays,
+      generateBrief: raw.generateBrief,
     };
 
     const ctx = await loadSimContext();

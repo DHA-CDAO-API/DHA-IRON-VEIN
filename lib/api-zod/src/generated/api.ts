@@ -1033,15 +1033,7 @@ export const GetProfileResponse = zod.object({
 
 export const UpdateProfileBody = zod.object({
   name: zod.string().nullish(),
-  role: zod
-    .union([
-      zod.literal("commander"),
-      zod.literal("logistician"),
-      zod.literal("medical_planner"),
-      zod.literal("analyst"),
-      zod.literal(null),
-    ])
-    .nullish(),
+  role: zod.string().nullish(),
   base: zod.string().nullish(),
 });
 
@@ -1070,16 +1062,14 @@ export const GetDashboardOverviewResponse = zod.object({
   inFlightShipments: zod.number(),
   openOrders: zod.number(),
   pendingRecommendations: zod.number(),
-  kpis: zod.array(
-    zod.object({
-      id: zod.string(),
-      label: zod.string(),
-      value: zod.number(),
-      unit: zod.string(),
-      deltaPct: zod.number(),
-      trend: zod.string().optional(),
-    }),
-  ),
+  kpis: zod.object({
+    openCriticalAlerts: zod.number(),
+    openAlertsTotal: zod.number(),
+    theaterDaysOfSupply: zod.number(),
+    shipmentsInFlight: zod.number(),
+    recommendationsAwaitingPromotion: zod.number(),
+    nodesAtCritical: zod.number(),
+  }),
   dosTrend: zod.array(
     zod.object({
       day: zod.number(),

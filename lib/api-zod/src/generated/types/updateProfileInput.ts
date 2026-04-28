@@ -5,13 +5,12 @@
  * Predictive Sustainment Platform API for INDOPACOM medical logistics decision support.
  * OpenAPI spec version: 1.0.0
  */
-import type { UpdateProfileInputRole } from "./updateProfileInputRole";
 
 export interface UpdateProfileInput {
   /** @nullable */
   name?: string | null;
   /** @nullable */
-  role?: UpdateProfileInputRole;
+  role?: string | null;
   /** @nullable */
   base?: string | null;
 }

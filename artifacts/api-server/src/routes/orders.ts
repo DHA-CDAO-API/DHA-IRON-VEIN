@@ -4,14 +4,50 @@ import {
   orders,
   orderLines,
   shipments,
-  recommendations,
   activityEntries,
 } from "@workspace/db";
 import { and, desc, eq } from "drizzle-orm";
+import { z } from "zod";
 import { invalidateSimCache } from "../lib/ctx";
 import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
+
+type RawOrder = typeof orders.$inferSelect;
+type RawLine = typeof orderLines.$inferSelect;
+
+function buildOrderEnvelope(o: RawOrder, lines: RawLine[], itemNamesById?: Map<string, string>) {
+  const firstLine = lines[0];
+  const totalQty = lines.reduce((s, l) => s + l.quantity, 0);
+  const etaMs = o.requestedDeliveryAt.getTime() - o.createdAt.getTime();
+  const etaDays = Math.max(1, Math.round(etaMs / 86_400_000));
+  return {
+    id: o.id,
+    // OpenAPI contract fields
+    orderNumber: o.orderNo,
+    status: o.status,
+    fromNodeId: o.supplierId ?? null,
+    toNodeId: o.nodeId,
+    supplierId: o.supplierId ?? null,
+    itemId: firstLine?.itemId ?? "",
+    itemName: firstLine ? itemNamesById?.get(firstLine.itemId) ?? firstLine.itemId : "",
+    quantity: totalQty,
+    priority: o.priority,
+    etaDays,
+    totalCost: Number(o.totalUsd ?? 0),
+    rationale: o.notes ?? null,
+    createdAt: o.createdAt.toISOString(),
+    createdByRole: null,
+    sourceRecommendationId: null,
+    // Legacy fields kept for PurchaseOrder/ItemDetail callers
+    orderNo: o.orderNo,
+    nodeId: o.nodeId,
+    requestedDeliveryAt: o.requestedDeliveryAt.toISOString(),
+    totalUsd: Number(o.totalUsd ?? 0),
+    notes: o.notes,
+    lineCount: lines.length,
+  };
+}
 
 router.get("/orders", async (req, res, next) => {
   try {
@@ -25,54 +61,95 @@ router.get("/orders", async (req, res, next) => {
       ? await db.select().from(orders).where(and(...conds)).orderBy(desc(orders.createdAt)).limit(limit)
       : await db.select().from(orders).orderBy(desc(orders.createdAt)).limit(limit);
 
-    const lineCounts = await db
-      .select({ orderId: orderLines.orderId })
-      .from(orderLines);
-    const counts = new Map<string, number>();
-    for (const l of lineCounts) counts.set(l.orderId, (counts.get(l.orderId) ?? 0) + 1);
+    const allLines = await db.select().from(orderLines);
+    const linesByOrder = new Map<string, RawLine[]>();
+    for (const l of allLines) {
+      const arr = linesByOrder.get(l.orderId) ?? [];
+      arr.push(l);
+      linesByOrder.set(l.orderId, arr);
+    }
 
-    res.json(
-      rows.map((o) => ({
-        ...o,
-        createdAt: o.createdAt.toISOString(),
-        requestedDeliveryAt: o.requestedDeliveryAt.toISOString(),
-        lineCount: counts.get(o.id) ?? 0,
-      })),
-    );
+    // Resolve item names for the first-line denormalization
+    const { items } = await import("@workspace/db");
+    const itemRows = await db.select({ id: items.id, name: items.name }).from(items);
+    const itemNamesById = new Map(itemRows.map((i) => [i.id, i.name]));
+
+    res.json(rows.map((o) => buildOrderEnvelope(o, linesByOrder.get(o.id) ?? [], itemNamesById)));
   } catch (err) {
     next(err);
   }
 });
 
+// Accept both the legacy multi-line shape and the OpenAPI single-line shape.
+const CreateOrderInput = z.union([
+  z.object({
+    nodeId: z.string(),
+    supplierId: z.string(),
+    priority: z.string().optional(),
+    requestedDeliveryAt: z.string().optional(),
+    notes: z.string().optional(),
+    lines: z.array(
+      z.object({
+        itemId: z.string(),
+        quantity: z.number().positive(),
+        unitPriceUsd: z.number().nonnegative().optional(),
+      }),
+    ).min(1),
+  }),
+  z.object({
+    toNodeId: z.string(),
+    fromNodeId: z.string().nullish(),
+    supplierId: z.string().nullish(),
+    itemId: z.string(),
+    quantity: z.number().positive(),
+    priority: z.string(),
+    rationale: z.string().nullish(),
+    sourceRecommendationId: z.string().nullish(),
+  }),
+]);
+
 router.post("/orders", async (req, res, next) => {
   try {
-    const body = req.body as {
-      nodeId: string;
-      supplierId: string;
-      priority?: string;
-      requestedDeliveryAt?: string;
-      notes?: string;
-      lines: Array<{ itemId: string; quantity: number; unitPriceUsd?: number }>;
-    };
+    const parsed = CreateOrderInput.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "invalid order body", details: parsed.error.flatten() });
+    }
+    const body = parsed.data;
+
     const orderId = `o-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
     const orderNo = `PO-${new Date().getFullYear()}-${Math.floor(Math.random() * 90000 + 10000)}`;
-    const requested = body.requestedDeliveryAt ? new Date(body.requestedDeliveryAt) : new Date(Date.now() + 7 * 86400_000);
-    const totalUsd = body.lines.reduce((sum, l) => sum + (l.unitPriceUsd ?? 0) * l.quantity, 0);
+
+    const isLegacy = "lines" in body;
+    const nodeId = isLegacy ? body.nodeId : body.toNodeId;
+    const supplierId = isLegacy ? body.supplierId : (body.supplierId ?? body.fromNodeId ?? "");
+    const priority = body.priority ?? "ROUTINE";
+    const notes = isLegacy ? body.notes : (body.rationale ?? undefined);
+    const requested = isLegacy && body.requestedDeliveryAt
+      ? new Date(body.requestedDeliveryAt)
+      : new Date(Date.now() + 7 * 86400_000);
+    const lineInputs = isLegacy
+      ? body.lines
+      : [{ itemId: body.itemId, quantity: body.quantity, unitPriceUsd: 0 }];
+    const totalUsd = lineInputs.reduce((sum, l) => sum + (l.unitPriceUsd ?? 0) * l.quantity, 0);
+
+    if (!supplierId) {
+      return res.status(400).json({ error: "supplierId or fromNodeId required" });
+    }
 
     await db.insert(orders).values({
       id: orderId,
       orderNo,
-      nodeId: body.nodeId,
-      supplierId: body.supplierId,
+      nodeId,
+      supplierId,
       status: "SUBMITTED",
-      priority: body.priority ?? "ROUTINE",
+      priority,
       requestedDeliveryAt: requested,
       totalUsd,
-      notes: body.notes,
+      notes,
     });
-    if (body.lines.length > 0) {
+    if (lineInputs.length > 0) {
       await db.insert(orderLines).values(
-        body.lines.map((l) => ({
+        lineInputs.map((l) => ({
           orderId,
           itemId: l.itemId,
           quantity: l.quantity,
@@ -84,24 +161,16 @@ router.post("/orders", async (req, res, next) => {
     await db.insert(activityEntries).values({
       kind: "ORDER_CREATED",
       actor: "operator",
-      message: `Order ${orderNo} created for ${body.nodeId}`,
+      message: `Order ${orderNo} created for ${nodeId}`,
       refType: "order",
       refId: orderId,
-      meta: { totalUsd, lines: body.lines.length },
+      meta: { totalUsd, lines: lineInputs.length },
     });
     invalidateSimCache();
-    res.status(201).json({
-      id: orderId,
-      orderNo,
-      nodeId: body.nodeId,
-      supplierId: body.supplierId,
-      status: "SUBMITTED",
-      priority: body.priority ?? "ROUTINE",
-      createdAt: new Date().toISOString(),
-      requestedDeliveryAt: requested.toISOString(),
-      totalUsd,
-      lineCount: body.lines.length,
-    });
+
+    const [created] = await db.select().from(orders).where(eq(orders.id, orderId));
+    const createdLines = await db.select().from(orderLines).where(eq(orderLines.orderId, orderId));
+    res.status(201).json(buildOrderEnvelope(created!, createdLines));
   } catch (err) {
     logger.error({ err }, "create order failed");
     next(err);
@@ -115,12 +184,7 @@ router.get("/orders/:orderId", async (req, res, next) => {
     if (!order) return res.status(404).json({ error: "order not found" });
     const lines = await db.select().from(orderLines).where(eq(orderLines.orderId, id));
     res.json({
-      order: {
-        ...order,
-        createdAt: order.createdAt.toISOString(),
-        requestedDeliveryAt: order.requestedDeliveryAt.toISOString(),
-        lineCount: lines.length,
-      },
+      order: buildOrderEnvelope(order, lines),
       lines,
     });
   } catch (err) {
@@ -128,12 +192,17 @@ router.get("/orders/:orderId", async (req, res, next) => {
   }
 });
 
+const UpdateOrderInput = z.object({ status: z.string().min(1) });
+
 router.patch("/orders/:orderId", async (req, res, next) => {
   try {
+    const parsed = UpdateOrderInput.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "invalid status payload", details: parsed.error.flatten() });
+    }
     const id = req.params.orderId;
-    const status = (req.body as { status: string }).status;
-    const update: Record<string, unknown> = { status };
-    await db.update(orders).set(update).where(eq(orders.id, id));
+    const status = parsed.data.status;
+    await db.update(orders).set({ status }).where(eq(orders.id, id));
     const [order] = await db.select().from(orders).where(eq(orders.id, id));
     if (!order) return res.status(404).json({ error: "order not found" });
 
@@ -164,13 +233,8 @@ router.patch("/orders/:orderId", async (req, res, next) => {
     });
 
     invalidateSimCache();
-    res.json({
-      ...order,
-      status,
-      createdAt: order.createdAt.toISOString(),
-      requestedDeliveryAt: order.requestedDeliveryAt.toISOString(),
-      lineCount: 0,
-    });
+    const lines = await db.select().from(orderLines).where(eq(orderLines.orderId, id));
+    res.json(buildOrderEnvelope(order, lines));
   } catch (err) {
     next(err);
   }

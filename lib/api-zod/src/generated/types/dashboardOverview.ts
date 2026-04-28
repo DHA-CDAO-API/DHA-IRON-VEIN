@@ -6,7 +6,7 @@
  * OpenAPI spec version: 1.0.0
  */
 import type { DashboardOverviewAlertCountsBySeverityItem } from "./dashboardOverviewAlertCountsBySeverityItem";
-import type { DashboardOverviewKpisItem } from "./dashboardOverviewKpisItem";
+import type { DashboardOverviewKpis } from "./dashboardOverviewKpis";
 import type { HistoryPoint } from "./historyPoint";
 
 export interface DashboardOverview {
@@ -17,7 +17,7 @@ export interface DashboardOverview {
   inFlightShipments: number;
   openOrders: number;
   pendingRecommendations: number;
-  kpis: DashboardOverviewKpisItem[];
+  kpis: DashboardOverviewKpis;
   dosTrend: HistoryPoint[];
   alertCountsBySeverity: DashboardOverviewAlertCountsBySeverityItem[];
 }

@@ -647,25 +647,11 @@ export interface Profile {
   lastActiveAt: string;
 }
 
-/**
- * @nullable
- */
-export type UpdateProfileInputRole =
-  | (typeof UpdateProfileInputRole)[keyof typeof UpdateProfileInputRole]
-  | null;
-
-export const UpdateProfileInputRole = {
-  commander: "commander",
-  logistician: "logistician",
-  medical_planner: "medical_planner",
-  analyst: "analyst",
-} as const;
-
 export interface UpdateProfileInput {
   /** @nullable */
   name?: string | null;
   /** @nullable */
-  role?: UpdateProfileInputRole;
+  role?: string | null;
   /** @nullable */
   base?: string | null;
 }
@@ -678,13 +664,13 @@ export interface RoleDefinition {
   primaryColor?: string;
 }
 
-export type DashboardOverviewKpisItem = {
-  id: string;
-  label: string;
-  value: number;
-  unit: string;
-  deltaPct: number;
-  trend?: string;
+export type DashboardOverviewKpis = {
+  openCriticalAlerts: number;
+  openAlertsTotal: number;
+  theaterDaysOfSupply: number;
+  shipmentsInFlight: number;
+  recommendationsAwaitingPromotion: number;
+  nodesAtCritical: number;
 };
 
 export type DashboardOverviewAlertCountsBySeverityItem = {
@@ -700,7 +686,7 @@ export interface DashboardOverview {
   inFlightShipments: number;
   openOrders: number;
   pendingRecommendations: number;
-  kpis: DashboardOverviewKpisItem[];
+  kpis: DashboardOverviewKpis;
   dosTrend: HistoryPoint[];
   alertCountsBySeverity: DashboardOverviewAlertCountsBySeverityItem[];
 }

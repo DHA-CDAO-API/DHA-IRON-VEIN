@@ -36,10 +36,10 @@ export default function CommandOverview() {
     <div className="h-full flex flex-col p-4 gap-4 overflow-y-auto bg-background text-foreground">
       {/* KPI Strip */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 shrink-0">
-        <KPICard title="Theater DOS" value={(overview as any)?.kpis?.theaterDaysOfSupply?.toFixed?.(1) ?? (overview as any)?.networkDaysOfSupply?.toFixed?.(1) ?? '--'} icon={<Box className="h-4 w-4 text-primary" />} trend="-1.2" unit="days" />
-        <KPICard title="Open Alerts" value={(overview as any)?.kpis?.openAlertsTotal ?? (overview as any)?.kpis?.openCriticalAlerts ?? 0} icon={<AlertTriangle className="h-4 w-4 text-destructive" />} trend={`${(overview as any)?.kpis?.openCriticalAlerts ?? 0} crit`} unit="alerts" alert />
-        <KPICard title="In-Flight Shipments" value={(overview as any)?.kpis?.shipmentsInFlight ?? (overview as any)?.inFlightShipments ?? 0} icon={<Ship className="h-4 w-4 text-primary" />} />
-        <KPICard title="Pending Recs" value={(overview as any)?.kpis?.recommendationsAwaitingPromotion ?? (overview as any)?.pendingRecommendations ?? 0} icon={<Activity className="h-4 w-4 text-primary" />} />
+        <KPICard title="Theater DOS" value={overview?.kpis?.theaterDaysOfSupply?.toFixed(1) ?? '--'} icon={<Box className="h-4 w-4 text-primary" />} trend="-1.2" unit="days" />
+        <KPICard title="Open Alerts" value={overview?.kpis?.openAlertsTotal ?? 0} icon={<AlertTriangle className="h-4 w-4 text-destructive" />} trend={`${overview?.kpis?.openCriticalAlerts ?? 0} crit`} unit="alerts" alert />
+        <KPICard title="In-Flight Shipments" value={overview?.kpis?.shipmentsInFlight ?? 0} icon={<Ship className="h-4 w-4 text-primary" />} />
+        <KPICard title="Pending Recs" value={overview?.kpis?.recommendationsAwaitingPromotion ?? 0} icon={<Activity className="h-4 w-4 text-primary" />} />
       </div>
 
       <div className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-4 min-h-[500px]">
@@ -106,18 +106,18 @@ export default function CommandOverview() {
             </CardHeader>
             <CardContent className="p-0 overflow-y-auto">
               <div className="divide-y divide-border/50">
-                {activity?.map(act => (
-                  <div key={act.id} className="p-3">
-                    <p className="text-sm text-foreground/90">{(act as any).message ?? (act as any).summary ?? '—'}</p>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {(() => {
-                        const t = (act as any).ts ?? (act as any).createdAt;
-                        const d = t ? new Date(t) : null;
-                        return d && !isNaN(d.getTime()) ? d.toLocaleTimeString() : '—';
-                      })()} · {(act as any).actor ?? (act as any).actorRole ?? 'System'}
-                    </p>
-                  </div>
-                ))}
+                {activity?.map(act => {
+                  const ts = act.createdAt ? new Date(act.createdAt) : null;
+                  const tsLabel = ts && !isNaN(ts.getTime()) ? ts.toLocaleTimeString() : '—';
+                  return (
+                    <div key={act.id} className="p-3">
+                      <p className="text-sm text-foreground/90">{act.summary ?? '—'}</p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {tsLabel} · {act.actorRole ?? 'System'}
+                      </p>
+                    </div>
+                  );
+                })}
               </div>
             </CardContent>
           </Card>

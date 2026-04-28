@@ -1213,7 +1213,7 @@ components:
       type: object
       properties:
         name: { type: ["string", "null"] }
-        role: { type: ["string", "null"], enum: [commander, logistician, medical_planner, analyst, null] }
+        role: { type: ["string", "null"] }
         base: { type: ["string", "null"] }
 
     RoleDefinition:
@@ -1240,17 +1240,15 @@ components:
         openOrders: { type: integer }
         pendingRecommendations: { type: integer }
         kpis:
-          type: array
-          items:
-            type: object
-            required: [id, label, value, unit, deltaPct]
-            properties:
-              id: { type: string }
-              label: { type: string }
-              value: { type: number }
-              unit: { type: string }
-              deltaPct: { type: number }
-              trend: { type: string }
+          type: object
+          required: [openCriticalAlerts, openAlertsTotal, theaterDaysOfSupply, shipmentsInFlight, recommendationsAwaitingPromotion, nodesAtCritical]
+          properties:
+            openCriticalAlerts: { type: integer }
+            openAlertsTotal: { type: integer }
+            theaterDaysOfSupply: { type: number }
+            shipmentsInFlight: { type: integer }
+            recommendationsAwaitingPromotion: { type: integer }
+            nodesAtCritical: { type: integer }
         dosTrend:
           type: array
           items: { $ref: "#/components/schemas/HistoryPoint" }

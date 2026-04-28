@@ -13,16 +13,28 @@ router.get("/activity", async (req, res, next) => {
       .orderBy(desc(activityEntries.ts))
       .limit(limit);
     res.json(
-      rows.map((r) => ({
-        id: r.id,
-        ts: r.ts.toISOString(),
-        kind: r.kind,
-        actor: r.actor,
-        message: r.message,
-        refType: r.refType,
-        refId: r.refId,
-        meta: r.meta,
-      })),
+      rows.map((r) => {
+        const meta = (r.meta ?? {}) as Record<string, unknown>;
+        return {
+          id: r.id,
+          // OpenAPI contract
+          kind: r.kind,
+          summary: r.message,
+          nodeId: r.refType === "node" ? r.refId : (typeof meta.nodeId === "string" ? meta.nodeId : null),
+          itemId: r.refType === "item" ? r.refId : (typeof meta.itemId === "string" ? meta.itemId : null),
+          orderId: r.refType === "order" ? r.refId : null,
+          scenarioId: r.refType === "scenario" ? r.refId : null,
+          actorRole: r.actor,
+          createdAt: r.ts.toISOString(),
+          // Legacy fields
+          ts: r.ts.toISOString(),
+          actor: r.actor,
+          message: r.message,
+          refType: r.refType,
+          refId: r.refId,
+          meta: r.meta,
+        };
+      }),
     );
   } catch (err) {
     next(err);

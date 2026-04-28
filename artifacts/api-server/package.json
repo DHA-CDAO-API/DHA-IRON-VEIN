@@ -19,9 +19,10 @@
     "cors": "^2",
     "drizzle-orm": "catalog:",
     "express": "^5",
-    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
     "pino": "^9",
-    "pino-http": "^10"
+    "pino-http": "^10",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
+    "zod": "catalog:"
   },
   "devDependencies": {
     "@types/cookie-parser": "^1.4.10",
