@@ -1213,6 +1213,9 @@ function RunningPlaceholder() {
   );
 }
 
+type DiffNodeRow = ScenarioResult["perNode"][number] & { __removed?: boolean };
+type DiffItemRow = ScenarioResult["perItem"][number] & { __removed?: boolean };
+
 function ResultPanel({
   result,
   previous,
@@ -1222,6 +1225,49 @@ function ResultPanel({
 }) {
   const summary = result.summary;
   const peakNode = summary.peakRiskNodeName ?? summary.peakRiskNodeId ?? "—";
+
+  const prevNodeMap = React.useMemo(() => {
+    if (!previous) return null;
+    return new Map(previous.perNode.map((n) => [n.nodeId, n] as const));
+  }, [previous]);
+
+  const prevItemMap = React.useMemo(() => {
+    if (!previous) return null;
+    return new Map(previous.perItem.map((i) => [i.itemId, i] as const));
+  }, [previous]);
+
+  const perNodeData = React.useMemo<DiffNodeRow[]>(() => {
+    if (!previous) return result.perNode as DiffNodeRow[];
+    const currentIds = new Set(result.perNode.map((n) => n.nodeId));
+    const removed = previous.perNode
+      .filter((n) => !currentIds.has(n.nodeId))
+      .map((n) => ({ ...n, __removed: true }) as DiffNodeRow);
+    return [...(result.perNode as DiffNodeRow[]), ...removed];
+  }, [result.perNode, previous]);
+
+  const perItemData = React.useMemo<DiffItemRow[]>(() => {
+    if (!previous) return result.perItem as DiffItemRow[];
+    const currentIds = new Set(result.perItem.map((i) => i.itemId));
+    const removed = previous.perItem
+      .filter((i) => !currentIds.has(i.itemId))
+      .map((i) => ({ ...i, __removed: true }) as DiffItemRow);
+    return [...(result.perItem as DiffItemRow[]), ...removed];
+  }, [result.perItem, previous]);
+
+  const nodeDiffCounts = React.useMemo(() => {
+    if (!prevNodeMap) return null;
+    const added = result.perNode.filter((n) => !prevNodeMap.has(n.nodeId)).length;
+    const removed = perNodeData.filter((n) => n.__removed).length;
+    return { added, removed };
+  }, [result.perNode, perNodeData, prevNodeMap]);
+
+  const itemDiffCounts = React.useMemo(() => {
+    if (!prevItemMap) return null;
+    const added = result.perItem.filter((i) => !prevItemMap.has(i.itemId)).length;
+    const removed = perItemData.filter((i) => i.__removed).length;
+    return { added, removed };
+  }, [result.perItem, perItemData, prevItemMap]);
+
   return (
     <div className="flex-1 overflow-y-auto p-4 space-y-4">
       <div>
@@ -1318,11 +1364,34 @@ function ResultPanel({
       </section>
 
       <section>
-        <SectionHeader title={`Per-Node Impacts (${result.perNode.length})`} />
+        <SectionHeader
+          title={`Per-Node Impacts (${result.perNode.length})`}
+          badge={
+            nodeDiffCounts &&
+            (nodeDiffCounts.added > 0 || nodeDiffCounts.removed > 0) ? (
+              <span
+                className="text-[10px] font-mono text-muted-foreground"
+                data-testid="per-node-diff-counts"
+              >
+                {nodeDiffCounts.added > 0 ? (
+                  <span className="text-emerald-400">+{nodeDiffCounts.added} new</span>
+                ) : null}
+                {nodeDiffCounts.added > 0 && nodeDiffCounts.removed > 0 ? (
+                  <span className="mx-1">·</span>
+                ) : null}
+                {nodeDiffCounts.removed > 0 ? (
+                  <span className="text-muted-foreground">
+                    -{nodeDiffCounts.removed} removed
+                  </span>
+                ) : null}
+              </span>
+            ) : undefined
+          }
+        />
         <div className="rounded-md border border-border bg-background/30">
           <SortableTable
-            data={result.perNode}
-            rowKey={(r) => r.nodeId}
+            data={perNodeData}
+            rowKey={(r) => `${r.__removed ? "rm-" : ""}${r.nodeId}`}
             initialSort={{ key: "riskScore", direction: "desc" }}
             columns={
               [
@@ -1330,7 +1399,34 @@ function ResultPanel({
                   key: "nodeName",
                   label: "Node",
                   sortAccessor: (r) => r.nodeName,
-                  render: (r) => <span className="text-xs font-medium">{r.nodeName}</span>,
+                  render: (r) => (
+                    <span className="inline-flex items-center gap-1.5">
+                      <span
+                        className={cn(
+                          "text-xs font-medium",
+                          r.__removed && "line-through text-muted-foreground",
+                        )}
+                      >
+                        {r.nodeName}
+                      </span>
+                      {prevNodeMap && !r.__removed && !prevNodeMap.has(r.nodeId) ? (
+                        <span
+                          data-testid={`per-node-new-${r.nodeId}`}
+                          className="text-[9px] uppercase tracking-wider px-1 py-0.5 rounded bg-emerald-500/15 text-emerald-400 font-semibold"
+                        >
+                          new
+                        </span>
+                      ) : null}
+                      {r.__removed ? (
+                        <span
+                          data-testid={`per-node-removed-${r.nodeId}`}
+                          className="text-[9px] uppercase tracking-wider px-1 py-0.5 rounded bg-muted text-muted-foreground font-semibold"
+                        >
+                          removed
+                        </span>
+                      ) : null}
+                    </span>
+                  ),
                 },
                 {
                   key: "daysOfSupplyBefore",
@@ -1338,7 +1434,12 @@ function ResultPanel({
                   align: "right",
                   sortAccessor: (r) => r.daysOfSupplyBefore,
                   render: (r) => (
-                    <span className="text-xs font-mono">
+                    <span
+                      className={cn(
+                        "text-xs font-mono",
+                        r.__removed && "line-through text-muted-foreground",
+                      )}
+                    >
                       {r.daysOfSupplyBefore.toFixed(1)}d
                     </span>
                   ),
@@ -1348,18 +1449,47 @@ function ResultPanel({
                   label: "DOS After",
                   align: "right",
                   sortAccessor: (r) => r.daysOfSupplyAfter,
-                  render: (r) => (
-                    <span
-                      className={cn(
-                        "text-xs font-mono",
-                        r.daysOfSupplyAfter < r.daysOfSupplyBefore
-                          ? "text-amber-400"
-                          : "text-muted-foreground",
-                      )}
-                    >
-                      {r.daysOfSupplyAfter.toFixed(1)}d
-                    </span>
-                  ),
+                  render: (r) => {
+                    if (r.__removed) {
+                      return (
+                        <span className="text-xs font-mono line-through text-muted-foreground">
+                          {r.daysOfSupplyAfter.toFixed(1)}d
+                        </span>
+                      );
+                    }
+                    const prev = prevNodeMap?.get(r.nodeId);
+                    const delta =
+                      prev != null
+                        ? r.daysOfSupplyAfter - prev.daysOfSupplyAfter
+                        : null;
+                    const showDelta = delta != null && Math.abs(delta) >= 0.05;
+                    return (
+                      <span className="inline-flex items-baseline gap-1 justify-end">
+                        <span
+                          className={cn(
+                            "text-xs font-mono",
+                            r.daysOfSupplyAfter < r.daysOfSupplyBefore
+                              ? "text-amber-400"
+                              : "text-muted-foreground",
+                          )}
+                        >
+                          {r.daysOfSupplyAfter.toFixed(1)}d
+                        </span>
+                        {showDelta ? (
+                          <span
+                            data-testid={`per-node-dos-delta-${r.nodeId}`}
+                            className={cn(
+                              "text-[10px] font-mono",
+                              delta! > 0 ? "text-emerald-400" : "text-amber-400",
+                            )}
+                          >
+                            ({delta! > 0 ? "+" : ""}
+                            {delta!.toFixed(1)}d)
+                          </span>
+                        ) : null}
+                      </span>
+                    );
+                  },
                 },
                 {
                   key: "peakShortageDay",
@@ -1367,7 +1497,12 @@ function ResultPanel({
                   align: "right",
                   sortAccessor: (r) => r.peakShortageDay ?? 0,
                   render: (r) => (
-                    <span className="text-xs font-mono">
+                    <span
+                      className={cn(
+                        "text-xs font-mono",
+                        r.__removed && "line-through text-muted-foreground",
+                      )}
+                    >
                       {r.peakShortageDay != null ? `D+${r.peakShortageDay}` : "—"}
                     </span>
                   ),
@@ -1378,7 +1513,12 @@ function ResultPanel({
                   align: "right",
                   sortAccessor: (r) => r.criticalItemIds.length,
                   render: (r) => (
-                    <span className="text-xs font-mono text-muted-foreground">
+                    <span
+                      className={cn(
+                        "text-xs font-mono text-muted-foreground",
+                        r.__removed && "line-through",
+                      )}
+                    >
                       {r.criticalItemIds.length}
                     </span>
                   ),
@@ -1388,33 +1528,84 @@ function ResultPanel({
                   label: "Risk",
                   align: "right",
                   sortAccessor: (r) => r.riskScore ?? 0,
-                  render: (r) => (
-                    <span
-                      className={cn(
-                        "text-xs font-mono font-semibold",
-                        (r.riskScore ?? 0) > 60
-                          ? "text-destructive"
-                          : (r.riskScore ?? 0) > 30
-                            ? "text-amber-400"
-                            : "text-foreground",
-                      )}
-                    >
-                      {(r.riskScore ?? 0).toFixed(0)}
-                    </span>
-                  ),
+                  render: (r) => {
+                    const score = r.riskScore ?? 0;
+                    if (r.__removed) {
+                      return (
+                        <span className="text-xs font-mono font-semibold line-through text-muted-foreground">
+                          {score.toFixed(0)}
+                        </span>
+                      );
+                    }
+                    const prev = prevNodeMap?.get(r.nodeId);
+                    const prevScore = prev?.riskScore ?? null;
+                    const delta = prevScore != null ? score - prevScore : null;
+                    const showDelta = delta != null && Math.abs(delta) >= 0.5;
+                    return (
+                      <span className="inline-flex items-baseline gap-1 justify-end">
+                        <span
+                          className={cn(
+                            "text-xs font-mono font-semibold",
+                            score > 60
+                              ? "text-destructive"
+                              : score > 30
+                                ? "text-amber-400"
+                                : "text-foreground",
+                          )}
+                        >
+                          {score.toFixed(0)}
+                        </span>
+                        {showDelta ? (
+                          <span
+                            data-testid={`per-node-risk-delta-${r.nodeId}`}
+                            className={cn(
+                              "text-[10px] font-mono",
+                              delta! > 0 ? "text-amber-400" : "text-emerald-400",
+                            )}
+                          >
+                            ({delta! > 0 ? "+" : ""}
+                            {delta!.toFixed(0)})
+                          </span>
+                        ) : null}
+                      </span>
+                    );
+                  },
                 },
-              ] satisfies SortableColumn<(typeof result.perNode)[number]>[]
+              ] satisfies SortableColumn<DiffNodeRow>[]
             }
           />
         </div>
       </section>
 
       <section>
-        <SectionHeader title={`Per-Item Impacts (${result.perItem.length})`} />
+        <SectionHeader
+          title={`Per-Item Impacts (${result.perItem.length})`}
+          badge={
+            itemDiffCounts &&
+            (itemDiffCounts.added > 0 || itemDiffCounts.removed > 0) ? (
+              <span
+                className="text-[10px] font-mono text-muted-foreground"
+                data-testid="per-item-diff-counts"
+              >
+                {itemDiffCounts.added > 0 ? (
+                  <span className="text-emerald-400">+{itemDiffCounts.added} new</span>
+                ) : null}
+                {itemDiffCounts.added > 0 && itemDiffCounts.removed > 0 ? (
+                  <span className="mx-1">·</span>
+                ) : null}
+                {itemDiffCounts.removed > 0 ? (
+                  <span className="text-muted-foreground">
+                    -{itemDiffCounts.removed} removed
+                  </span>
+                ) : null}
+              </span>
+            ) : undefined
+          }
+        />
         <div className="rounded-md border border-border bg-background/30">
           <SortableTable
-            data={result.perItem}
-            rowKey={(r) => r.itemId}
+            data={perItemData}
+            rowKey={(r) => `${r.__removed ? "rm-" : ""}${r.itemId}`}
             initialSort={{ key: "totalShortfall", direction: "desc" }}
             columns={
               [
@@ -1422,7 +1613,34 @@ function ResultPanel({
                   key: "itemName",
                   label: "Item",
                   sortAccessor: (r) => r.itemName,
-                  render: (r) => <span className="text-xs font-medium">{r.itemName}</span>,
+                  render: (r) => (
+                    <span className="inline-flex items-center gap-1.5">
+                      <span
+                        className={cn(
+                          "text-xs font-medium",
+                          r.__removed && "line-through text-muted-foreground",
+                        )}
+                      >
+                        {r.itemName}
+                      </span>
+                      {prevItemMap && !r.__removed && !prevItemMap.has(r.itemId) ? (
+                        <span
+                          data-testid={`per-item-new-${r.itemId}`}
+                          className="text-[9px] uppercase tracking-wider px-1 py-0.5 rounded bg-emerald-500/15 text-emerald-400 font-semibold"
+                        >
+                          new
+                        </span>
+                      ) : null}
+                      {r.__removed ? (
+                        <span
+                          data-testid={`per-item-removed-${r.itemId}`}
+                          className="text-[9px] uppercase tracking-wider px-1 py-0.5 rounded bg-muted text-muted-foreground font-semibold"
+                        >
+                          removed
+                        </span>
+                      ) : null}
+                    </span>
+                  ),
                 },
                 {
                   key: "peakDemandPerDay",
@@ -1430,7 +1648,12 @@ function ResultPanel({
                   align: "right",
                   sortAccessor: (r) => r.peakDemandPerDay,
                   render: (r) => (
-                    <span className="text-xs font-mono">
+                    <span
+                      className={cn(
+                        "text-xs font-mono",
+                        r.__removed && "line-through text-muted-foreground",
+                      )}
+                    >
                       {r.peakDemandPerDay.toFixed(2)}
                     </span>
                   ),
@@ -1440,16 +1663,45 @@ function ResultPanel({
                   label: "Shortfall",
                   align: "right",
                   sortAccessor: (r) => r.totalShortfall,
-                  render: (r) => (
-                    <span
-                      className={cn(
-                        "text-xs font-mono",
-                        r.totalShortfall > 0 ? "text-amber-400" : "text-muted-foreground",
-                      )}
-                    >
-                      {r.totalShortfall.toLocaleString()}
-                    </span>
-                  ),
+                  render: (r) => {
+                    if (r.__removed) {
+                      return (
+                        <span className="text-xs font-mono line-through text-muted-foreground">
+                          {r.totalShortfall.toLocaleString()}
+                        </span>
+                      );
+                    }
+                    const prev = prevItemMap?.get(r.itemId);
+                    const delta =
+                      prev != null ? r.totalShortfall - prev.totalShortfall : null;
+                    const showDelta = delta != null && delta !== 0;
+                    return (
+                      <span className="inline-flex items-baseline gap-1 justify-end">
+                        <span
+                          className={cn(
+                            "text-xs font-mono",
+                            r.totalShortfall > 0
+                              ? "text-amber-400"
+                              : "text-muted-foreground",
+                          )}
+                        >
+                          {r.totalShortfall.toLocaleString()}
+                        </span>
+                        {showDelta ? (
+                          <span
+                            data-testid={`per-item-shortfall-delta-${r.itemId}`}
+                            className={cn(
+                              "text-[10px] font-mono",
+                              delta! > 0 ? "text-amber-400" : "text-emerald-400",
+                            )}
+                          >
+                            ({delta! > 0 ? "+" : ""}
+                            {delta!.toLocaleString()})
+                          </span>
+                        ) : null}
+                      </span>
+                    );
+                  },
                 },
                 {
                   key: "recommendedReorder",
@@ -1457,12 +1709,17 @@ function ResultPanel({
                   align: "right",
                   sortAccessor: (r) => r.recommendedReorder,
                   render: (r) => (
-                    <span className="text-xs font-mono text-primary">
+                    <span
+                      className={cn(
+                        "text-xs font-mono text-primary",
+                        r.__removed && "line-through text-muted-foreground",
+                      )}
+                    >
                       {r.recommendedReorder.toLocaleString()}
                     </span>
                   ),
                 },
-              ] satisfies SortableColumn<(typeof result.perItem)[number]>[]
+              ] satisfies SortableColumn<DiffItemRow>[]
             }
           />
         </div>
