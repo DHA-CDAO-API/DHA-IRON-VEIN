@@ -24,7 +24,8 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { SortableTable } from '@/components/ui/sortable-table';
 import { AiBadge } from '@/components/ui/ai-badge';
-import { Activity, AlertTriangle, Box, MapPin, CheckCircle2, TrendingDown, Droplet, Package, Shield, Layers } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Activity, AlertTriangle, Box, MapPin, CheckCircle2, TrendingDown, Droplet, Package, Shield, Layers, FlaskConical } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { CATEGORY_ORDER, categoryKey, categoryLabel, dosClass, formatDOS, formatNumber, type ItemCategoryKey } from '@/lib/format';
 import { BloodReadinessTab } from '@/components/site/blood/BloodReadinessTab';
@@ -71,6 +72,32 @@ function parseForecastHorizon(value: string | null | undefined): ForecastHorizon
   return (FORECAST_HORIZON_OPTIONS as readonly number[]).includes(n)
     ? (n as ForecastHorizon)
     : 7;
+}
+
+// Canonical operational states the simulation knows about, ordered roughly
+// from low to high tempo. The site's actual baseline value will be marked
+// "current" in the dropdown; if a baseline isn't in this list it's appended
+// dynamically so the operator can always return to it.
+const OPTEMPO_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: 'standby', label: 'Standby / reduced manning' },
+  { value: 'garrison', label: 'Garrison (steady state)' },
+  { value: 'training', label: 'Training / exercise' },
+  { value: 'exercise', label: 'Exercise / workup' },
+  { value: 'mobilization', label: 'Mobilization / deployment prep' },
+  { value: 'forward_deployed', label: 'Forward deployed' },
+  { value: 'active_operations', label: 'Active operations' },
+  { value: 'combat_ops', label: 'Combat operations' },
+  { value: 'contested', label: 'Contested logistics' },
+  { value: 'mascal', label: 'MASCAL surge' },
+];
+
+function optempoLabel(value: string | null | undefined): string {
+  if (!value) return '';
+  const match = OPTEMPO_OPTIONS.find((o) => o.value === value);
+  if (match) return match.label;
+  // Fallback: humanize unknown ids (e.g. "active_operations" -> "Active operations")
+  const cleaned = value.replace(/_/g, ' ').toLowerCase();
+  return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
 }
 
 export default function SiteDetail() {
@@ -181,8 +208,18 @@ export default function SiteDetail() {
     navigate(`${window.location.pathname}${qs ? `?${qs}` : ''}`, { replace: true });
   }, []);
 
+  const baselineOptempo = detail?.node?.optempo ?? null;
+  const [optempoOverride, setOptempoOverride] = useState<string | null>(null);
+  const effectiveOptempo = optempoOverride ?? baselineOptempo;
+  const isSimulated = !!optempoOverride && optempoOverride !== baselineOptempo;
   const forecast = useForecastDemand();
   const forecastSeries = forecast.data?.series ?? [];
+
+  // Reset the override whenever we switch to a different site so it doesn't
+  // leak across navigations.
+  useEffect(() => {
+    setOptempoOverride(null);
+  }, [nodeId]);
 
   useEffect(() => {
     if (!detail || !nodeId) return;
@@ -193,10 +230,11 @@ export default function SiteDetail() {
         nodeIds: [nodeId],
         itemIds,
         horizonDays: forecastHorizon,
+        ...(effectiveOptempo ? { operationalState: effectiveOptempo } : {}),
       },
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nodeId, detail?.node?.id, forecastHorizon]);
+  }, [nodeId, detail?.node?.id, forecastHorizon, effectiveOptempo]);
 
   const forecastShortages = useMemo(() => {
     if (forecastSeries.length === 0) {
@@ -496,13 +534,23 @@ export default function SiteDetail() {
 
               <TabsContent value="forecast" className="m-0 p-4 space-y-3">
                 <div className="flex items-start justify-between gap-3 flex-wrap">
-                  <div>
-                    <div className="text-sm font-medium">Projected shortages — next {forecastHorizon} days</div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <div className="text-sm font-medium">Projected shortages — next {forecastHorizon} days</div>
+                      {isSimulated && (
+                        <Badge variant="outline" className="text-amber-500 border-amber-500/40 bg-amber-500/10 gap-1">
+                          <FlaskConical className="h-3 w-3" />
+                          Simulated under {optempoLabel(optempoOverride)}
+                        </Badge>
+                      )}
+                    </div>
                     <div className="text-xs text-muted-foreground">
-                      Items expected to hit zero on-hand within the forecast window at current burn.
+                      {isSimulated
+                        ? `What-if forecast — burn re-computed as if this site were operating at ${optempoLabel(optempoOverride)}.`
+                        : 'Items expected to hit zero on-hand within the forecast window at current burn.'}
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 shrink-0">
+                  <div className="flex items-center gap-2 shrink-0 flex-wrap">
                     {forecast.isPending && <Skeleton className="h-6 w-16" />}
                     <ToggleGroup
                       type="single"
@@ -527,6 +575,52 @@ export default function SiteDetail() {
                         </ToggleGroupItem>
                       ))}
                     </ToggleGroup>
+
+                    <label className="text-xs text-muted-foreground uppercase tracking-wider whitespace-nowrap ml-2" htmlFor="optempo-override">
+                      OPTEMPO
+                    </label>
+                    <Select
+                      value={effectiveOptempo ?? ''}
+                      onValueChange={(v) => setOptempoOverride(v === baselineOptempo ? null : v)}
+                    >
+                      <SelectTrigger id="optempo-override" className="h-8 w-[220px] text-xs">
+                        <SelectValue placeholder="Select operational state" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {OPTEMPO_OPTIONS.map((opt) => {
+                          const isBaseline = opt.value === baselineOptempo;
+                          return (
+                            <SelectItem key={opt.value} value={opt.value}>
+                              <span className="flex items-center gap-2">
+                                <span>{opt.label}</span>
+                                {isBaseline && (
+                                  <span className="text-[10px] uppercase tracking-wider text-muted-foreground">current</span>
+                                )}
+                              </span>
+                            </SelectItem>
+                          );
+                        })}
+                        {/* If the site's baseline isn't in the canonical list, surface it so the operator can return to it. */}
+                        {baselineOptempo && !OPTEMPO_OPTIONS.some((o) => o.value === baselineOptempo) && (
+                          <SelectItem value={baselineOptempo}>
+                            <span className="flex items-center gap-2">
+                              <span>{optempoLabel(baselineOptempo)}</span>
+                              <span className="text-[10px] uppercase tracking-wider text-muted-foreground">current</span>
+                            </span>
+                          </SelectItem>
+                        )}
+                      </SelectContent>
+                    </Select>
+                    {isSimulated && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-8 text-xs"
+                        onClick={() => setOptempoOverride(null)}
+                      >
+                        Reset
+                      </Button>
+                    )}
                   </div>
                 </div>
                 {forecast.isPending && forecastShortages.length === 0 ? (
