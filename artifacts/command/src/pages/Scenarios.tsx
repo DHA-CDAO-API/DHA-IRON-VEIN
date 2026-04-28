@@ -1464,7 +1464,7 @@ function ScenarioTimelineCard({ result }: { result: ScenarioResult }) {
               />
               <Legend
                 verticalAlign="top"
-                align="right"
+                align="center"
                 height={20}
                 wrapperStyle={{ fontSize: 11, paddingBottom: 4 }}
                 iconType="line"
