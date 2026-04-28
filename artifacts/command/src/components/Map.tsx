@@ -2,12 +2,39 @@ import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react'
 import { Map as MapLibre } from 'react-map-gl/maplibre';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import DeckGL from '@deck.gl/react';
-import { ScatterplotLayer, ArcLayer, PathLayer, ColumnLayer } from '@deck.gl/layers';
+import {
+  ScatterplotLayer,
+  ArcLayer,
+  PathLayer,
+  ColumnLayer,
+  PolygonLayer,
+} from '@deck.gl/layers';
 import { TripsLayer } from '@deck.gl/geo-layers';
 import { type MapViewState } from '@deck.gl/core';
 
 export type SupplyCategory = 'blood_products' | 'supplies' | 'ppe' | 'other';
 export type ThreatTier = 'nominal' | 'heightened' | 'critical';
+
+export type ZoneDrawMode = null | 'rectangle' | 'polygon';
+
+export type ZoneSeverity = 'WATCH' | 'WARNING' | 'CRITICAL';
+
+export interface TheaterZone {
+  id: string;
+  name: string;
+  severity: ZoneSeverity;
+  kind?: string;
+  polygon: number[][];
+  notes?: string | null;
+  createdBy?: string | null;
+  createdAt?: string;
+}
+
+export const ZONE_SEVERITY_COLOR: Record<ZoneSeverity, [number, number, number]> = {
+  WATCH: [232, 168, 76],
+  WARNING: [232, 120, 76],
+  CRITICAL: [220, 64, 76],
+};
 
 interface NetworkMapProps {
   nodes?: any[];
@@ -17,18 +44,41 @@ interface NetworkMapProps {
   riskByNode?: any[];
   aorBoundary?: number[][];
   /**
+   * Operator-drawn theater zones rendered as filled polygons distinct from
+   * the canonical THREAT overlays (those use a dashed outline style).
+   */
+  zones?: TheaterZone[];
+  /**
+   * IDs of zones to render in a "selected" highlight state (used to preview
+   * which zones a scenario will reference).
+   */
+  highlightedZoneIds?: Set<string>;
+  /**
    * Set of categories the user has selected via the layer panel. If the set is
    * empty (or contains all categories) the map shows everything.
    */
   selectedCategories?: Set<SupplyCategory>;
   showThreats?: boolean;
   showAOR?: boolean;
+  showZones?: boolean;
   onNodeClick?: (node: any, riskInfo: any | null) => void;
-  /**
-   * Fired when an animated shipment trip is clicked. Receives the underlying
-   * shipment row (id, item, qty, ETA, …) so the parent can show a detail card.
-   */
   onShipmentClick?: (shipment: any) => void;
+  onZoneClick?: (zone: TheaterZone) => void;
+  /**
+   * Drawing mode. When non-null the map intercepts clicks (instead of
+   * forwarding them to nodes) and accumulates polygon vertices.
+   */
+  drawMode?: ZoneDrawMode;
+  /**
+   * Called once a shape has been finalised (rectangle: 2nd click, polygon:
+   * doubleclick or "finish" call). Receives a closed polygon (first == last).
+   */
+  onZoneDrawn?: (polygon: number[][]) => void;
+  /**
+   * Called whenever the in-progress vertices change so the host can render UI
+   * affordances (e.g. "click 1 more point").
+   */
+  onDraftChange?: (vertices: number[][]) => void;
   viewState?: MapViewState;
   onViewStateChange?: (params: { viewState: MapViewState }) => void;
 }
@@ -204,14 +254,49 @@ export default function NetworkGLMap(props: NetworkMapProps) {
     threats = [],
     riskByNode = [],
     aorBoundary,
+    zones = [],
+    highlightedZoneIds,
     selectedCategories,
     showThreats = true,
     showAOR = true,
+    showZones = true,
     onNodeClick,
     onShipmentClick,
+    onZoneClick,
+    drawMode = null,
+    onZoneDrawn,
+    onDraftChange,
     viewState,
     onViewStateChange,
   } = props;
+
+  // Drawing buffer (in-progress polygon/rectangle vertices)
+  const [draftVertices, setDraftVertices] = useState<number[][]>([]);
+  const [hoverCoord, setHoverCoord] = useState<[number, number] | null>(null);
+  const lastClickAtRef = useRef<number>(0);
+
+  // Reset draft when draw mode changes (or is cleared)
+  useEffect(() => {
+    setDraftVertices([]);
+    setHoverCoord(null);
+    if (onDraftChange) onDraftChange([]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [drawMode]);
+
+  const finishDraft = useCallback(
+    (vertices: number[][]) => {
+      if (vertices.length < 3) return;
+      const closed = [...vertices];
+      const first = closed[0];
+      const last = closed[closed.length - 1];
+      if (first[0] !== last[0] || first[1] !== last[1]) closed.push([first[0], first[1]]);
+      setDraftVertices([]);
+      setHoverCoord(null);
+      if (onDraftChange) onDraftChange([]);
+      if (onZoneDrawn) onZoneDrawn(closed);
+    },
+    [onDraftChange, onZoneDrawn],
+  );
 
   const [hasWebGL, setHasWebGL] = useState<boolean | null>(null);
   const [internalView, setInternalView] = useState<MapViewState>(viewState ?? INITIAL_VIEW_STATE);
@@ -467,10 +552,124 @@ export default function NetworkGLMap(props: NetworkMapProps) {
       }
     }
 
-    // 5/6. Animated trips + pulse halos are built per-frame inside the rAF
-    //      loop (see `buildAnimatedLayers` below). Click handling for trips
-    //      lives there so deck.gl's per-frame layer rebuild keeps picking
-    //      tied to the current shipment rows.
+    // 4b. Operator-drawn theater zones — filled polygons, with an outline that
+    // brightens for highlighted zones (e.g. ones a scenario will reference).
+    if (showZones && zones.length > 0) {
+      out.push(
+        new PolygonLayer({
+          id: 'zones-fill',
+          data: zones,
+          getPolygon: (d: TheaterZone) => d.polygon,
+          getFillColor: (d: TheaterZone): [number, number, number, number] => {
+            const c = ZONE_SEVERITY_COLOR[d.severity] ?? ZONE_SEVERITY_COLOR.WATCH;
+            const highlighted = highlightedZoneIds?.has(d.id);
+            return [c[0], c[1], c[2], highlighted ? 110 : 60];
+          },
+          getLineColor: (d: TheaterZone): [number, number, number, number] => {
+            const c = ZONE_SEVERITY_COLOR[d.severity] ?? ZONE_SEVERITY_COLOR.WATCH;
+            const highlighted = highlightedZoneIds?.has(d.id);
+            return [c[0], c[1], c[2], highlighted ? 240 : 180];
+          },
+          getLineWidth: (d: TheaterZone) =>
+            highlightedZoneIds?.has(d.id) ? 3 : 1.5,
+          lineWidthUnits: 'pixels',
+          lineWidthMinPixels: 1,
+          stroked: true,
+          filled: true,
+          pickable: drawMode === null,
+          onClick: (info: any) => {
+            if (drawMode !== null) return;
+            if (info.object && onZoneClick) onZoneClick(info.object as TheaterZone);
+          },
+          updateTriggers: {
+            getFillColor: [highlightedZoneIds, drawMode],
+            getLineColor: [highlightedZoneIds, drawMode],
+            getLineWidth: [highlightedZoneIds],
+          },
+        }),
+      );
+    }
+
+    // 4c. Drafting overlay — what the operator is currently drawing.
+    if (drawMode !== null) {
+      // Build a preview shape from the draft + current hover position.
+      let previewPath: number[][] | null = null;
+      let previewPoly: number[][] | null = null;
+      if (drawMode === 'rectangle') {
+        if (draftVertices.length === 1 && hoverCoord) {
+          const [x1, y1] = draftVertices[0];
+          const [x2, y2] = hoverCoord;
+          previewPoly = [
+            [x1, y1],
+            [x2, y1],
+            [x2, y2],
+            [x1, y2],
+            [x1, y1],
+          ];
+          previewPath = previewPoly;
+        }
+      } else if (drawMode === 'polygon') {
+        if (draftVertices.length > 0) {
+          previewPath =
+            hoverCoord && draftVertices.length >= 1
+              ? [...draftVertices, hoverCoord as number[]]
+              : draftVertices;
+          if (draftVertices.length >= 3) {
+            previewPoly = [
+              ...draftVertices,
+              ...(hoverCoord ? [hoverCoord as number[]] : []),
+              draftVertices[0],
+            ];
+          }
+        }
+      }
+
+      if (previewPoly) {
+        out.push(
+          new PolygonLayer({
+            id: 'zone-draft-fill',
+            data: [{ polygon: previewPoly }],
+            getPolygon: (d: any) => d.polygon,
+            getFillColor: [76, 196, 196, 60],
+            getLineColor: [76, 196, 196, 220],
+            getLineWidth: 2,
+            lineWidthUnits: 'pixels',
+            stroked: true,
+            filled: true,
+            pickable: false,
+          }),
+        );
+      } else if (previewPath) {
+        out.push(
+          new PathLayer({
+            id: 'zone-draft-path',
+            data: [{ path: previewPath }],
+            getPath: (d: any) => d.path,
+            getColor: [76, 196, 196, 220],
+            getWidth: 2,
+            widthUnits: 'pixels',
+            widthMinPixels: 1,
+          }),
+        );
+      }
+
+      if (draftVertices.length > 0) {
+        out.push(
+          new ScatterplotLayer({
+            id: 'zone-draft-vertices',
+            data: draftVertices,
+            getPosition: (d: any) => d,
+            getFillColor: [76, 196, 196, 240],
+            getRadius: 4,
+            radiusUnits: 'pixels',
+            stroked: true,
+            getLineColor: [255, 255, 255, 220],
+            lineWidthMinPixels: 1.5,
+            pickable: false,
+          }),
+        );
+      }
+    }
 
     // 7. 3D node columns. Extruded height encodes site importance + risk.
     out.push(
@@ -499,15 +698,18 @@ export default function NetworkGLMap(props: NetworkMapProps) {
         },
         elevationScale: 1,
         material: { ambient: 0.55, diffuse: 0.7, shininess: 32, specularColor: [60, 64, 70] },
-        pickable: true,
-        autoHighlight: true,
+        pickable: drawMode === null,
+        autoHighlight: drawMode === null,
         highlightColor: [255, 255, 255, 200],
         onClick: (info: any) => {
+          if (drawMode !== null) return;
           if (info.object && onNodeClick) {
             onNodeClick(info.object.raw, info.object);
           }
         },
-        updateTriggers: { getFillColor: [allCategoriesActive, Array.from(selectedCategories ?? []).join(',')] },
+        updateTriggers: {
+          getFillColor: [allCategoriesActive, Array.from(selectedCategories ?? []).join(',')],
+        },
       }),
     );
 
@@ -516,6 +718,8 @@ export default function NetworkGLMap(props: NetworkMapProps) {
     routePaths, decoratedNodes, threats,
     aorBoundary, showAOR, showThreats, onNodeClick,
     allCategoriesActive, selectedCategories,
+    zones, showZones, highlightedZoneIds, onZoneClick,
+    drawMode, draftVertices, hoverCoord,
   ]);
 
   // ---------------------------------------------------------------------------
@@ -622,14 +826,78 @@ export default function NetworkGLMap(props: NetworkMapProps) {
     if (!viewState) setInternalView(params.viewState);
   };
 
+  // Map-level click handler — captures clicks while drawing a zone. We
+  // detect double-clicks by measuring the gap between consecutive clicks
+  // (deck.gl's DeckGL component doesn't expose an onDblClick prop).
+  const handleMapClick = (info: any) => {
+    if (drawMode === null) return;
+    if (!info || !info.coordinate) return;
+    const coord: [number, number] = [info.coordinate[0], info.coordinate[1]];
+    const now = Date.now();
+    const gap = now - lastClickAtRef.current;
+    lastClickAtRef.current = now;
+
+    if (drawMode === 'rectangle') {
+      if (draftVertices.length === 0) {
+        const next = [coord];
+        setDraftVertices(next);
+        if (onDraftChange) onDraftChange(next);
+      } else {
+        // Second click — finalise rectangle (4 corners + close).
+        const [x1, y1] = draftVertices[0];
+        const [x2, y2] = coord;
+        finishDraft([
+          [x1, y1],
+          [x2, y1],
+          [x2, y2],
+          [x1, y2],
+        ]);
+      }
+      return;
+    }
+
+    if (drawMode === 'polygon') {
+      // Treat a fast second click as "finish" if we already have at least 3
+      // vertices placed. The duplicate vertex is dropped.
+      if (gap > 0 && gap < 350 && draftVertices.length >= 3) {
+        finishDraft(draftVertices);
+        return;
+      }
+      const next = [...draftVertices, coord];
+      setDraftVertices(next);
+      if (onDraftChange) onDraftChange(next);
+    }
+  };
+
+  // Hover handler — drives the live "rubber band" preview.
+  const handleMapHover = (info: any) => {
+    if (drawMode === null) {
+      if (hoverCoord !== null) setHoverCoord(null);
+      return;
+    }
+    if (info && info.coordinate) {
+      setHoverCoord([info.coordinate[0], info.coordinate[1]]);
+    }
+  };
+
+  // Disable map drag while drawing so clicks register cleanly.
+  const controllerOpts = drawMode !== null
+    ? { dragPan: false, doubleClickZoom: false }
+    : true;
+
   return (
     <WebGLBoundary fallback={<NetworkFallback {...props} />}>
       <DeckGL
         ref={deckRef}
         viewState={effectiveViewState}
         onViewStateChange={handleViewStateChange as any}
-        controller={true}
+        controller={controllerOpts as any}
         layers={layers}
+        onClick={handleMapClick}
+        onHover={handleMapHover}
+        getCursor={({ isDragging }: { isDragging: boolean }) =>
+          drawMode !== null ? 'crosshair' : isDragging ? 'grabbing' : 'grab'
+        }
       >
         <MapLibre mapStyle={MAP_STYLE} />
       </DeckGL>

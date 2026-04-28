@@ -139,6 +139,50 @@ export interface ThreatOverlay {
   polygon: number[][];
 }
 
+export type TheaterZoneSeverity =
+  (typeof TheaterZoneSeverity)[keyof typeof TheaterZoneSeverity];
+
+export const TheaterZoneSeverity = {
+  WATCH: "WATCH",
+  WARNING: "WARNING",
+  CRITICAL: "CRITICAL",
+} as const;
+
+export interface TheaterZone {
+  id: string;
+  name: string;
+  severity: TheaterZoneSeverity;
+  /** Free-form classification (e.g. no_fly, contested_corridor, humanitarian, custom) */
+  kind: string;
+  /** Closed polygon as an array of [longitude, latitude] pairs. */
+  polygon: number[][];
+  /** @nullable */
+  notes?: string | null;
+  /** @nullable */
+  createdBy?: string | null;
+  createdAt: string;
+}
+
+export type CreateTheaterZoneInputSeverity =
+  (typeof CreateTheaterZoneInputSeverity)[keyof typeof CreateTheaterZoneInputSeverity];
+
+export const CreateTheaterZoneInputSeverity = {
+  WATCH: "WATCH",
+  WARNING: "WARNING",
+  CRITICAL: "CRITICAL",
+} as const;
+
+export interface CreateTheaterZoneInput {
+  name: string;
+  severity?: CreateTheaterZoneInputSeverity;
+  kind?: string;
+  polygon: number[][];
+  /** @nullable */
+  notes?: string | null;
+  /** @nullable */
+  createdBy?: string | null;
+}
+
 /**
  * Threat tier derived from risk score and open alert severity
  */
@@ -191,6 +235,8 @@ export interface NetworkSnapshot {
   shipments: InFlightShipment[];
   riskByNode: NetworkSnapshotRiskByNodeItem[];
   threats: ThreatOverlay[];
+  /** Operator-drawn theater zones (no-fly, contested corridor, humanitarian AO, etc.). */
+  zones?: TheaterZone[];
   /** Polygon (lon,lat pairs) outlining the USINDOPACOM area of responsibility */
   aorBoundary?: number[][];
   /** @nullable */
@@ -546,6 +592,8 @@ export type EventParametersItemSkew = { [key: string]: number };
  */
 export interface EventParameters {
   affectedNodes?: string[];
+  /** Operator-drawn theater zone IDs. The runner expands these into affected nodes (any node inside any referenced zone) and applies route delays/reliability hits to routes crossing them. */
+  zoneIds?: string[];
   encounterMultiplier?: number;
   populationMultiplier?: number;
   wasteMultiplier?: number;

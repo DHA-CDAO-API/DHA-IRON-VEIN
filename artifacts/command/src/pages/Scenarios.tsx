@@ -8,9 +8,12 @@ import {
   usePromoteRecommendationToOrder,
   getGetScenarioQueryOptions,
   getListScenariosQueryKey,
+  useListTheaterZones,
+  getListTheaterZonesQueryKey,
   type PresetEvent,
   type Recommendation,
   type ScenarioResult,
+  type TheaterZone,
   type Node as NetworkNode,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -70,6 +73,7 @@ type CustomBuilderState = {
   kind: string;
   summary: string;
   affectedNodes: string[];
+  zoneIds: string[];
   populationMultiplier: number;
   encounterMultiplier: number;
   wasteMultiplier: number;
@@ -83,12 +87,19 @@ const DEFAULT_BUILDER: CustomBuilderState = {
   kind: "custom",
   summary: "Operator-authored perturbation across selected nodes.",
   affectedNodes: [],
+  zoneIds: [],
   populationMultiplier: 1.1,
   encounterMultiplier: 1.5,
   wasteMultiplier: 1.2,
   routeDelayDays: 3,
   routeReliabilityDelta: -0.2,
   horizonDays: 21,
+};
+
+const ZONE_SEVERITY_COLOR: Record<string, [number, number, number]> = {
+  WATCH: [232, 168, 76],
+  WARNING: [232, 120, 76],
+  CRITICAL: [220, 64, 76],
 };
 
 const KIND_OPTIONS: Array<{ value: string; label: string }> = [
@@ -142,6 +153,7 @@ function builderFromSavedDetail(
     routeDelayDays: p.routeDelayDays ?? prev.routeDelayDays,
     routeReliabilityDelta: p.routeReliabilityDelta ?? prev.routeReliabilityDelta,
     horizonDays: detail.inputs?.horizonDays ?? prev.horizonDays,
+    zoneIds: (detail as any).zoneIds ?? prev.zoneIds,
   };
 }
 
@@ -149,6 +161,9 @@ export default function Scenarios() {
   const { data: presets, isLoading: presetsLoading } = useListPresetEvents();
   const { data: scenarios, isLoading: scenariosLoading } = useListScenarios();
   const { data: nodes } = useListNodes();
+  const { data: zones = [] } = useListTheaterZones({
+    query: { queryKey: getListTheaterZonesQueryKey() },
+  });
   const runScenario = useRunScenario();
   const previewScenario = usePreviewScenario();
   const queryClient = useQueryClient();
@@ -263,8 +278,8 @@ export default function Scenarios() {
       setError("Name your scenario before saving.");
       return;
     }
-    if (builder.affectedNodes.length === 0) {
-      setError("Select at least one affected node.");
+    if (builder.affectedNodes.length === 0 && builder.zoneIds.length === 0) {
+      setError("Select at least one affected node or theater zone.");
       return;
     }
     const perturbation: Perturbation = {
@@ -283,6 +298,7 @@ export default function Scenarios() {
           summary: builder.summary.trim() || undefined,
           horizonDays: builder.horizonDays,
           perturbation,
+          zoneIds: builder.zoneIds.length > 0 ? builder.zoneIds : undefined,
           generateBrief: true,
         } as Parameters<typeof runScenario.mutateAsync>[0]["data"],
       })) as ScenarioResult;
@@ -377,13 +393,19 @@ export default function Scenarios() {
           state={builder}
           onChange={setBuilder}
           nodes={focusableNodes}
+          zones={zones as TheaterZone[]}
           isSaving={
+            runScenario.isPending &&
+            !runScenario.variables?.data?.presetEventId
+          }
+          isRunning={
             runScenario.isPending &&
             !runScenario.variables?.data?.presetEventId
           }
           isPreviewing={previewScenario.isPending}
           savedAt={savedAt}
           onSave={handleSaveCustom}
+          onRun={() => {}}
         />
       </div>
 
@@ -576,16 +598,22 @@ function CustomBuilder({
   state,
   onChange,
   nodes,
+  zones,
   onSave,
+  onRun,
   isSaving,
+  isRunning,
   isPreviewing,
   savedAt,
 }: {
   state: CustomBuilderState;
   onChange: (next: CustomBuilderState) => void;
   nodes: NetworkNode[];
+  zones: TheaterZone[];
   onSave: () => void;
+  onRun: () => void;
   isSaving: boolean;
+  isRunning: boolean;
   isPreviewing: boolean;
   savedAt: number | null;
 }) {
@@ -599,6 +627,14 @@ function CustomBuilder({
     update(
       "affectedNodes",
       has ? state.affectedNodes.filter((n) => n !== id) : [...state.affectedNodes, id],
+    );
+  };
+
+  const toggleZone = (id: string) => {
+    const has = state.zoneIds.includes(id);
+    update(
+      "zoneIds",
+      has ? state.zoneIds.filter((z) => z !== id) : [...state.zoneIds, id],
     );
   };
 
@@ -660,6 +696,52 @@ function CustomBuilder({
                     <span className="truncate">{n.name}</span>
                     <span className="shrink-0 text-[10px] uppercase opacity-60">
                       {n.type}
+                    </span>
+                  </button>
+                );
+              })
+            )}
+          </div>
+        </div>
+
+        <div className="space-y-1.5">
+          <Label className="text-xs">
+            Theater Zones ({state.zoneIds.length})
+          </Label>
+          <div className="max-h-28 overflow-y-auto rounded-md border border-border bg-background/50 p-1.5 space-y-0.5">
+            {zones.length === 0 ? (
+              <div className="text-[11px] text-muted-foreground px-1 py-1 italic">
+                Draw zones on the Network Map to make them selectable here.
+              </div>
+            ) : (
+              zones.map((z) => {
+                const checked = state.zoneIds.includes(z.id);
+                const c =
+                  ZONE_SEVERITY_COLOR[z.severity] ?? ZONE_SEVERITY_COLOR.WATCH;
+                return (
+                  <button
+                    type="button"
+                    key={z.id}
+                    onClick={() => toggleZone(z.id)}
+                    className={cn(
+                      "w-full text-left px-1.5 py-1 rounded text-[11px] flex items-center justify-between gap-2",
+                      checked
+                        ? "bg-primary/15 text-primary"
+                        : "hover:bg-muted/40 text-muted-foreground",
+                    )}
+                  >
+                    <span className="flex items-center gap-1.5 min-w-0">
+                      <span
+                        className="inline-block h-2 w-2 rounded-sm border shrink-0"
+                        style={{
+                          backgroundColor: `rgba(${c[0]}, ${c[1]}, ${c[2]}, 0.5)`,
+                          borderColor: `rgb(${c[0]}, ${c[1]}, ${c[2]})`,
+                        }}
+                      />
+                      <span className="truncate">{z.name}</span>
+                    </span>
+                    <span className="shrink-0 text-[9px] font-mono uppercase opacity-70">
+                      {z.severity}
                     </span>
                   </button>
                 );

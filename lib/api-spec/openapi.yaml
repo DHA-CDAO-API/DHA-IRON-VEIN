@@ -104,13 +104,54 @@ paths:
     get:
       operationId: getNetworkSnapshot
       tags: [network]
-      description: Live network snapshot — nodes, routes, in-flight shipments, threat overlays, and per-node risk score.
+      description: Live network snapshot — nodes, routes, in-flight shipments, threat overlays, theater zones, and per-node risk score.
       responses:
         "200":
           description: ok
           content:
             application/json:
               schema: { $ref: "#/components/schemas/NetworkSnapshot" }
+
+  /network/zones:
+    get:
+      operationId: listTheaterZones
+      tags: [network]
+      description: List operator-drawn theater zones (no-fly boxes, contested corridors, humanitarian AOs).
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/TheaterZone" }
+    post:
+      operationId: createTheaterZone
+      tags: [network]
+      description: Persist a new operator-drawn theater zone.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateTheaterZoneInput" }
+      responses:
+        "201":
+          description: created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TheaterZone" }
+  /network/zones/{zoneId}:
+    delete:
+      operationId: deleteTheaterZone
+      tags: [network]
+      parameters:
+        - in: path
+          name: zoneId
+          required: true
+          schema: { type: string }
+      responses:
+        "204":
+          description: deleted
 
   /sites:
     get:
@@ -707,6 +748,45 @@ components:
             type: array
             items: { type: number }
 
+    TheaterZone:
+      type: object
+      required: [id, name, severity, kind, polygon, createdAt]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        severity:
+          type: string
+          enum: [WATCH, WARNING, CRITICAL]
+        kind:
+          type: string
+          description: "Free-form classification (e.g. no_fly, contested_corridor, humanitarian, custom)"
+        polygon:
+          type: array
+          description: Closed polygon as an array of [longitude, latitude] pairs.
+          items:
+            type: array
+            items: { type: number }
+        notes: { type: ["string", "null"] }
+        createdBy: { type: ["string", "null"] }
+        createdAt: { type: string, format: date-time }
+
+    CreateTheaterZoneInput:
+      type: object
+      required: [name, polygon]
+      properties:
+        name: { type: string }
+        severity:
+          type: string
+          enum: [WATCH, WARNING, CRITICAL]
+        kind: { type: string }
+        polygon:
+          type: array
+          items:
+            type: array
+            items: { type: number }
+        notes: { type: ["string", "null"] }
+        createdBy: { type: ["string", "null"] }
+
     NetworkSnapshot:
       type: object
       required: [nodes, routes, shipments, riskByNode, threats, generatedAt, focusedHubId]
@@ -757,6 +837,10 @@ components:
         threats:
           type: array
           items: { $ref: "#/components/schemas/ThreatOverlay" }
+        zones:
+          type: array
+          description: Operator-drawn theater zones (no-fly, contested corridor, humanitarian AO, etc.).
+          items: { $ref: "#/components/schemas/TheaterZone" }
         aorBoundary:
           type: array
           description: Polygon (lon,lat pairs) outlining the USINDOPACOM area of responsibility
@@ -1049,6 +1133,10 @@ components:
       properties:
         affectedNodes:
           type: array
+          items: { type: string }
+        zoneIds:
+          type: array
+          description: Operator-drawn theater zone IDs. The runner expands these into affected nodes (any node inside any referenced zone) and applies route delays/reliability hits to routes crossing them.
           items: { type: string }
         encounterMultiplier: { type: number }
         populationMultiplier: { type: number }

@@ -6,8 +6,10 @@ import {
   appSettings,
   activityEntries,
   recommendations as recsTable,
+  theaterZones,
+  nodes as nodesTable,
 } from "@workspace/db";
-import { asc, desc, eq } from "drizzle-orm";
+import { asc, desc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { loadSimContext } from "../lib/ctx";
 import {
@@ -17,6 +19,79 @@ import {
   type SimSupplier,
 } from "@workspace/sim";
 import { completeChat, resolveModel, SCENARIO_BRIEF_SYSTEM } from "@workspace/ai-orchestrator";
+
+// Ray-casting point-in-polygon test. Polygon is a list of [lon, lat] pairs.
+function pointInPolygon(lon: number, lat: number, polygon: number[][]): boolean {
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const xi = polygon[i][0];
+    const yi = polygon[i][1];
+    const xj = polygon[j][0];
+    const yj = polygon[j][1];
+    const intersect =
+      yi > lat !== yj > lat &&
+      lon < ((xj - xi) * (lat - yi)) / (yj - yi + 1e-12) + xi;
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+
+// Expand `zoneIds` referenced in a scenario perturbation into the set of
+// network nodes that fall inside any of those zones, and apply default
+// route delays/reliability hits if not already set. Mutates `perturbation`
+// in place and returns the list of zone names matched (for logging/UI).
+async function expandZonesIntoPerturbation(
+  perturbation: Record<string, unknown>,
+): Promise<{ matchedZoneNames: string[]; addedNodeIds: string[] }> {
+  const zoneIds = Array.isArray(perturbation.zoneIds)
+    ? (perturbation.zoneIds as unknown[]).filter((x): x is string => typeof x === "string")
+    : [];
+  if (zoneIds.length === 0) return { matchedZoneNames: [], addedNodeIds: [] };
+
+  const [zoneRows, allNodes] = await Promise.all([
+    db.select().from(theaterZones).where(inArray(theaterZones.id, zoneIds)),
+    db.select().from(nodesTable),
+  ]);
+
+  const insideNodeIds = new Set<string>();
+  for (const z of zoneRows) {
+    const poly = (z.polygon ?? []) as number[][];
+    if (poly.length < 3) continue;
+    for (const n of allNodes) {
+      if (pointInPolygon(n.longitude, n.latitude, poly)) insideNodeIds.add(n.id);
+    }
+  }
+
+  const existing = Array.isArray(perturbation.affectedNodes)
+    ? (perturbation.affectedNodes as unknown[]).filter((x): x is string => typeof x === "string")
+    : [];
+  const merged = Array.from(new Set([...existing, ...insideNodeIds]));
+  perturbation.affectedNodes = merged;
+
+  // Default route delay/reliability hit for the worst severity in matched zones,
+  // unless the operator already specified explicit values.
+  const worstSeverity = zoneRows.reduce<string>((acc, z) => {
+    const order: Record<string, number> = { WATCH: 1, WARNING: 2, CRITICAL: 3 };
+    return (order[z.severity] ?? 0) > (order[acc] ?? 0) ? z.severity : acc;
+  }, "WATCH");
+  const sevDefaults: Record<string, { delay: number; reliab: number }> = {
+    WATCH: { delay: 1, reliab: -0.1 },
+    WARNING: { delay: 2, reliab: -0.2 },
+    CRITICAL: { delay: 4, reliab: -0.35 },
+  };
+  const def = sevDefaults[worstSeverity] ?? sevDefaults.WATCH;
+  if (perturbation.routeDelayDays === undefined || perturbation.routeDelayDays === null) {
+    perturbation.routeDelayDays = def.delay;
+  }
+  if (perturbation.routeReliabilityDelta === undefined || perturbation.routeReliabilityDelta === null) {
+    perturbation.routeReliabilityDelta = def.reliab;
+  }
+
+  return {
+    matchedZoneNames: zoneRows.map((z) => z.name),
+    addedNodeIds: Array.from(insideNodeIds),
+  };
+}
 
 const router: IRouter = Router();
 
@@ -153,6 +228,7 @@ const RunScenarioInput = z.object({
   description: z.string().nullish(),
   summary: z.string().optional(),
   focusNodeIds: z.array(z.string()).optional(),
+  zoneIds: z.array(z.string()).optional(),
   perturbation: z.record(z.unknown()).optional(),
   horizonDays: z.number().int().positive().max(45).optional(),
   generateBrief: z.boolean().optional(),
@@ -230,7 +306,16 @@ router.post("/scenarios", async (req, res, next) => {
     };
 
     const ctx = await loadSimContext();
-    let perturbation = body.perturbation ?? {};
+    let perturbation: Record<string, unknown> = (body.perturbation as Record<string, unknown>) ?? {};
+    // Allow zoneIds to be passed at the top level of the request as a
+    // convenience; merge them into the perturbation alongside any zoneIds
+    // the perturbation may already carry.
+    if (raw.zoneIds && raw.zoneIds.length > 0) {
+      const existing = Array.isArray(perturbation.zoneIds)
+        ? (perturbation.zoneIds as string[])
+        : [];
+      perturbation.zoneIds = Array.from(new Set([...existing, ...raw.zoneIds]));
+    }
     let summary = body.summary ?? "";
     let presetMeta: Record<string, unknown> | undefined;
     if (body.presetEventId) {
@@ -239,15 +324,25 @@ router.post("/scenarios", async (req, res, next) => {
         .from(presetEvents)
         .where(eq(presetEvents.id, body.presetEventId));
       if (preset) {
-        const params = preset.parameters as ScenarioRunInput["perturbation"];
-        perturbation = { ...params, ...(body.perturbation ?? {}) };
+        const params = preset.parameters as Record<string, unknown>;
+        perturbation = { ...params, ...perturbation };
         summary = summary || preset.summary;
         presetMeta = { presetEventId: preset.id, presetName: preset.name };
       }
     }
 
+    // Resolve any operator-drawn theater zones into affected nodes before
+    // handing the perturbation to the simulator.
+    const zoneExpansion = await expandZonesIntoPerturbation(perturbation);
+    if (zoneExpansion.matchedZoneNames.length > 0 && !summary) {
+      summary = `Operator zone perturbation: ${zoneExpansion.matchedZoneNames.join(", ")}`;
+    }
+
     const horizonDays = Math.max(1, Math.min(45, body.horizonDays ?? 21));
-    const result = runScenario(ctx.ctx, { horizonDays, perturbation });
+    const result = runScenario(ctx.ctx, {
+      horizonDays,
+      perturbation: perturbation as ScenarioRunInput["perturbation"],
+    });
 
     let coaBrief = "";
     let aiProvider = "openai";

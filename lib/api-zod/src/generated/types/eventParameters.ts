@@ -12,6 +12,8 @@ import type { EventParametersItemSkew } from "./eventParametersItemSkew";
  */
 export interface EventParameters {
   affectedNodes?: string[];
+  /** Operator-drawn theater zone IDs. The runner expands these into affected nodes (any node inside any referenced zone) and applies route delays/reliability hits to routes crossing them. */
+  zoneIds?: string[];
   encounterMultiplier?: number;
   populationMultiplier?: number;
   wasteMultiplier?: number;

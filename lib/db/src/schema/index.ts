@@ -12,3 +12,4 @@ export * from "./settings";
 export * from "./profile";
 export * from "./activity";
 export * from "./operational";
+export * from "./theater_zones";

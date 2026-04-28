@@ -7,12 +7,20 @@ import {
   useAcknowledgeAlert,
   getListAlertsQueryKey,
   useCreateOrder,
+  useListTheaterZones,
+  useCreateTheaterZone,
+  useDeleteTheaterZone,
+  getListTheaterZonesQueryKey,
 } from '@workspace/api-client-react';
 import NetworkGLMap, {
   type SupplyCategory,
   type ThreatTier,
+  type ZoneDrawMode,
+  type ZoneSeverity,
+  type TheaterZone,
   TIER_COLOR,
   TIER_LABEL,
+  ZONE_SEVERITY_COLOR,
   tierForRisk,
 } from '@/components/Map';
 import { Card, CardContent } from '@/components/ui/card';
@@ -20,6 +28,15 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import {
   Activity,
   AlertTriangle,
@@ -29,11 +46,16 @@ import {
   Clock,
   Droplets,
   ExternalLink,
+  Hexagon,
   Layers,
+  MapPin,
   Package,
+  Pencil,
   Plane,
   ShieldAlert,
   ShieldCheck,
+  Square,
+  Trash2,
   Truck,
   X,
 } from 'lucide-react';
@@ -104,10 +126,72 @@ export default function NetworkMapPage() {
   const [selectedCats, setSelectedCats] = useState<Set<SupplyCategory>>(new Set());
   const [showThreats, setShowThreats] = useState(true);
   const [showAOR, setShowAOR] = useState(true);
+  const [showZones, setShowZones] = useState(true);
 
   // Active popup
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [selectedShipmentId, setSelectedShipmentId] = useState<string | null>(null);
+
+  // Zone state
+  const { data: zones = [] } = useListTheaterZones({
+    query: { queryKey: getListTheaterZonesQueryKey() },
+  });
+  const createZone = useCreateTheaterZone();
+  const deleteZone = useDeleteTheaterZone();
+
+  const [drawMode, setDrawMode] = useState<ZoneDrawMode>(null);
+  const [draftPolygon, setDraftPolygon] = useState<number[][] | null>(null);
+  const [draftVertexCount, setDraftVertexCount] = useState(0);
+  const [draftSeverity, setDraftSeverity] = useState<ZoneSeverity>('WARNING');
+  const [draftName, setDraftName] = useState('');
+  const [draftNotes, setDraftNotes] = useState('');
+
+  const cancelDraw = () => {
+    setDrawMode(null);
+    setDraftPolygon(null);
+    setDraftVertexCount(0);
+  };
+
+  const handleZoneDrawn = (polygon: number[][]) => {
+    setDrawMode(null);
+    setDraftPolygon(polygon);
+    setDraftName('');
+    setDraftNotes('');
+  };
+
+  const handleSaveZone = async () => {
+    if (!draftPolygon) return;
+    const name = draftName.trim() || `Zone ${zones.length + 1}`;
+    try {
+      await createZone.mutateAsync({
+        data: {
+          name,
+          severity: draftSeverity,
+          kind: 'AD_HOC',
+          polygon: draftPolygon,
+          notes: draftNotes.trim() || undefined,
+          createdBy: 'Operator',
+        } as any,
+      });
+      queryClient.invalidateQueries({ queryKey: getListTheaterZonesQueryKey() });
+      queryClient.invalidateQueries({ queryKey: getGetNetworkSnapshotQueryKey() });
+      setDraftPolygon(null);
+      setDraftName('');
+      setDraftNotes('');
+    } catch (err) {
+      console.error('failed to save zone', err);
+    }
+  };
+
+  const handleDeleteZone = async (zoneId: string) => {
+    try {
+      await deleteZone.mutateAsync({ zoneId });
+      queryClient.invalidateQueries({ queryKey: getListTheaterZonesQueryKey() });
+      queryClient.invalidateQueries({ queryKey: getGetNetworkSnapshotQueryKey() });
+    } catch (err) {
+      console.error('failed to delete zone', err);
+    }
+  };
 
   const riskByNodeMap = useMemo(
     () => new Map((snapshot?.riskByNode ?? []).map((r: any) => [r.nodeId, r])),
@@ -259,6 +343,16 @@ export default function NetworkMapPage() {
                   USINDOPACOM AOR boundary
                 </Label>
               </div>
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="layer-zones"
+                  checked={showZones}
+                  onCheckedChange={(v) => setShowZones(!!v)}
+                />
+                <Label htmlFor="layer-zones" className="text-xs cursor-pointer">
+                  Theater zones ({zones.length})
+                </Label>
+              </div>
             </div>
 
             <div className="border-t border-border pt-2 grid grid-cols-3 gap-1 text-[10px] font-mono uppercase tracking-wider">
@@ -266,6 +360,124 @@ export default function NetworkMapPage() {
               <TierPill tier="heightened" count={tierCounts.heightened} />
               <TierPill tier="nominal" count={tierCounts.nominal} />
             </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Theater Zones panel */}
+      <div className="absolute bottom-4 left-4 z-10 w-72 pointer-events-auto">
+        <Card className="bg-card/85 backdrop-blur-md border-border shadow-2xl">
+          <CardContent className="p-4 flex flex-col gap-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Pencil className="h-4 w-4 text-primary" />
+                <h3 className="font-semibold text-sm tracking-wider uppercase text-muted-foreground">
+                  Theater Zones
+                </h3>
+              </div>
+              {drawMode !== null && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-6 px-2 text-[10px] font-mono uppercase tracking-wider text-rose-300"
+                  onClick={cancelDraw}
+                >
+                  Cancel
+                </Button>
+              )}
+            </div>
+
+            {drawMode === null ? (
+              <div className="flex flex-col gap-2">
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="flex-1 justify-start"
+                    onClick={() => setDrawMode('rectangle')}
+                  >
+                    <Square className="h-3.5 w-3.5 mr-2" />
+                    Rectangle
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="flex-1 justify-start"
+                    onClick={() => setDrawMode('polygon')}
+                  >
+                    <Hexagon className="h-3.5 w-3.5 mr-2" />
+                    Polygon
+                  </Button>
+                </div>
+
+                <div className="flex flex-col gap-1 max-h-44 overflow-y-auto -mr-1 pr-1">
+                  {zones.length === 0 ? (
+                    <div className="text-[11px] text-muted-foreground italic px-1 py-2">
+                      No ad-hoc zones drawn yet. Use Rectangle or Polygon to add one.
+                    </div>
+                  ) : (
+                    zones.map((z: TheaterZone) => {
+                      const c = ZONE_SEVERITY_COLOR[z.severity as ZoneSeverity];
+                      return (
+                        <div
+                          key={z.id}
+                          className="flex items-center justify-between gap-2 rounded border border-transparent hover:border-border hover:bg-muted/30 px-2 py-1"
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span
+                              className="inline-block h-2.5 w-2.5 rounded-sm border"
+                              style={{
+                                backgroundColor: `rgba(${c[0]}, ${c[1]}, ${c[2]}, 0.5)`,
+                                borderColor: `rgb(${c[0]}, ${c[1]}, ${c[2]})`,
+                              }}
+                            />
+                            <span className="text-xs truncate" title={z.name}>
+                              {z.name}
+                            </span>
+                            <span className="font-mono text-[9px] uppercase tracking-widest text-muted-foreground">
+                              {z.severity}
+                            </span>
+                          </div>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-6 w-6 text-muted-foreground hover:text-rose-300"
+                            onClick={() => handleDeleteZone(z.id)}
+                            disabled={deleteZone.isPending}
+                            aria-label={`Delete zone ${z.name}`}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-2 text-[11px] text-muted-foreground">
+                <div className="flex items-center gap-1.5 text-primary">
+                  <MapPin className="h-3 w-3" />
+                  <span className="font-mono uppercase tracking-widest">
+                    {drawMode === 'rectangle' ? 'Rectangle mode' : 'Polygon mode'}
+                  </span>
+                </div>
+                {drawMode === 'rectangle' ? (
+                  <div>
+                    Click <strong>two opposite corners</strong> on the map to define the
+                    zone.
+                  </div>
+                ) : (
+                  <div>
+                    Click on the map to add vertices. <strong>Double-click</strong> to
+                    finish (need at least 3 points).
+                  </div>
+                )}
+                <div className="font-mono text-[10px]">
+                  Vertices placed: {draftVertexCount}
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -279,6 +491,11 @@ export default function NetworkMapPage() {
           riskByNode={snapshot?.riskByNode as any}
           threats={snapshot?.threats as any}
           aorBoundary={(snapshot as any)?.aorBoundary}
+          zones={zones as TheaterZone[]}
+          showZones={showZones}
+          drawMode={drawMode}
+          onZoneDrawn={handleZoneDrawn}
+          onDraftChange={(v) => setDraftVertexCount(v.length)}
           selectedCategories={selectedCats}
           showThreats={showThreats}
           showAOR={showAOR}
@@ -292,6 +509,89 @@ export default function NetworkMapPage() {
           }}
         />
       </div>
+
+      {/* Save zone dialog */}
+      <Dialog
+        open={draftPolygon !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDraftPolygon(null);
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-[420px]">
+          <DialogHeader>
+            <DialogTitle>Label theater zone</DialogTitle>
+            <DialogDescription>
+              Give the zone a callsign and severity. It will be visible to every operator
+              and selectable in scenarios.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex flex-col gap-3 py-2">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="zone-name" className="text-xs uppercase tracking-wider">
+                Name
+              </Label>
+              <Input
+                id="zone-name"
+                placeholder="e.g. Taiwan Strait WEZ"
+                value={draftName}
+                onChange={(e) => setDraftName(e.target.value)}
+                autoFocus
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label className="text-xs uppercase tracking-wider">Severity</Label>
+              <div className="grid grid-cols-3 gap-2">
+                {(['WATCH', 'WARNING', 'CRITICAL'] as ZoneSeverity[]).map((s) => {
+                  const c = ZONE_SEVERITY_COLOR[s];
+                  const active = draftSeverity === s;
+                  return (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => setDraftSeverity(s)}
+                      className={`rounded border px-2 py-1.5 text-[11px] font-mono uppercase tracking-widest transition ${
+                        active ? 'ring-2 ring-primary' : 'hover:bg-muted/40'
+                      }`}
+                      style={{
+                        borderColor: `rgb(${c[0]}, ${c[1]}, ${c[2]})`,
+                        backgroundColor: active
+                          ? `rgba(${c[0]}, ${c[1]}, ${c[2]}, 0.18)`
+                          : 'transparent',
+                        color: `rgb(${c[0]}, ${c[1]}, ${c[2]})`,
+                      }}
+                    >
+                      {s}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="zone-notes" className="text-xs uppercase tracking-wider">
+                Notes (optional)
+              </Label>
+              <Input
+                id="zone-notes"
+                placeholder="Intent, ROE, expected duration…"
+                value={draftNotes}
+                onChange={(e) => setDraftNotes(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setDraftPolygon(null)}>
+              Discard
+            </Button>
+            <Button onClick={handleSaveZone} disabled={createZone.isPending}>
+              {createZone.isPending ? 'Saving…' : 'Save zone'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Site popup card */}
       {selectedNode && (

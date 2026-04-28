@@ -9,6 +9,7 @@ import type { InFlightShipment } from "./inFlightShipment";
 import type { NetworkSnapshotRiskByNodeItem } from "./networkSnapshotRiskByNodeItem";
 import type { Node } from "./node";
 import type { Route } from "./route";
+import type { TheaterZone } from "./theaterZone";
 import type { ThreatOverlay } from "./threatOverlay";
 
 export interface NetworkSnapshot {
@@ -18,6 +19,8 @@ export interface NetworkSnapshot {
   shipments: InFlightShipment[];
   riskByNode: NetworkSnapshotRiskByNodeItem[];
   threats: ThreatOverlay[];
+  /** Operator-drawn theater zones (no-fly, contested corridor, humanitarian AO, etc.). */
+  zones?: TheaterZone[];
   /** Polygon (lon,lat pairs) outlining the USINDOPACOM area of responsibility */
   aorBoundary?: number[][];
   /** @nullable */

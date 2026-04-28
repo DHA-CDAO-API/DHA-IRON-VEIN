@@ -98,7 +98,7 @@ export const ListRoutesResponseItem = zod.object({
 export const ListRoutesResponse = zod.array(ListRoutesResponseItem);
 
 /**
- * Live network snapshot — nodes, routes, in-flight shipments, threat overlays, and per-node risk score.
+ * Live network snapshot — nodes, routes, in-flight shipments, threat overlays, theater zones, and per-node risk score.
  */
 export const GetNetworkSnapshotResponse = zod.object({
   generatedAt: zod.coerce.date(),
@@ -194,6 +194,31 @@ export const GetNetworkSnapshotResponse = zod.object({
       polygon: zod.array(zod.array(zod.number())),
     }),
   ),
+  zones: zod
+    .array(
+      zod.object({
+        id: zod.string(),
+        name: zod.string(),
+        severity: zod.enum(["WATCH", "WARNING", "CRITICAL"]),
+        kind: zod
+          .string()
+          .describe(
+            "Free-form classification (e.g. no_fly, contested_corridor, humanitarian, custom)",
+          ),
+        polygon: zod
+          .array(zod.array(zod.number()))
+          .describe(
+            "Closed polygon as an array of [longitude, latitude] pairs.",
+          ),
+        notes: zod.string().nullish(),
+        createdBy: zod.string().nullish(),
+        createdAt: zod.coerce.date(),
+      }),
+    )
+    .optional()
+    .describe(
+      "Operator-drawn theater zones (no-fly, contested corridor, humanitarian AO, etc.).",
+    ),
   aorBoundary: zod
     .array(zod.array(zod.number()))
     .optional()
@@ -202,6 +227,43 @@ export const GetNetworkSnapshotResponse = zod.object({
     ),
   focusedHubId: zod.string().nullable(),
   operationalState: zod.string().optional(),
+});
+
+/**
+ * List operator-drawn theater zones (no-fly boxes, contested corridors, humanitarian AOs).
+ */
+export const ListTheaterZonesResponseItem = zod.object({
+  id: zod.string(),
+  name: zod.string(),
+  severity: zod.enum(["WATCH", "WARNING", "CRITICAL"]),
+  kind: zod
+    .string()
+    .describe(
+      "Free-form classification (e.g. no_fly, contested_corridor, humanitarian, custom)",
+    ),
+  polygon: zod
+    .array(zod.array(zod.number()))
+    .describe("Closed polygon as an array of [longitude, latitude] pairs."),
+  notes: zod.string().nullish(),
+  createdBy: zod.string().nullish(),
+  createdAt: zod.coerce.date(),
+});
+export const ListTheaterZonesResponse = zod.array(ListTheaterZonesResponseItem);
+
+/**
+ * Persist a new operator-drawn theater zone.
+ */
+export const CreateTheaterZoneBody = zod.object({
+  name: zod.string(),
+  severity: zod.enum(["WATCH", "WARNING", "CRITICAL"]).optional(),
+  kind: zod.string().optional(),
+  polygon: zod.array(zod.array(zod.number())),
+  notes: zod.string().nullish(),
+  createdBy: zod.string().nullish(),
+});
+
+export const DeleteTheaterZoneParams = zod.object({
+  zoneId: zod.coerce.string(),
 });
 
 export const ListSitesResponseItem = zod.object({
@@ -832,6 +894,12 @@ export const RunScenarioBody = zod.object({
   perturbation: zod
     .object({
       affectedNodes: zod.array(zod.string()).optional(),
+      zoneIds: zod
+        .array(zod.string())
+        .optional()
+        .describe(
+          "Operator-drawn theater zone IDs. The runner expands these into affected nodes (any node inside any referenced zone) and applies route delays\/reliability hits to routes crossing them.",
+        ),
       encounterMultiplier: zod.number().optional(),
       populationMultiplier: zod.number().optional(),
       wasteMultiplier: zod.number().optional(),
@@ -1013,6 +1081,12 @@ export const PreviewScenarioBody = zod.object({
   perturbation: zod
     .object({
       affectedNodes: zod.array(zod.string()).optional(),
+      zoneIds: zod
+        .array(zod.string())
+        .optional()
+        .describe(
+          "Operator-drawn theater zone IDs. The runner expands these into affected nodes (any node inside any referenced zone) and applies route delays\/reliability hits to routes crossing them.",
+        ),
       encounterMultiplier: zod.number().optional(),
       populationMultiplier: zod.number().optional(),
       wasteMultiplier: zod.number().optional(),
@@ -1111,6 +1185,12 @@ export const ListPresetEventsResponseItem = zod.object({
   parameters: zod
     .object({
       affectedNodes: zod.array(zod.string()).optional(),
+      zoneIds: zod
+        .array(zod.string())
+        .optional()
+        .describe(
+          "Operator-drawn theater zone IDs. The runner expands these into affected nodes (any node inside any referenced zone) and applies route delays\/reliability hits to routes crossing them.",
+        ),
       encounterMultiplier: zod.number().optional(),
       populationMultiplier: zod.number().optional(),
       wasteMultiplier: zod.number().optional(),

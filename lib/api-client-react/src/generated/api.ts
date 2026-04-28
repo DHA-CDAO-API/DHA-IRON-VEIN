@@ -26,6 +26,7 @@ import type {
   ConversationDetail,
   CreateConversationInput,
   CreateOrderInput,
+  CreateTheaterZoneInput,
   DashboardOverview,
   ForecastInput,
   ForecastResult,
@@ -57,6 +58,7 @@ import type {
   SiteDetail,
   SiteSummary,
   Supplier,
+  TheaterZone,
   UpdateOrderStatusInput,
   UpdateProfileInput,
   UpdateSettingsInput,
@@ -489,7 +491,7 @@ export function useListRoutes<
 }
 
 /**
- * Live network snapshot — nodes, routes, in-flight shipments, threat overlays, and per-node risk score.
+ * Live network snapshot — nodes, routes, in-flight shipments, threat overlays, theater zones, and per-node risk score.
  */
 export const getGetNetworkSnapshotUrl = () => {
   return `/api/network/snapshot`;
@@ -558,6 +560,238 @@ export function useGetNetworkSnapshot<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * List operator-drawn theater zones (no-fly boxes, contested corridors, humanitarian AOs).
+ */
+export const getListTheaterZonesUrl = () => {
+  return `/api/network/zones`;
+};
+
+export const listTheaterZones = async (
+  options?: RequestInit,
+): Promise<TheaterZone[]> => {
+  return customFetch<TheaterZone[]>(getListTheaterZonesUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListTheaterZonesQueryKey = () => {
+  return [`/api/network/zones`] as const;
+};
+
+export const getListTheaterZonesQueryOptions = <
+  TData = Awaited<ReturnType<typeof listTheaterZones>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listTheaterZones>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListTheaterZonesQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listTheaterZones>>
+  > = ({ signal }) => listTheaterZones({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listTheaterZones>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListTheaterZonesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listTheaterZones>>
+>;
+export type ListTheaterZonesQueryError = ErrorType<unknown>;
+
+export function useListTheaterZones<
+  TData = Awaited<ReturnType<typeof listTheaterZones>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listTheaterZones>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListTheaterZonesQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Persist a new operator-drawn theater zone.
+ */
+export const getCreateTheaterZoneUrl = () => {
+  return `/api/network/zones`;
+};
+
+export const createTheaterZone = async (
+  createTheaterZoneInput: CreateTheaterZoneInput,
+  options?: RequestInit,
+): Promise<TheaterZone> => {
+  return customFetch<TheaterZone>(getCreateTheaterZoneUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createTheaterZoneInput),
+  });
+};
+
+export const getCreateTheaterZoneMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createTheaterZone>>,
+    TError,
+    { data: BodyType<CreateTheaterZoneInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createTheaterZone>>,
+  TError,
+  { data: BodyType<CreateTheaterZoneInput> },
+  TContext
+> => {
+  const mutationKey = ["createTheaterZone"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createTheaterZone>>,
+    { data: BodyType<CreateTheaterZoneInput> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createTheaterZone(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateTheaterZoneMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createTheaterZone>>
+>;
+export type CreateTheaterZoneMutationBody = BodyType<CreateTheaterZoneInput>;
+export type CreateTheaterZoneMutationError = ErrorType<unknown>;
+
+export const useCreateTheaterZone = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createTheaterZone>>,
+    TError,
+    { data: BodyType<CreateTheaterZoneInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createTheaterZone>>,
+  TError,
+  { data: BodyType<CreateTheaterZoneInput> },
+  TContext
+> => {
+  return useMutation(getCreateTheaterZoneMutationOptions(options));
+};
+
+export const getDeleteTheaterZoneUrl = (zoneId: string) => {
+  return `/api/network/zones/${zoneId}`;
+};
+
+export const deleteTheaterZone = async (
+  zoneId: string,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getDeleteTheaterZoneUrl(zoneId), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDeleteTheaterZoneMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteTheaterZone>>,
+    TError,
+    { zoneId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteTheaterZone>>,
+  TError,
+  { zoneId: string },
+  TContext
+> => {
+  const mutationKey = ["deleteTheaterZone"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteTheaterZone>>,
+    { zoneId: string }
+  > = (props) => {
+    const { zoneId } = props ?? {};
+
+    return deleteTheaterZone(zoneId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteTheaterZoneMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteTheaterZone>>
+>;
+
+export type DeleteTheaterZoneMutationError = ErrorType<unknown>;
+
+export const useDeleteTheaterZone = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteTheaterZone>>,
+    TError,
+    { zoneId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteTheaterZone>>,
+  TError,
+  { zoneId: string },
+  TContext
+> => {
+  return useMutation(getDeleteTheaterZoneMutationOptions(options));
+};
 
 export const getListSitesUrl = () => {
   return `/api/sites`;
