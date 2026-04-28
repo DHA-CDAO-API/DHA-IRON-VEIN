@@ -18,6 +18,7 @@ import dashboardRouter from "./dashboard";
 import activityRouter from "./activity";
 import bloodRouter from "./blood";
 import overviewRouter from "./overview";
+import adminSupplyImportRouter from "./admin-supply-import";
 
 const router: IRouter = Router();
 
@@ -40,5 +41,6 @@ router.use(dashboardRouter);
 router.use(activityRouter);
 router.use(bloodRouter);
 router.use(overviewRouter);
+router.use(adminSupplyImportRouter);
 
 export default router;

@@ -15,3 +15,4 @@ export * from "./operational";
 export * from "./theater_zones";
 export * from "./blood";
 export * from "./snapshots";
+export * from "./supply_demo_v2";
