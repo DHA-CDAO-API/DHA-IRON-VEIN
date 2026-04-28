@@ -750,7 +750,7 @@ paths:
       parameters:
         - in: query
           name: limit
-          schema: { type: integer, default: 20, minimum: 5, maximum: 60 }
+          schema: { type: integer, default: 20, minimum: 5, maximum: 100 }
         - in: query
           name: cursor
           description: ISO timestamp from a previous response's `nextCursor`. Returns items strictly older than this timestamp.

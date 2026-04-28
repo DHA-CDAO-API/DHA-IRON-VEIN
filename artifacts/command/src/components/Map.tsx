@@ -948,7 +948,7 @@ export default function NetworkGLMap(props: NetworkMapProps) {
     // motion-sensitive operator still sees up-to-date trip / node state
     // after a refetch.
     if (!animate && hasWebGL === true) {
-      const deck = deckRef.current;
+      const deck = deckRef.current?.deck;
       if (deck && typeof deck.setProps === 'function') {
         deck.setProps({
           layers: [
@@ -970,7 +970,7 @@ export default function NetworkGLMap(props: NetworkMapProps) {
   useEffect(() => {
     if (hasWebGL !== true) return;
     if (!animate) {
-      const deck = deckRef.current;
+      const deck = deckRef.current?.deck;
       if (deck && typeof deck.setProps === 'function') {
         deck.setProps({
           layers: [
@@ -988,7 +988,11 @@ export default function NetworkGLMap(props: NetworkMapProps) {
       const dt = (now - last) / 1000;
       last = now;
       timeRef.current = (timeRef.current + dt * 90) % TRIP_LENGTH;
-      const deck = deckRef.current;
+      // deck.gl/react v9 exposes a wrapper ref; the underlying Deck
+      // instance (which has `setProps`) lives on `.deck`. Without this
+      // indirection the rAF loop silently no-ops and the map appears
+      // frozen — exactly the regression operators reported.
+      const deck = deckRef.current?.deck;
       if (deck && typeof deck.setProps === 'function') {
         deck.setProps({
           layers: [

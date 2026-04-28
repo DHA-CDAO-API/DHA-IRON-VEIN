@@ -621,7 +621,7 @@ router.get("/overview/cold-chain-pulse", async (req, res, next) => {
 
 router.get("/overview/activity-stream", async (req, res, next) => {
   try {
-    const limit = Math.min(60, Math.max(5, Number(req.query.limit ?? 20) || 20));
+    const limit = Math.min(100, Math.max(5, Number(req.query.limit ?? 20) || 20));
     // Cursor pagination: clients pass back the `nextCursor` value from a
     // previous response (an ISO timestamp) to fetch older items. We pull
     // a wider source window so the merged stream still has `limit` items

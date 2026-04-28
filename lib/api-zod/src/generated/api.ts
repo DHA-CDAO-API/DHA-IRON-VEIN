@@ -2472,7 +2472,7 @@ export const GetOverviewColdChainPulseResponse = zod.object({
 
 export const getOverviewActivityStreamQueryLimitDefault = 20;
 export const getOverviewActivityStreamQueryLimitMin = 5;
-export const getOverviewActivityStreamQueryLimitMax = 60;
+export const getOverviewActivityStreamQueryLimitMax = 100;
 
 export const GetOverviewActivityStreamQueryParams = zod.object({
   limit: zod.coerce

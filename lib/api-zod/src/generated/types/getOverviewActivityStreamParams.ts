@@ -9,7 +9,7 @@
 export type GetOverviewActivityStreamParams = {
   /**
    * @minimum 5
-   * @maximum 60
+   * @maximum 100
    */
   limit?: number;
   /**

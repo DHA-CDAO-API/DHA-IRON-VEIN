@@ -1,7 +1,14 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Activity,
   AlertTriangle,
@@ -21,20 +28,67 @@ import {
 import { tierFromString, TIER_TEXT, TIER_DOT } from "./tier";
 import { usePrefersReducedMotion } from "@/hooks/use-reduced-motion";
 
-const LIMIT = 30;
+// Always pull the largest selectable window from the server so the kind
+// filter has a real population to draw from regardless of the operator's
+// chosen display limit. The OpenAPI contract caps this at 100.
+const FETCH_LIMIT = 100;
+const DEFAULT_DISPLAY_LIMIT = 10;
+const DISPLAY_LIMIT_OPTIONS = [10, 25, 50, 75, 100] as const;
+
+// Kind families surfaced as filter chips. The server-side classifier in
+// /overview/activity-stream collapses raw activity_entries.kind values down
+// to one of these buckets (plus a generic catch-all).
+type KindFamily =
+  | "alert"
+  | "shipment_milestone"
+  | "order_state_change"
+  | "cold_chain_event"
+  | "recommendation_promoted"
+  | "other";
+
+const KIND_FAMILY_META: Record<
+  KindFamily,
+  { label: string; icon: React.ComponentType<{ className?: string }> }
+> = {
+  alert: { label: "Alerts", icon: AlertTriangle },
+  shipment_milestone: { label: "Shipments", icon: Truck },
+  order_state_change: { label: "Orders", icon: ShoppingCart },
+  cold_chain_event: { label: "Cold-chain", icon: Snowflake },
+  recommendation_promoted: { label: "Recs", icon: Sparkles },
+  other: { label: "Other", icon: Activity },
+};
+
+const FILTER_ORDER: KindFamily[] = [
+  "alert",
+  "shipment_milestone",
+  "order_state_change",
+  "cold_chain_event",
+  "recommendation_promoted",
+  "other",
+];
+
+function familyForKind(kind: string): KindFamily {
+  const k = (kind ?? "").toLowerCase();
+  if (k === "alert" || k.startsWith("alert")) return "alert";
+  if (k === "shipment_milestone" || k.startsWith("shipment")) return "shipment_milestone";
+  if (k === "order_state_change" || k.startsWith("order")) return "order_state_change";
+  if (
+    k === "cold_chain_event" ||
+    k.startsWith("cold_chain") ||
+    k.includes("temperature") ||
+    k.includes("excursion")
+  )
+    return "cold_chain_event";
+  if (k === "recommendation_promoted" || k.startsWith("recommend")) return "recommendation_promoted";
+  return "other";
+}
 
 function severityToTier(s: OverviewActivityItemSeverity) {
   return tierFromString(s);
 }
 
 function iconForKind(kind: string) {
-  const k = kind.toLowerCase();
-  if (k.includes("alert")) return AlertTriangle;
-  if (k.includes("ship")) return Truck;
-  if (k.includes("order")) return ShoppingCart;
-  if (k.includes("cold") || k.includes("excursion")) return Snowflake;
-  if (k.includes("recommend")) return Sparkles;
-  return Activity;
+  return KIND_FAMILY_META[familyForKind(kind)].icon;
 }
 
 function fmtZulu(iso: string): string {
@@ -47,7 +101,7 @@ function fmtZulu(iso: string): string {
 }
 
 export function LiveActivityStream() {
-  const params = { limit: LIMIT };
+  const params = { limit: FETCH_LIMIT };
   const queryKey = getGetOverviewActivityStreamQueryKey(params);
   const { data, isLoading } = useGetOverviewActivityStream(params, {
     query: { queryKey },
@@ -55,13 +109,50 @@ export function LiveActivityStream() {
 
   const reducedMotion = usePrefersReducedMotion();
   const [paused, setPaused] = useState(false);
+  const [displayLimit, setDisplayLimit] = useState<number>(DEFAULT_DISPLAY_LIMIT);
+  // An empty set means "all kinds visible" — the chip toolbar is in
+  // include-mode (clicking a chip toggles it on/off).
+  const [activeKinds, setActiveKinds] = useState<Set<KindFamily>>(new Set());
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const offsetRef = useRef(0);
   const rafRef = useRef<number | null>(null);
 
-  // Auto-scroll loop. Skipped entirely when reduced-motion is on or the user
-  // hovers the card; in those cases the stream is just a normal scrollable
-  // list.
+  const allItems = data?.items ?? [];
+
+  // Per-family counts off the full fetched window so the chip badges
+  // don't change as the operator narrows the display.
+  const familyCounts = useMemo(() => {
+    const out: Record<KindFamily, number> = {
+      alert: 0,
+      shipment_milestone: 0,
+      order_state_change: 0,
+      cold_chain_event: 0,
+      recommendation_promoted: 0,
+      other: 0,
+    };
+    for (const it of allItems) out[familyForKind(it.kind)] += 1;
+    return out;
+  }, [allItems]);
+
+  const filteredItems = useMemo(() => {
+    if (activeKinds.size === 0) return allItems;
+    return allItems.filter((it) => activeKinds.has(familyForKind(it.kind)));
+  }, [allItems, activeKinds]);
+
+  const visibleItems = useMemo(
+    () => filteredItems.slice(0, displayLimit),
+    [filteredItems, displayLimit],
+  );
+
+  // Auto-scroll loop. Skipped entirely when reduced-motion is on, the user
+  // hovers the card, or the visible list fits without overflow. Resets the
+  // scroll position whenever the visible item set changes so the loop
+  // restarts from the top instead of jumping to a now-out-of-range offset.
+  useEffect(() => {
+    offsetRef.current = 0;
+    if (scrollRef.current) scrollRef.current.scrollTop = 0;
+  }, [displayLimit, activeKinds, data?.generatedAt]);
+
   useEffect(() => {
     if (reducedMotion) return;
     if (paused) return;
@@ -86,39 +177,113 @@ export function LiveActivityStream() {
     return () => {
       if (rafRef.current != null) window.cancelAnimationFrame(rafRef.current);
     };
-  }, [paused, reducedMotion, data?.generatedAt]);
+  }, [paused, reducedMotion, data?.generatedAt, visibleItems.length]);
 
-  const items = data?.items ?? [];
+  function toggleKind(family: KindFamily) {
+    setActiveKinds((prev) => {
+      const next = new Set(prev);
+      if (next.has(family)) next.delete(family);
+      else next.add(family);
+      return next;
+    });
+  }
+
+  function clearKinds() {
+    setActiveKinds(new Set());
+  }
 
   return (
     <Card
       className="bg-card/50 backdrop-blur border-border h-full flex flex-col"
       data-testid="activity-stream-card"
     >
-      <CardHeader className="pb-2 border-b border-border/50">
-        <div className="flex items-center justify-between gap-2">
+      <CardHeader className="pb-2 border-b border-border/50 space-y-2">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
           <CardTitle className="text-sm font-medium flex items-center gap-2 text-primary">
             <Activity className="h-4 w-4" />
             Live Activity Stream
+            <span className="text-[10px] text-muted-foreground font-mono">
+              · showing {visibleItems.length} of {filteredItems.length}
+              {activeKinds.size > 0 && ` (filtered from ${allItems.length})`}
+            </span>
           </CardTitle>
-          <button
-            type="button"
-            onClick={() => setPaused((p) => !p)}
-            className="text-[10px] uppercase tracking-wider text-muted-foreground hover:text-foreground inline-flex items-center gap-1"
-            data-testid="activity-stream-pause"
-            disabled={reducedMotion}
-            title={reducedMotion ? "Auto-scroll disabled (reduced motion)" : paused ? "Resume" : "Pause"}
-          >
-            {paused || reducedMotion ? (
-              <>
-                <Play className="h-3 w-3" /> {reducedMotion ? "Static" : "Paused"}
-              </>
-            ) : (
-              <>
-                <Pause className="h-3 w-3" /> Auto
-              </>
-            )}
-          </button>
+          <div className="flex items-center gap-2">
+            <label className="text-[10px] uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+              Show
+              <Select
+                value={String(displayLimit)}
+                onValueChange={(v) => setDisplayLimit(Number(v))}
+              >
+                <SelectTrigger
+                  className="h-7 w-[72px] text-xs"
+                  data-testid="activity-stream-limit"
+                  aria-label="Number of activity items to display"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {DISPLAY_LIMIT_OPTIONS.map((n) => (
+                    <SelectItem key={n} value={String(n)} className="text-xs">
+                      {n}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </label>
+            <button
+              type="button"
+              onClick={() => setPaused((p) => !p)}
+              className="text-[10px] uppercase tracking-wider text-muted-foreground hover:text-foreground inline-flex items-center gap-1"
+              data-testid="activity-stream-pause"
+              disabled={reducedMotion}
+              title={
+                reducedMotion
+                  ? "Auto-scroll disabled (reduced motion)"
+                  : paused
+                    ? "Resume"
+                    : "Pause"
+              }
+            >
+              {paused || reducedMotion ? (
+                <>
+                  <Play className="h-3 w-3" /> {reducedMotion ? "Static" : "Paused"}
+                </>
+              ) : (
+                <>
+                  <Pause className="h-3 w-3" /> Auto
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+        <div
+          className="flex items-center gap-1.5 flex-wrap"
+          data-testid="activity-stream-filters"
+        >
+          <FilterChip
+            label="All"
+            count={allItems.length}
+            active={activeKinds.size === 0}
+            onClick={clearKinds}
+          />
+          {FILTER_ORDER.map((family) => {
+            const meta = KIND_FAMILY_META[family];
+            const Icon = meta.icon;
+            const count = familyCounts[family];
+            // Hide families with zero items so the toolbar doesn't show
+            // dead chips on a quiet feed.
+            if (count === 0 && !activeKinds.has(family)) return null;
+            return (
+              <FilterChip
+                key={family}
+                label={meta.label}
+                count={count}
+                active={activeKinds.has(family)}
+                icon={Icon}
+                onClick={() => toggleKind(family)}
+              />
+            );
+          })}
         </div>
       </CardHeader>
       <CardContent
@@ -132,9 +297,11 @@ export function LiveActivityStream() {
               <Skeleton key={i} className="h-10" />
             ))}
           </div>
-        ) : items.length === 0 ? (
+        ) : visibleItems.length === 0 ? (
           <div className="text-xs text-muted-foreground p-6 text-center">
-            No recent activity.
+            {activeKinds.size > 0
+              ? "No activity matches the current filters."
+              : "No recent activity."}
           </div>
         ) : (
           <div
@@ -143,7 +310,7 @@ export function LiveActivityStream() {
             data-testid="activity-stream-list"
           >
             <ul>
-              {items.map((it) => (
+              {visibleItems.map((it) => (
                 <ActivityRow key={it.id} item={it} />
               ))}
             </ul>
@@ -151,6 +318,38 @@ export function LiveActivityStream() {
         )}
       </CardContent>
     </Card>
+  );
+}
+
+function FilterChip({
+  label,
+  count,
+  active,
+  icon: Icon,
+  onClick,
+}: {
+  label: string;
+  count: number;
+  active: boolean;
+  icon?: React.ComponentType<{ className?: string }>;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[10px] uppercase tracking-wider transition-colors ${
+        active
+          ? "border-primary bg-primary/15 text-primary"
+          : "border-border text-muted-foreground hover:border-border/80 hover:bg-muted/40 hover:text-foreground"
+      }`}
+      data-testid={`activity-stream-filter-${label.toLowerCase().replace(/\s+/g, "-")}`}
+    >
+      {Icon ? <Icon className="h-3 w-3" /> : null}
+      <span>{label}</span>
+      <span className="font-mono text-[10px] opacity-70">({count})</span>
+    </button>
   );
 }
 
