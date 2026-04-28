@@ -233,6 +233,26 @@ export const GetNetworkSnapshotResponse = zod.object({
     ),
   focusedHubId: zod.string().nullable(),
   operationalState: zod.string().optional(),
+  bloodReadinessByNode: zod
+    .array(
+      zod.object({
+        nodeId: zod.string(),
+        viableDaysOfSupply: zod
+          .number()
+          .describe(
+            "Days of supply against current blood-products demand using\nonly units that will remain transfusable through the\nlead-time window (excludes lots expiring within 7 days).\n",
+          ),
+        totalViableUnits: zod.number(),
+        unitsExpiringWithin72h: zod.number().optional(),
+        tier: zod
+          .enum(["nominal", "heightened", "critical"])
+          .describe("Tier derived from viableDaysOfSupply."),
+      }),
+    )
+    .optional()
+    .describe(
+      "Lightweight per-node viable blood-DOS roll-up used to power\nmap-side blood-readiness widgets. Only includes nodes that hold\nblood (i.e. have at least one viable lot or a configured donor\npool). Does not include cold-chain or donor detail — those live\non the per-site bloodReadiness object.\n",
+    ),
 });
 
 /**

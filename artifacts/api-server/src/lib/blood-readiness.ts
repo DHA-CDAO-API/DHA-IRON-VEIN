@@ -107,6 +107,14 @@ export type NodeBloodReadiness = {
   };
 };
 
+export type NodeBloodReadinessRollup = {
+  nodeId: string;
+  viableDaysOfSupply: number;
+  totalViableUnits: number;
+  unitsExpiringWithin72h: number;
+  tier: "nominal" | "heightened" | "critical";
+};
+
 export type TheaterBloodReadiness = {
   totalViableUnits: number;
   unitsExpiringWithin24h: number;
@@ -381,6 +389,88 @@ export async function computeNodeBloodReadiness(
       constraintsTransfusion,
     },
   };
+}
+
+// Tier thresholds for viable blood DOS — blood is more perishable than other
+// supply classes, so the cutoffs are tighter than the global risk tiering.
+const BLOOD_CRITICAL_DAYS = 3;
+const BLOOD_HEIGHTENED_DAYS = 7;
+
+function tierForBloodDos(dos: number): "nominal" | "heightened" | "critical" {
+  if (!Number.isFinite(dos)) return "nominal";
+  if (dos <= BLOOD_CRITICAL_DAYS) return "critical";
+  if (dos <= BLOOD_HEIGHTENED_DAYS) return "heightened";
+  return "nominal";
+}
+
+// Lightweight per-node viable blood-DOS roll-up. Used by the network map
+// sidebar widget; intentionally avoids the heavy cold-chain / donor /
+// reagent computation that the per-site readiness payload performs.
+export async function computeBloodReadinessByNode(): Promise<NodeBloodReadinessRollup[]> {
+  const [allLots, allDonors, ctx, allItems] = await Promise.all([
+    db.select().from(bloodLots),
+    db.select().from(donorPools),
+    loadSimContext(),
+    db.select().from(itemsTable),
+  ]);
+
+  const itemMap = new Map(allItems.map((i) => [i.id, i]));
+  const nowMs = Date.now();
+
+  // Bucket all lots by node, accumulating viable / near-expiry counts.
+  const lotsByNode = new Map<string, { viable: number; w72: number; w7: number }>();
+  for (const lot of allLots) {
+    if (lot.status === "COMPROMISED" || lot.status === "EXPIRED") continue;
+    const b = bucketLot(lot, nowMs);
+    if (b.expired) continue;
+    const cur = lotsByNode.get(lot.nodeId) ?? { viable: 0, w72: 0, w7: 0 };
+    cur.viable += lot.units;
+    if (b.w72) cur.w72 += lot.units;
+    if (b.w7) cur.w7 += lot.units;
+    lotsByNode.set(lot.nodeId, cur);
+  }
+
+  const donorByNode = new Set(allDonors.map((d) => d.nodeId));
+
+  const out: NodeBloodReadinessRollup[] = [];
+  for (const node of ctx.ctx.nodes) {
+    const lots = lotsByNode.get(node.id);
+    const hasDonor = donorByNode.has(node.id);
+    if (!lots && !hasDonor) continue;
+    const viable = lots?.viable ?? 0;
+    const w7 = lots?.w7 ?? 0;
+    const w72 = lots?.w72 ?? 0;
+
+    // Per-node blood-product daily demand
+    const profile = ctx.ctx.profiles.get(node.id);
+    let bloodDemandPerDay = 0;
+    if (profile) {
+      const demands = computeDailyDemand({
+        profile,
+        items: ctx.ctx.items,
+        operationalState: ctx.ctx.states.get(profile.operationalState),
+        itemSkew: ctx.ctx.itemSkew,
+      });
+      for (const d of demands) {
+        const item = itemMap.get(d.itemId);
+        if (item?.category === "blood_products") bloodDemandPerDay += d.quantity;
+      }
+    }
+    const usable = Math.max(0, viable - w7);
+    const dosRaw = projectDaysOfSupply(usable, bloodDemandPerDay);
+    const viableDaysOfSupply = Number.isFinite(dosRaw)
+      ? Number(dosRaw.toFixed(1))
+      : 999;
+
+    out.push({
+      nodeId: node.id,
+      viableDaysOfSupply,
+      totalViableUnits: viable,
+      unitsExpiringWithin72h: w72,
+      tier: tierForBloodDos(viableDaysOfSupply),
+    });
+  }
+  return out;
 }
 
 export async function computeTheaterBloodReadiness(): Promise<TheaterBloodReadiness> {

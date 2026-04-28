@@ -6,6 +6,7 @@
  * OpenAPI spec version: 1.0.0
  */
 import type { InFlightShipment } from "./inFlightShipment";
+import type { NetworkSnapshotBloodReadinessByNodeItem } from "./networkSnapshotBloodReadinessByNodeItem";
 import type { NetworkSnapshotRiskByNodeItem } from "./networkSnapshotRiskByNodeItem";
 import type { Node } from "./node";
 import type { Route } from "./route";
@@ -26,4 +27,11 @@ export interface NetworkSnapshot {
   /** @nullable */
   focusedHubId: string | null;
   operationalState?: string;
+  /** Lightweight per-node viable blood-DOS roll-up used to power
+map-side blood-readiness widgets. Only includes nodes that hold
+blood (i.e. have at least one viable lot or a configured donor
+pool). Does not include cold-chain or donor detail — those live
+on the per-site bloodReadiness object.
+ */
+  bloodReadinessByNode?: NetworkSnapshotBloodReadinessByNodeItem[];
 }

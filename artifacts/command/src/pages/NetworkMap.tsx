@@ -124,8 +124,12 @@ export default function NetworkMapPage() {
   const ackAlert = useAcknowledgeAlert();
   const createOrder = useCreateOrder();
 
-  // Layer panel state
-  const [selectedCats, setSelectedCats] = useState<Set<SupplyCategory>>(new Set());
+  // Layer panel state — default to Blood Products selected on first mount
+  // since this is a blood-products-first decision tool. Other layers stay
+  // available; selection remains multi-select.
+  const [selectedCats, setSelectedCats] = useState<Set<SupplyCategory>>(
+    () => new Set<SupplyCategory>(['blood_products']),
+  );
   const [showThreats, setShowThreats] = useState(true);
   const [showAOR, setShowAOR] = useState(true);
   const [showZones, setShowZones] = useState(true);
@@ -242,6 +246,23 @@ export default function NetworkMapPage() {
     return counts;
   }, [snapshot?.riskByNode]);
 
+  // Blood readiness rollup — tier counts + 5 most-fragile sites by viable DOS.
+  const bloodRollup = useMemo(() => {
+    const rows = ((snapshot as any)?.bloodReadinessByNode ?? []) as Array<{
+      nodeId: string;
+      viableDaysOfSupply: number;
+      totalViableUnits: number;
+      unitsExpiringWithin72h?: number;
+      tier: ThreatTier;
+    }>;
+    const counts: Record<ThreatTier, number> = { nominal: 0, heightened: 0, critical: 0 };
+    for (const r of rows) counts[r.tier ?? 'nominal']++;
+    const fragile = [...rows]
+      .sort((a, b) => (a.viableDaysOfSupply ?? 999) - (b.viableDaysOfSupply ?? 999))
+      .slice(0, 5);
+    return { counts, fragile, total: rows.length };
+  }, [snapshot]);
+
   const toggleCat = (c: SupplyCategory) => {
     setSelectedCats((prev) => {
       const next = new Set(prev);
@@ -284,8 +305,8 @@ export default function NetworkMapPage() {
 
   return (
     <div className="h-full relative flex flex-col bg-background overflow-hidden">
-      {/* Layers panel */}
-      <div className="absolute top-4 left-4 z-10 w-72 pointer-events-auto">
+      {/* Left rail — Layers + Blood Readiness widget */}
+      <div className="absolute top-4 left-4 z-10 w-72 pointer-events-auto flex flex-col gap-4 max-h-[calc(100%-2rem-280px)] overflow-y-auto pr-1 -mr-1">
         <Card className="bg-card/85 backdrop-blur-md border-border shadow-2xl">
           <CardContent className="p-4 flex flex-col gap-3">
             <div className="flex items-center justify-between">
@@ -390,6 +411,73 @@ export default function NetworkMapPage() {
               <TierPill tier="critical" count={tierCounts.critical} />
               <TierPill tier="heightened" count={tierCounts.heightened} />
               <TierPill tier="nominal" count={tierCounts.nominal} />
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Blood Readiness widget */}
+        <Card className="bg-card/85 backdrop-blur-md border-border shadow-2xl">
+          <CardContent className="p-4 flex flex-col gap-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Droplets className="h-4 w-4 text-rose-300" />
+                <h3 className="font-semibold text-sm tracking-wider uppercase text-muted-foreground">
+                  Blood Readiness
+                </h3>
+              </div>
+              <span className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">
+                {bloodRollup.total} {bloodRollup.total === 1 ? 'site' : 'sites'}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-3 gap-1 text-[10px] font-mono uppercase tracking-wider">
+              <TierPill tier="critical" count={bloodRollup.counts.critical} />
+              <TierPill tier="heightened" count={bloodRollup.counts.heightened} />
+              <TierPill tier="nominal" count={bloodRollup.counts.nominal} />
+            </div>
+
+            <div className="border-t border-border pt-2 flex flex-col gap-1">
+              <div className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground mb-0.5">
+                Most fragile · viable blood DOS
+              </div>
+              {bloodRollup.fragile.length === 0 ? (
+                <div className="text-[11px] text-muted-foreground italic px-1 py-1.5">
+                  No blood-storing sites in snapshot.
+                </div>
+              ) : (
+                bloodRollup.fragile.map((row) => {
+                  const node = nodeById.get(row.nodeId) as any;
+                  const name = node?.name ?? row.nodeId;
+                  const dos = row.viableDaysOfSupply ?? 0;
+                  const tier = (row.tier ?? 'nominal') as ThreatTier;
+                  return (
+                    <Link
+                      key={row.nodeId}
+                      href={`/sites/${row.nodeId}?tab=blood-readiness`}
+                      data-testid={`blood-fragile-${row.nodeId}`}
+                      className="flex items-center justify-between gap-2 rounded border border-transparent hover:border-border hover:bg-muted/30 px-2 py-1 cursor-pointer"
+                    >
+                      <div className="flex items-center gap-2 min-w-0 flex-1">
+                        <span
+                          className="inline-block h-2 w-2 rounded-full flex-shrink-0"
+                          style={{
+                            backgroundColor: `rgb(${TIER_COLOR[tier][0]}, ${TIER_COLOR[tier][1]}, ${TIER_COLOR[tier][2]})`,
+                          }}
+                        />
+                        <span className="text-xs truncate" title={name}>
+                          {name}
+                        </span>
+                      </div>
+                      <span
+                        className="font-mono text-[10px] px-1.5 py-0.5 rounded border whitespace-nowrap"
+                        style={tierBadgeStyle(tier)}
+                      >
+                        {dos >= 999 ? '∞' : `${dos.toFixed(1)}d`}
+                      </span>
+                    </Link>
+                  );
+                })
+              )}
             </div>
           </CardContent>
         </Card>

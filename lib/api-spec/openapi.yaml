@@ -887,6 +887,31 @@ components:
             items: { type: number }
         focusedHubId: { type: ["string", "null"] }
         operationalState: { type: string }
+        bloodReadinessByNode:
+          type: array
+          description: |
+            Lightweight per-node viable blood-DOS roll-up used to power
+            map-side blood-readiness widgets. Only includes nodes that hold
+            blood (i.e. have at least one viable lot or a configured donor
+            pool). Does not include cold-chain or donor detail — those live
+            on the per-site bloodReadiness object.
+          items:
+            type: object
+            required: [nodeId, viableDaysOfSupply, totalViableUnits, tier]
+            properties:
+              nodeId: { type: string }
+              viableDaysOfSupply:
+                type: number
+                description: |
+                  Days of supply against current blood-products demand using
+                  only units that will remain transfusable through the
+                  lead-time window (excludes lots expiring within 7 days).
+              totalViableUnits: { type: integer }
+              unitsExpiringWithin72h: { type: integer }
+              tier:
+                type: string
+                enum: [nominal, heightened, critical]
+                description: Tier derived from viableDaysOfSupply.
 
     SiteSummary:
       type: object

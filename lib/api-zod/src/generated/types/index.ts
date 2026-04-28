@@ -56,6 +56,8 @@ export * from "./listCatalogItemsParams";
 export * from "./listInventoryBalancesParams";
 export * from "./listOrdersParams";
 export * from "./networkSnapshot";
+export * from "./networkSnapshotBloodReadinessByNodeItem";
+export * from "./networkSnapshotBloodReadinessByNodeItemTier";
 export * from "./networkSnapshotRiskByNodeItem";
 export * from "./networkSnapshotRiskByNodeItemDosByCategory";
 export * from "./networkSnapshotRiskByNodeItemTier";

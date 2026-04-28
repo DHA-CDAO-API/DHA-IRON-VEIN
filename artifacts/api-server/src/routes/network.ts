@@ -9,6 +9,7 @@ import {
   THREATS,
   AOR_BOUNDARY,
 } from "../lib/snapshot";
+import { computeBloodReadinessByNode } from "../lib/blood-readiness";
 
 const router: IRouter = Router();
 
@@ -32,15 +33,23 @@ router.get("/network/routes", async (_req, res, next) => {
 
 router.get("/network/snapshot", async (_req, res, next) => {
   try {
-    const [nodeRows, routeRows, risk, shipments, routeCats, zoneRows] =
-      await Promise.all([
-        db.select().from(nodes),
-        db.select().from(routes),
-        computeRiskByNode(),
-        computeInFlightShipments(),
-        computeRouteCategories(),
-        db.select().from(theaterZones).orderBy(desc(theaterZones.createdAt)),
-      ]);
+    const [
+      nodeRows,
+      routeRows,
+      risk,
+      shipments,
+      routeCats,
+      zoneRows,
+      bloodReadinessByNode,
+    ] = await Promise.all([
+      db.select().from(nodes),
+      db.select().from(routes),
+      computeRiskByNode(),
+      computeInFlightShipments(),
+      computeRouteCategories(),
+      db.select().from(theaterZones).orderBy(desc(theaterZones.createdAt)),
+      computeBloodReadinessByNode(),
+    ]);
     const decoratedRoutes = routeRows.map((r) => ({
       ...r,
       categories: Array.from(routeCats.get(`${r.fromNode}::${r.toNode}`) ?? []),
@@ -59,6 +68,7 @@ router.get("/network/snapshot", async (_req, res, next) => {
       aorBoundary: AOR_BOUNDARY,
       focusedHubId: risk.focusedHubId,
       operationalState: risk.operationalState,
+      bloodReadinessByNode,
     });
   } catch (err) {
     next(err);

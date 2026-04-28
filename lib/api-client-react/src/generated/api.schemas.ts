@@ -233,6 +233,31 @@ export type NetworkSnapshotRiskByNodeItem = {
   lastShipmentOutAt?: string | null;
 };
 
+/**
+ * Tier derived from viableDaysOfSupply.
+ */
+export type NetworkSnapshotBloodReadinessByNodeItemTier =
+  (typeof NetworkSnapshotBloodReadinessByNodeItemTier)[keyof typeof NetworkSnapshotBloodReadinessByNodeItemTier];
+
+export const NetworkSnapshotBloodReadinessByNodeItemTier = {
+  nominal: "nominal",
+  heightened: "heightened",
+  critical: "critical",
+} as const;
+
+export type NetworkSnapshotBloodReadinessByNodeItem = {
+  nodeId: string;
+  /** Days of supply against current blood-products demand using
+only units that will remain transfusable through the
+lead-time window (excludes lots expiring within 7 days).
+ */
+  viableDaysOfSupply: number;
+  totalViableUnits: number;
+  unitsExpiringWithin72h?: number;
+  /** Tier derived from viableDaysOfSupply. */
+  tier: NetworkSnapshotBloodReadinessByNodeItemTier;
+};
+
 export interface NetworkSnapshot {
   generatedAt: string;
   nodes: Node[];
@@ -247,6 +272,13 @@ export interface NetworkSnapshot {
   /** @nullable */
   focusedHubId: string | null;
   operationalState?: string;
+  /** Lightweight per-node viable blood-DOS roll-up used to power
+map-side blood-readiness widgets. Only includes nodes that hold
+blood (i.e. have at least one viable lot or a configured donor
+pool). Does not include cold-chain or donor detail — those live
+on the per-site bloodReadiness object.
+ */
+  bloodReadinessByNode?: NetworkSnapshotBloodReadinessByNodeItem[];
 }
 
 export interface SiteSummary {
