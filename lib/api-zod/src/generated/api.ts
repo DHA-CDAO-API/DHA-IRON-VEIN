@@ -409,6 +409,138 @@ export const GetSiteDetailResponse = zod.object({
       }),
     )
     .optional(),
+  bloodReadiness: zod
+    .union([
+      zod.object({
+        nodeId: zod.string(),
+        totalViableUnits: zod.number(),
+        unitsExpiringWithin24h: zod.number(),
+        unitsExpiringWithin72h: zod.number(),
+        unitsExpiringWithin7d: zod.number(),
+        viableDaysOfSupply: zod
+          .number()
+          .describe(
+            "Days of supply against blood-product demand using only units that\nwill still be transfusable through the relevant lead-time window\n(i.e. lots expiring within 7 days are excluded).\n",
+          ),
+        viability: zod.array(
+          zod.object({
+            component: zod
+              .string()
+              .describe("LTOWB | PRBC | FFP | PLASMA | PLATELETS | CRYO | FDP"),
+            aboGroup: zod.string().nullish().describe("O | A | B | AB | null"),
+            rhFactor: zod.string().nullish().describe("POS | NEG | null"),
+            viableUnits: zod
+              .number()
+              .describe(
+                "Units that are still transfusable (includes near-expiry)",
+              ),
+            nearExpiryUnits: zod
+              .number()
+              .describe("Units expiring within 72 h"),
+            expiredUnits: zod.number(),
+            compromisedUnits: zod
+              .number()
+              .describe("Units flagged COMPROMISED (cold-chain failure"),
+          }),
+        ),
+        coldChain: zod.object({
+          assets: zod.array(
+            zod.object({
+              id: zod.string(),
+              assetType: zod.enum([
+                "refrigerator",
+                "freezer",
+                "cryopreserver",
+                "platelet_incubator",
+                "transport_cooler",
+                "generator",
+              ]),
+              name: zod.string(),
+              status: zod.enum(["NOMINAL", "EXCURSION", "FAILED"]),
+              currentTempC: zod.number(),
+              targetTempMinC: zod.number().optional(),
+              targetTempMaxC: zod.number().optional(),
+              hasGenerator: zod.boolean(),
+              fuelDaysRemaining: zod.number(),
+              capacityUnits: zod.number().optional(),
+              lastCheckedAt: zod.coerce.date().optional(),
+            }),
+          ),
+          healthPercent: zod
+            .number()
+            .describe(
+              "0–100 percent health across this node's storage assets.",
+            ),
+          activeExcursions: zod.number(),
+          failedAssets: zod.number(),
+          minFuelDaysRemaining: zod.number(),
+        }),
+        donors: zod.object({
+          eligibleDonors: zod.number(),
+          weeklyCollectionCapacity: zod.number(),
+          effectiveCollectionCapacity: zod
+            .number()
+            .describe(
+              "Collection capacity haircut by current reagent\/kit availability.",
+            ),
+          wbbReady: zod.object({
+            oPos: zod.number(),
+            oNeg: zod.number(),
+            aPos: zod.number(),
+            aNeg: zod.number(),
+            bPos: zod.number(),
+            bNeg: zod.number(),
+            abPos: zod.number(),
+            abNeg: zod.number(),
+            total: zod.number(),
+          }),
+          lastDriveAt: zod.coerce.date().nullish(),
+        }),
+        testingSupplies: zod.object({
+          items: zod.array(
+            zod.object({
+              itemId: zod.string(),
+              itemName: zod.string(),
+              onHand: zod.number(),
+              dailyBurn: zod.number(),
+              daysOfSupply: zod.number(),
+              constrains: zod
+                .enum(["collection", "transfusion", "both"])
+                .describe(
+                  "Whether this reagent gates donor qualification, transfusion, or both.",
+                ),
+              isConstraint: zod
+                .boolean()
+                .describe(
+                  "True when this item's DOS is at or below the critical threshold.",
+                ),
+            }),
+          ),
+          minDaysOfSupply: zod.number(),
+          constraintsCollection: zod.boolean(),
+          constraintsTransfusion: zod.boolean(),
+        }),
+        recentTemperatureEvents: zod
+          .array(
+            zod.object({
+              id: zod.number(),
+              assetId: zod.string(),
+              nodeId: zod.string(),
+              occurredAt: zod.coerce.date(),
+              recordedTempC: zod.number(),
+              severity: zod.enum(["WATCH", "WARNING", "CRITICAL"]),
+              resolvedAt: zod.coerce.date().nullish(),
+              notes: zod.string().optional(),
+            }),
+          )
+          .optional(),
+      }),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Per-site blood-products roll-up. Null when the node holds no blood\n(e.g. suppliers \/ prime vendors).\n",
+    ),
 });
 
 export const ListItemsResponseItem = zod.object({
@@ -1437,6 +1569,30 @@ export const GetDashboardOverviewResponse = zod.object({
       count: zod.number(),
     }),
   ),
+  bloodReadiness: zod
+    .object({
+      totalViableUnits: zod.number(),
+      unitsExpiringWithin24h: zod.number(),
+      unitsExpiringWithin72h: zod.number(),
+      unitsExpiringWithin7d: zod.number(),
+      coldChainHealthPercent: zod.number(),
+      coldChainAssetsTotal: zod.number(),
+      coldChainAssetsExcursion: zod.number(),
+      coldChainAssetsFailed: zod.number(),
+      walkingBloodBankReadyDonors: zod.number(),
+      reagentDaysRemaining: zod
+        .number()
+        .describe(
+          "Minimum days-of-supply across critical reagents\/kits across all blood-storing nodes.",
+        ),
+      nodesWithBlood: zod.number(),
+      nodesWithCriticalShortage: zod
+        .number()
+        .describe(
+          "Number of blood-storing nodes whose reagent DOS is at or below the critical threshold.",
+        ),
+    })
+    .optional(),
 });
 
 export const GetRiskBoardResponse = zod.object({
@@ -1473,6 +1629,152 @@ export const GetRiskBoardResponse = zod.object({
       atRiskSiteCount: zod.number().optional(),
     }),
   ),
+});
+
+export const GetNodeBloodReadinessParams = zod.object({
+  nodeId: zod.coerce.string(),
+});
+
+export const GetNodeBloodReadinessResponse = zod.object({
+  nodeId: zod.string(),
+  totalViableUnits: zod.number(),
+  unitsExpiringWithin24h: zod.number(),
+  unitsExpiringWithin72h: zod.number(),
+  unitsExpiringWithin7d: zod.number(),
+  viableDaysOfSupply: zod
+    .number()
+    .describe(
+      "Days of supply against blood-product demand using only units that\nwill still be transfusable through the relevant lead-time window\n(i.e. lots expiring within 7 days are excluded).\n",
+    ),
+  viability: zod.array(
+    zod.object({
+      component: zod
+        .string()
+        .describe("LTOWB | PRBC | FFP | PLASMA | PLATELETS | CRYO | FDP"),
+      aboGroup: zod.string().nullish().describe("O | A | B | AB | null"),
+      rhFactor: zod.string().nullish().describe("POS | NEG | null"),
+      viableUnits: zod
+        .number()
+        .describe("Units that are still transfusable (includes near-expiry)"),
+      nearExpiryUnits: zod.number().describe("Units expiring within 72 h"),
+      expiredUnits: zod.number(),
+      compromisedUnits: zod
+        .number()
+        .describe("Units flagged COMPROMISED (cold-chain failure"),
+    }),
+  ),
+  coldChain: zod.object({
+    assets: zod.array(
+      zod.object({
+        id: zod.string(),
+        assetType: zod.enum([
+          "refrigerator",
+          "freezer",
+          "cryopreserver",
+          "platelet_incubator",
+          "transport_cooler",
+          "generator",
+        ]),
+        name: zod.string(),
+        status: zod.enum(["NOMINAL", "EXCURSION", "FAILED"]),
+        currentTempC: zod.number(),
+        targetTempMinC: zod.number().optional(),
+        targetTempMaxC: zod.number().optional(),
+        hasGenerator: zod.boolean(),
+        fuelDaysRemaining: zod.number(),
+        capacityUnits: zod.number().optional(),
+        lastCheckedAt: zod.coerce.date().optional(),
+      }),
+    ),
+    healthPercent: zod
+      .number()
+      .describe("0–100 percent health across this node's storage assets."),
+    activeExcursions: zod.number(),
+    failedAssets: zod.number(),
+    minFuelDaysRemaining: zod.number(),
+  }),
+  donors: zod.object({
+    eligibleDonors: zod.number(),
+    weeklyCollectionCapacity: zod.number(),
+    effectiveCollectionCapacity: zod
+      .number()
+      .describe(
+        "Collection capacity haircut by current reagent\/kit availability.",
+      ),
+    wbbReady: zod.object({
+      oPos: zod.number(),
+      oNeg: zod.number(),
+      aPos: zod.number(),
+      aNeg: zod.number(),
+      bPos: zod.number(),
+      bNeg: zod.number(),
+      abPos: zod.number(),
+      abNeg: zod.number(),
+      total: zod.number(),
+    }),
+    lastDriveAt: zod.coerce.date().nullish(),
+  }),
+  testingSupplies: zod.object({
+    items: zod.array(
+      zod.object({
+        itemId: zod.string(),
+        itemName: zod.string(),
+        onHand: zod.number(),
+        dailyBurn: zod.number(),
+        daysOfSupply: zod.number(),
+        constrains: zod
+          .enum(["collection", "transfusion", "both"])
+          .describe(
+            "Whether this reagent gates donor qualification, transfusion, or both.",
+          ),
+        isConstraint: zod
+          .boolean()
+          .describe(
+            "True when this item's DOS is at or below the critical threshold.",
+          ),
+      }),
+    ),
+    minDaysOfSupply: zod.number(),
+    constraintsCollection: zod.boolean(),
+    constraintsTransfusion: zod.boolean(),
+  }),
+  recentTemperatureEvents: zod
+    .array(
+      zod.object({
+        id: zod.number(),
+        assetId: zod.string(),
+        nodeId: zod.string(),
+        occurredAt: zod.coerce.date(),
+        recordedTempC: zod.number(),
+        severity: zod.enum(["WATCH", "WARNING", "CRITICAL"]),
+        resolvedAt: zod.coerce.date().nullish(),
+        notes: zod.string().optional(),
+      }),
+    )
+    .optional(),
+});
+
+export const GetTheaterBloodReadinessResponse = zod.object({
+  totalViableUnits: zod.number(),
+  unitsExpiringWithin24h: zod.number(),
+  unitsExpiringWithin72h: zod.number(),
+  unitsExpiringWithin7d: zod.number(),
+  coldChainHealthPercent: zod.number(),
+  coldChainAssetsTotal: zod.number(),
+  coldChainAssetsExcursion: zod.number(),
+  coldChainAssetsFailed: zod.number(),
+  walkingBloodBankReadyDonors: zod.number(),
+  reagentDaysRemaining: zod
+    .number()
+    .describe(
+      "Minimum days-of-supply across critical reagents\/kits across all blood-storing nodes.",
+    ),
+  nodesWithBlood: zod.number(),
+  nodesWithCriticalShortage: zod
+    .number()
+    .describe(
+      "Number of blood-storing nodes whose reagent DOS is at or below the critical threshold.",
+    ),
 });
 
 export const listActivityQueryLimitDefault = 30;

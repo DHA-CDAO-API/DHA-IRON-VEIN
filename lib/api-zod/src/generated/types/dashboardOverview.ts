@@ -8,6 +8,7 @@
 import type { DashboardOverviewAlertCountsBySeverityItem } from "./dashboardOverviewAlertCountsBySeverityItem";
 import type { DashboardOverviewKpis } from "./dashboardOverviewKpis";
 import type { HistoryPoint } from "./historyPoint";
+import type { TheaterBloodReadiness } from "./theaterBloodReadiness";
 
 export interface DashboardOverview {
   networkDaysOfSupply: number;
@@ -20,4 +21,5 @@ export interface DashboardOverview {
   kpis: DashboardOverviewKpis;
   dosTrend: HistoryPoint[];
   alertCountsBySeverity: DashboardOverviewAlertCountsBySeverityItem[];
+  bloodReadiness?: TheaterBloodReadiness;
 }

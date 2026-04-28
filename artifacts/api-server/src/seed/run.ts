@@ -25,6 +25,10 @@ import {
   scenarios,
   recommendations,
   activityEntries,
+  bloodLots,
+  coldChainAssets,
+  donorPools,
+  temperatureEvents,
 } from "@workspace/db";
 import { sql } from "drizzle-orm";
 import { logger } from "../lib/logger";
@@ -343,7 +347,8 @@ export async function runSeed(opts: SeedOptions = {}): Promise<void> {
       activity_entries, conversation_messages, conversations, scenarios, recommendations,
       shipments, order_lines, orders, alerts, inventory_balances, demand_profiles,
       item_skew_factors, preset_events, operational_states, suppliers, items,
-      routes, nodes, catalog_entries, app_settings, profiles
+      routes, nodes, catalog_entries, app_settings, profiles,
+      blood_lots, cold_chain_assets, donor_pools, temperature_events
       RESTART IDENTITY`);
   }
 
@@ -763,6 +768,9 @@ export async function runSeed(opts: SeedOptions = {}): Promise<void> {
   // ---- Preset events ----
   await db.insert(presetEvents).values(PRESET_EVENTS);
 
+  // ---- Blood-products foundation (lots, cold-chain, donors, temperature events) ----
+  await seedBloodReadiness();
+
   // ---- Generate alerts from current DOS ----
   await generateBootstrapAlerts();
 
@@ -1158,4 +1166,401 @@ async function generateSampleOrders(): Promise<void> {
   if (linesToInsert.length > 0) await db.insert(orderLines).values(linesToInsert);
   if (shipmentsToInsert.length > 0) await db.insert(shipments).values(shipmentsToInsert);
   if (activityToInsert.length > 0) await db.insert(activityEntries).values(activityToInsert);
+}
+
+// ===== Blood-readiness seed =====================================================
+// Generates per-unit blood lots, per-site cold-chain assets, donor pools, and
+// temperature-excursion events for every node that holds blood. Distributions
+// are tuned so the UI has interesting near-expiry tails, a few compromised
+// lots, and a handful of cold-chain excursions to surface in the dashboard.
+
+type BloodSeedSpec = {
+  // Component family enum we expose through the API.
+  component: string;
+  // Item id this lot maps onto.
+  itemId: string;
+  // Shelf life in days (used to scatter expirations).
+  shelfDays: number;
+  // ABO/Rh distribution (probability weights) — null = universal/N/A.
+  abo: Array<{ abo: string | null; rh: string | null; weight: number }>;
+};
+
+const BLOOD_COMPONENT_SPECS: BloodSeedSpec[] = [
+  {
+    component: "LTOWB",
+    itemId: "ltow_pos",
+    shelfDays: 21,
+    abo: [
+      { abo: "O", rh: "POS", weight: 1 },
+    ],
+  },
+  {
+    component: "LTOWB",
+    itemId: "ltow_neg",
+    shelfDays: 21,
+    abo: [
+      { abo: "O", rh: "NEG", weight: 1 },
+    ],
+  },
+  {
+    component: "PRBC",
+    itemId: "prbc_o",
+    shelfDays: 42,
+    abo: [
+      { abo: "O", rh: "POS", weight: 0.55 },
+      { abo: "O", rh: "NEG", weight: 0.15 },
+      { abo: "A", rh: "POS", weight: 0.18 },
+      { abo: "B", rh: "POS", weight: 0.08 },
+      { abo: "AB", rh: "POS", weight: 0.04 },
+    ],
+  },
+  {
+    component: "FFP",
+    itemId: "ffp_ab",
+    shelfDays: 365,
+    abo: [{ abo: "AB", rh: null, weight: 1 }],
+  },
+  {
+    component: "PLASMA",
+    itemId: "plasma_a",
+    shelfDays: 26,
+    abo: [{ abo: "A", rh: null, weight: 1 }],
+  },
+  {
+    component: "PLATELETS",
+    itemId: "platelets",
+    shelfDays: 5,
+    abo: [
+      { abo: "A", rh: "POS", weight: 0.4 },
+      { abo: "O", rh: "POS", weight: 0.4 },
+      { abo: "B", rh: "POS", weight: 0.15 },
+      { abo: "AB", rh: "POS", weight: 0.05 },
+    ],
+  },
+  {
+    component: "CRYO",
+    itemId: "cryo",
+    shelfDays: 365,
+    abo: [{ abo: null, rh: null, weight: 1 }],
+  },
+  {
+    component: "FDP",
+    itemId: "fdp",
+    shelfDays: 730,
+    abo: [{ abo: null, rh: null, weight: 1 }],
+  },
+];
+
+// Stocking depth multiplier per node type. Theater & hubs hold the deepest
+// stocks; BAS/Clinic hold a shallow walking-blood-bank-driven inventory.
+function bloodDepthForType(nodeType: string): number {
+  const t = nodeType.toLowerCase();
+  if (t.includes("theater")) return 6;
+  if (t.includes("regional") || t.includes("hub")) return 4;
+  if (t.includes("large mtf")) return 2;
+  if (t.includes("standard mtf")) return 1.0;
+  if (t.includes("bas")) return 0.4;
+  if (t.includes("clinic")) return 0.7;
+  if (t.includes("forward")) return 0.5;
+  if (t.includes("supplier") || t.includes("prime")) return 0;
+  return 0.6;
+}
+
+// Walking-blood-bank donor count proportional to population.
+function wbbReadyForPopulation(population: number, seed: string): number {
+  const j = deterministicJitter(seed);
+  // ~1.5% of population pre-screened as WBB-ready donors at MTFs.
+  return Math.max(0, Math.round(population * 0.015 * j));
+}
+
+async function seedBloodReadiness(): Promise<void> {
+  const allNodes = await db.select().from(nodes);
+  const lotInserts: Array<typeof bloodLots.$inferInsert> = [];
+  const assetInserts: Array<typeof coldChainAssets.$inferInsert> = [];
+  const donorInserts: Array<typeof donorPools.$inferInsert> = [];
+  const tempEventInserts: Array<typeof temperatureEvents.$inferInsert> = [];
+
+  const now = Date.now();
+  const dayMs = 86_400_000;
+
+  for (const node of allNodes) {
+    const depth = bloodDepthForType(node.type);
+    if (depth <= 0) continue; // suppliers / prime vendors don't physically hold blood
+
+    // ---- Cold-chain assets ----
+    const generatorJitter = deterministicJitter(`${node.id}:generator`);
+    const fuelDays = Number((6 + generatorJitter * 8).toFixed(1)); // 6–14 days fuel
+    const generatorId = `cc-${node.id}-gen`;
+    assetInserts.push({
+      id: generatorId,
+      nodeId: node.id,
+      assetType: "generator",
+      name: "Backup Generator",
+      status: fuelDays < 4 ? "EXCURSION" : "NOMINAL",
+      currentTempC: 0,
+      targetTempMinC: 0,
+      targetTempMaxC: 0,
+      hasGenerator: true,
+      fuelDaysRemaining: fuelDays,
+      capacityUnits: 0,
+      lastCheckedAt: new Date(now - Math.floor(generatorJitter * 6) * 3600_000),
+    });
+
+    // Always at least one refrigerator (2–6°C target) and one freezer
+    // (-25 to -18°C target). Larger sites get a second refrigerator and a
+    // platelet incubator. Hubs/theater additionally get a cryopreserver.
+    const fridgeJ = deterministicJitter(`${node.id}:fridge`);
+    const fridgeTemp = Number((4 + (fridgeJ - 0.5) * 4).toFixed(2));
+    const fridgeStatus = fridgeTemp > 6 ? "EXCURSION" : "NOMINAL";
+    const fridgeId = `cc-${node.id}-fridge1`;
+    assetInserts.push({
+      id: fridgeId,
+      nodeId: node.id,
+      assetType: "refrigerator",
+      name: "Blood Bank Refrigerator A",
+      status: fridgeStatus,
+      currentTempC: fridgeTemp,
+      targetTempMinC: 2,
+      targetTempMaxC: 6,
+      hasGenerator: true,
+      fuelDaysRemaining: fuelDays,
+      capacityUnits: Math.round(120 * depth),
+      lastCheckedAt: new Date(now - 30 * 60_000),
+    });
+
+    const freezerJ = deterministicJitter(`${node.id}:freezer`);
+    const freezerTemp = Number((-22 + (freezerJ - 0.5) * 6).toFixed(2));
+    const freezerStatus = freezerTemp > -18 ? "EXCURSION" : "NOMINAL";
+    const freezerId = `cc-${node.id}-freezer1`;
+    assetInserts.push({
+      id: freezerId,
+      nodeId: node.id,
+      assetType: "freezer",
+      name: "Plasma Freezer",
+      status: freezerStatus,
+      currentTempC: freezerTemp,
+      targetTempMinC: -30,
+      targetTempMaxC: -18,
+      hasGenerator: true,
+      fuelDaysRemaining: fuelDays,
+      capacityUnits: Math.round(80 * depth),
+      lastCheckedAt: new Date(now - 90 * 60_000),
+    });
+
+    if (depth >= 2) {
+      const fridge2J = deterministicJitter(`${node.id}:fridge2`);
+      const fridge2Temp = Number((4 + (fridge2J - 0.5) * 4).toFixed(2));
+      assetInserts.push({
+        id: `cc-${node.id}-fridge2`,
+        nodeId: node.id,
+        assetType: "refrigerator",
+        name: "Blood Bank Refrigerator B",
+        status: fridge2Temp > 6 ? "EXCURSION" : "NOMINAL",
+        currentTempC: fridge2Temp,
+        targetTempMinC: 2,
+        targetTempMaxC: 6,
+        hasGenerator: true,
+        fuelDaysRemaining: fuelDays,
+        capacityUnits: Math.round(120 * depth),
+        lastCheckedAt: new Date(now - 45 * 60_000),
+      });
+
+      const incJ = deterministicJitter(`${node.id}:incubator`);
+      const incTemp = Number((22 + (incJ - 0.5) * 2).toFixed(2));
+      assetInserts.push({
+        id: `cc-${node.id}-platelet`,
+        nodeId: node.id,
+        assetType: "platelet_incubator",
+        name: "Platelet Agitator/Incubator",
+        status: incTemp > 24 || incTemp < 20 ? "EXCURSION" : "NOMINAL",
+        currentTempC: incTemp,
+        targetTempMinC: 20,
+        targetTempMaxC: 24,
+        hasGenerator: true,
+        fuelDaysRemaining: fuelDays,
+        capacityUnits: Math.round(40 * depth),
+        lastCheckedAt: new Date(now - 60 * 60_000),
+      });
+    }
+
+    if (depth >= 4) {
+      const cryoJ = deterministicJitter(`${node.id}:cryo`);
+      const cryoTemp = Number((-152 + (cryoJ - 0.5) * 4).toFixed(2));
+      assetInserts.push({
+        id: `cc-${node.id}-cryo`,
+        nodeId: node.id,
+        assetType: "cryopreserver",
+        name: "Cryopreservation Vault",
+        status: cryoTemp > -150 ? "EXCURSION" : "NOMINAL",
+        currentTempC: cryoTemp,
+        targetTempMinC: -160,
+        targetTempMaxC: -150,
+        hasGenerator: true,
+        fuelDaysRemaining: fuelDays + 4,
+        capacityUnits: Math.round(60 * depth),
+        lastCheckedAt: new Date(now - 120 * 60_000),
+      });
+    }
+
+    // Force a few notable failures to make the UI interesting.
+    if (node.id === "mtfRomeo") {
+      // Failed refrigerator on the southern spoke
+      const idx = assetInserts.findIndex((a) => a.id === fridgeId);
+      if (idx >= 0) {
+        assetInserts[idx]!.status = "FAILED";
+        assetInserts[idx]!.currentTempC = 14.2;
+      }
+    }
+    if (node.id === "mtfUniform") {
+      const idx = assetInserts.findIndex((a) => a.id === freezerId);
+      if (idx >= 0) {
+        assetInserts[idx]!.status = "EXCURSION";
+        assetInserts[idx]!.currentTempC = -14.5;
+      }
+    }
+
+    // ---- Temperature-excursion events (recent history) ----
+    for (const a of assetInserts.filter((x) => x.nodeId === node.id)) {
+      if (a.status === "FAILED") {
+        tempEventInserts.push({
+          assetId: a.id,
+          nodeId: node.id,
+          occurredAt: new Date(now - 6 * 3600_000),
+          recordedTempC: a.currentTempC ?? 0,
+          severity: "CRITICAL",
+          resolvedAt: null,
+          notes: "Compressor offline; unit awaiting maintenance",
+        });
+      } else if (a.status === "EXCURSION") {
+        tempEventInserts.push({
+          assetId: a.id,
+          nodeId: node.id,
+          occurredAt: new Date(now - 90 * 60_000),
+          recordedTempC: a.currentTempC ?? 0,
+          severity: "WARNING",
+          resolvedAt: null,
+          notes: "Out-of-band temperature excursion in progress",
+        });
+      }
+    }
+
+    // ---- Donor pool ----
+    const wbbBase = wbbReadyForPopulation(node.population, `${node.id}:wbb`);
+    const eligible = Math.max(wbbBase * 4, Math.round(node.population * 0.06));
+    // ABO/Rh distribution roughly mirrors US donor pool:
+    //   O+ 38%  O- 7%  A+ 34%  A- 6%  B+ 9%  B- 2%  AB+ 3%  AB- 1%
+    const aboMix = (frac: number) => Math.max(0, Math.round(wbbBase * frac));
+    donorInserts.push({
+      nodeId: node.id,
+      eligibleDonors: eligible,
+      weeklyCollectionCapacity: Math.max(2, Math.round(wbbBase * 0.4)),
+      wbbReadyOPos: aboMix(0.38),
+      wbbReadyONeg: aboMix(0.07),
+      wbbReadyAPos: aboMix(0.34),
+      wbbReadyANeg: aboMix(0.06),
+      wbbReadyBPos: aboMix(0.09),
+      wbbReadyBNeg: aboMix(0.02),
+      wbbReadyAbPos: aboMix(0.03),
+      wbbReadyAbNeg: aboMix(0.01),
+      lastDriveAt: new Date(
+        now - Math.round(deterministicJitter(`${node.id}:drive`) * 14) * dayMs,
+      ),
+    });
+
+    // ---- Blood lots ----
+    // Target lots per spec scaled by depth so MTFs hold a small handful and
+    // hubs/theater hold many.
+    let lotIdx = 0;
+    for (const spec of BLOOD_COMPONENT_SPECS) {
+      const baseLotCount = Math.max(1, Math.round(depth * 1.6));
+      // Smaller sites only stock the universal/critical components; larger
+      // sites stock the full ABO mix.
+      const aboList = depth >= 2 ? spec.abo : spec.abo.slice(0, 1);
+      for (const aboEntry of aboList) {
+        const lotCount = Math.max(
+          1,
+          Math.round(baseLotCount * aboEntry.weight),
+        );
+        for (let i = 0; i < lotCount; i++) {
+          const lotKey = `${node.id}:${spec.itemId}:${i}:${aboEntry.abo ?? "U"}:${aboEntry.rh ?? "N"}`;
+          const j = deterministicJitter(lotKey);
+          // Scatter expirations across [-2, shelfDays * 0.95] days from now,
+          // weighted toward the back half so most lots are healthy but a tail
+          // sits in the 0–7 day near-expiry window.
+          const skew = (j - 0.3) * 1.4;
+          const offset = Math.max(-2, Math.round(spec.shelfDays * Math.max(0, skew)));
+          const expiresAt = new Date(now + offset * dayMs);
+          const collectedAt = new Date(expiresAt.getTime() - spec.shelfDays * dayMs);
+
+          // Units per lot: trauma-volume LTOWB lots tend to be smaller (1–4),
+          // PRBC/FFP are larger (3–10), platelets are typically singletons.
+          const unitsBase =
+            spec.component === "PLATELETS"
+              ? 1
+              : spec.component === "LTOWB"
+              ? 1 + Math.round(j * 3)
+              : 2 + Math.round(j * 6);
+          const units = Math.max(1, Math.round(unitsBase * (depth / 2 + 0.5)));
+
+          let status: string;
+          if (offset < 0) status = "EXPIRED";
+          else if (offset <= 3) status = "NEAR_EXPIRY";
+          else status = "VIABLE";
+          // Mark a small deterministic fraction as compromised
+          if (j > 0.97) status = "COMPROMISED";
+
+          // Pick the appropriate cold-chain asset for this component.
+          let coldChainAssetId: string | null = null;
+          if (
+            spec.component === "LTOWB" ||
+            spec.component === "PRBC" ||
+            spec.component === "PLASMA"
+          ) {
+            coldChainAssetId = fridgeId;
+          } else if (
+            spec.component === "FFP" ||
+            spec.component === "FDP" ||
+            spec.component === "CRYO"
+          ) {
+            coldChainAssetId = freezerId;
+          } else if (spec.component === "PLATELETS") {
+            const inc = assetInserts.find(
+              (a) => a.nodeId === node.id && a.assetType === "platelet_incubator",
+            );
+            coldChainAssetId = inc?.id ?? fridgeId;
+          }
+
+          lotInserts.push({
+            id: `bl-${node.id}-${spec.component}-${lotIdx++}`,
+            nodeId: node.id,
+            itemId: spec.itemId,
+            component: spec.component,
+            aboGroup: aboEntry.abo,
+            rhFactor: aboEntry.rh,
+            units,
+            collectedAt,
+            expiresAt,
+            status,
+            coldChainAssetId,
+          });
+        }
+      }
+    }
+  }
+
+  if (assetInserts.length > 0) await db.insert(coldChainAssets).values(assetInserts);
+  if (donorInserts.length > 0) await db.insert(donorPools).values(donorInserts);
+  if (lotInserts.length > 0) await db.insert(bloodLots).values(lotInserts);
+  if (tempEventInserts.length > 0)
+    await db.insert(temperatureEvents).values(tempEventInserts);
+
+  logger.info(
+    {
+      assets: assetInserts.length,
+      donorNodes: donorInserts.length,
+      lots: lotInserts.length,
+      tempEvents: tempEventInserts.length,
+    },
+    "seed: blood-readiness foundation populated",
+  );
 }

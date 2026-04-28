@@ -42,6 +42,7 @@ import type {
   ListOrdersParams,
   NetworkSnapshot,
   Node,
+  NodeBloodReadiness,
   Order,
   OrderDetail,
   PresetEvent,
@@ -59,6 +60,7 @@ import type {
   SiteDetail,
   SiteSummary,
   Supplier,
+  TheaterBloodReadiness,
   TheaterZone,
   UpdateOrderStatusInput,
   UpdateProfileInput,
@@ -3170,6 +3172,157 @@ export function useGetRiskBoard<
   request?: SecondParameter<typeof customFetch>;
 }): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetRiskBoardQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getGetNodeBloodReadinessUrl = (nodeId: string) => {
+  return `/api/sites/${nodeId}/blood-readiness`;
+};
+
+export const getNodeBloodReadiness = async (
+  nodeId: string,
+  options?: RequestInit,
+): Promise<NodeBloodReadiness> => {
+  return customFetch<NodeBloodReadiness>(getGetNodeBloodReadinessUrl(nodeId), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetNodeBloodReadinessQueryKey = (nodeId: string) => {
+  return [`/api/sites/${nodeId}/blood-readiness`] as const;
+};
+
+export const getGetNodeBloodReadinessQueryOptions = <
+  TData = Awaited<ReturnType<typeof getNodeBloodReadiness>>,
+  TError = ErrorType<void>,
+>(
+  nodeId: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getNodeBloodReadiness>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetNodeBloodReadinessQueryKey(nodeId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getNodeBloodReadiness>>
+  > = ({ signal }) =>
+    getNodeBloodReadiness(nodeId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!nodeId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getNodeBloodReadiness>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetNodeBloodReadinessQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getNodeBloodReadiness>>
+>;
+export type GetNodeBloodReadinessQueryError = ErrorType<void>;
+
+export function useGetNodeBloodReadiness<
+  TData = Awaited<ReturnType<typeof getNodeBloodReadiness>>,
+  TError = ErrorType<void>,
+>(
+  nodeId: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getNodeBloodReadiness>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetNodeBloodReadinessQueryOptions(nodeId, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getGetTheaterBloodReadinessUrl = () => {
+  return `/api/dashboard/blood-readiness`;
+};
+
+export const getTheaterBloodReadiness = async (
+  options?: RequestInit,
+): Promise<TheaterBloodReadiness> => {
+  return customFetch<TheaterBloodReadiness>(getGetTheaterBloodReadinessUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetTheaterBloodReadinessQueryKey = () => {
+  return [`/api/dashboard/blood-readiness`] as const;
+};
+
+export const getGetTheaterBloodReadinessQueryOptions = <
+  TData = Awaited<ReturnType<typeof getTheaterBloodReadiness>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getTheaterBloodReadiness>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetTheaterBloodReadinessQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getTheaterBloodReadiness>>
+  > = ({ signal }) => getTheaterBloodReadiness({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getTheaterBloodReadiness>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetTheaterBloodReadinessQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getTheaterBloodReadiness>>
+>;
+export type GetTheaterBloodReadinessQueryError = ErrorType<unknown>;
+
+export function useGetTheaterBloodReadiness<
+  TData = Awaited<ReturnType<typeof getTheaterBloodReadiness>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getTheaterBloodReadiness>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetTheaterBloodReadinessQueryOptions(options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

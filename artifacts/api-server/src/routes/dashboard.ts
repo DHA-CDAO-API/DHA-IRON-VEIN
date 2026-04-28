@@ -3,6 +3,7 @@ import { db, alerts, activityEntries, items, inventoryBalances, nodes, orders } 
 import { desc, eq, ne, and } from "drizzle-orm";
 import { computeRiskByNode, computeInFlightShipments } from "../lib/snapshot";
 import { loadSimContext } from "../lib/ctx";
+import { computeTheaterBloodReadiness } from "../lib/blood-readiness";
 import {
   computeDailyDemand,
   generateRecommendations,
@@ -14,7 +15,7 @@ const router: IRouter = Router();
 
 router.get("/dashboard/overview", async (_req, res, next) => {
   try {
-    const [risk, shipments, ctx, openAlerts, recentActivity, nodeRows, openOrders] =
+    const [risk, shipments, ctx, openAlerts, recentActivity, nodeRows, openOrders, bloodReadiness] =
       await Promise.all([
         computeRiskByNode(),
         computeInFlightShipments(),
@@ -26,6 +27,7 @@ router.get("/dashboard/overview", async (_req, res, next) => {
           .select()
           .from(orders)
           .where(and(ne(orders.status, "DELIVERED"), ne(orders.status, "CANCELLED"))),
+        computeTheaterBloodReadiness(),
       ]);
 
     const nodeNameMap = new Map(nodeRows.map((n) => [n.id, n.name]));
@@ -115,6 +117,7 @@ router.get("/dashboard/overview", async (_req, res, next) => {
         refId: a.refId,
       })),
       operationalState: risk.operationalState,
+      bloodReadiness,
       generatedAt: new Date().toISOString(),
     });
   } catch (err) {

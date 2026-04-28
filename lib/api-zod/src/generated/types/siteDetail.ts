@@ -11,6 +11,7 @@ import type { DemandProfile } from "./demandProfile";
 import type { HistoryPoint } from "./historyPoint";
 import type { InventoryBalance } from "./inventoryBalance";
 import type { Node } from "./node";
+import type { NodeBloodReadiness } from "./nodeBloodReadiness";
 import type { Order } from "./order";
 import type { Recommendation } from "./recommendation";
 
@@ -23,4 +24,8 @@ export interface SiteDetail {
   recentOrders: Order[];
   recommendations: Recommendation[];
   history?: HistoryPoint[];
+  /** Per-site blood-products roll-up. Null when the node holds no blood
+(e.g. suppliers / prime vendors).
+ */
+  bloodReadiness?: NodeBloodReadiness | null;
 }

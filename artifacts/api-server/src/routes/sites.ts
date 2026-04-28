@@ -11,6 +11,7 @@ import {
 import { and, desc, eq } from "drizzle-orm";
 import { computeRiskByNode } from "../lib/snapshot";
 import { loadSimContext } from "../lib/ctx";
+import { computeNodeBloodReadiness } from "../lib/blood-readiness";
 import { computeDailyDemand, projectDaysOfSupply, statusFromDOS, generateRecommendations } from "@workspace/sim";
 
 const router: IRouter = Router();
@@ -47,7 +48,7 @@ router.get("/sites/:nodeId", async (req, res, next) => {
     const [nodeRow] = await db.select().from(nodes).where(eq(nodes.id, nodeId));
     if (!nodeRow) return res.status(404).json({ error: "node not found" });
 
-    const [balanceRows, alertRows, orderRows, allItems, profileRow, ctx] =
+    const [balanceRows, alertRows, orderRows, allItems, profileRow, ctx, bloodReadiness] =
       await Promise.all([
         db.select().from(inventoryBalances).where(eq(inventoryBalances.nodeId, nodeId)),
         db
@@ -63,6 +64,7 @@ router.get("/sites/:nodeId", async (req, res, next) => {
         db.select().from(itemsTable),
         db.select().from(demandProfiles).where(eq(demandProfiles.nodeId, nodeId)),
         loadSimContext(),
+        computeNodeBloodReadiness(nodeId),
       ]);
 
     const profile = profileRow[0];
@@ -150,6 +152,7 @@ router.get("/sites/:nodeId", async (req, res, next) => {
         createdAt: new Date().toISOString(),
       })),
       history,
+      bloodReadiness,
     });
   } catch (err) {
     next(err);

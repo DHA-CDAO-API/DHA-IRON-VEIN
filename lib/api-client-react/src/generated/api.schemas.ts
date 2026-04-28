@@ -425,6 +425,164 @@ export interface HistoryPoint {
   label?: string | null;
 }
 
+export interface BloodViabilityRow {
+  /** LTOWB | PRBC | FFP | PLASMA | PLATELETS | CRYO | FDP */
+  component: string;
+  /**
+   * O | A | B | AB | null
+   * @nullable
+   */
+  aboGroup?: string | null;
+  /**
+   * POS | NEG | null
+   * @nullable
+   */
+  rhFactor?: string | null;
+  /** Units that are still transfusable (includes near-expiry) */
+  viableUnits: number;
+  /** Units expiring within 72 h */
+  nearExpiryUnits: number;
+  expiredUnits: number;
+  /** Units flagged COMPROMISED (cold-chain failure */
+  compromisedUnits: number;
+}
+
+export type ColdChainAssetViewAssetType =
+  (typeof ColdChainAssetViewAssetType)[keyof typeof ColdChainAssetViewAssetType];
+
+export const ColdChainAssetViewAssetType = {
+  refrigerator: "refrigerator",
+  freezer: "freezer",
+  cryopreserver: "cryopreserver",
+  platelet_incubator: "platelet_incubator",
+  transport_cooler: "transport_cooler",
+  generator: "generator",
+} as const;
+
+export type ColdChainAssetViewStatus =
+  (typeof ColdChainAssetViewStatus)[keyof typeof ColdChainAssetViewStatus];
+
+export const ColdChainAssetViewStatus = {
+  NOMINAL: "NOMINAL",
+  EXCURSION: "EXCURSION",
+  FAILED: "FAILED",
+} as const;
+
+export interface ColdChainAssetView {
+  id: string;
+  assetType: ColdChainAssetViewAssetType;
+  name: string;
+  status: ColdChainAssetViewStatus;
+  currentTempC: number;
+  targetTempMinC?: number;
+  targetTempMaxC?: number;
+  hasGenerator: boolean;
+  fuelDaysRemaining: number;
+  capacityUnits?: number;
+  lastCheckedAt?: string;
+}
+
+export interface WbbReadyByType {
+  oPos: number;
+  oNeg: number;
+  aPos: number;
+  aNeg: number;
+  bPos: number;
+  bNeg: number;
+  abPos: number;
+  abNeg: number;
+  total: number;
+}
+
+/**
+ * Whether this reagent gates donor qualification, transfusion, or both.
+ */
+export type TestingSupplyViewConstrains =
+  (typeof TestingSupplyViewConstrains)[keyof typeof TestingSupplyViewConstrains];
+
+export const TestingSupplyViewConstrains = {
+  collection: "collection",
+  transfusion: "transfusion",
+  both: "both",
+} as const;
+
+export interface TestingSupplyView {
+  itemId: string;
+  itemName: string;
+  onHand: number;
+  dailyBurn: number;
+  daysOfSupply: number;
+  /** Whether this reagent gates donor qualification, transfusion, or both. */
+  constrains: TestingSupplyViewConstrains;
+  /** True when this item's DOS is at or below the critical threshold. */
+  isConstraint: boolean;
+}
+
+export type TemperatureEventViewSeverity =
+  (typeof TemperatureEventViewSeverity)[keyof typeof TemperatureEventViewSeverity];
+
+export const TemperatureEventViewSeverity = {
+  WATCH: "WATCH",
+  WARNING: "WARNING",
+  CRITICAL: "CRITICAL",
+} as const;
+
+export interface TemperatureEventView {
+  id: number;
+  assetId: string;
+  nodeId: string;
+  occurredAt: string;
+  recordedTempC: number;
+  severity: TemperatureEventViewSeverity;
+  /** @nullable */
+  resolvedAt?: string | null;
+  notes?: string;
+}
+
+export type NodeBloodReadinessColdChain = {
+  assets: ColdChainAssetView[];
+  /** 0–100 percent health across this node's storage assets. */
+  healthPercent: number;
+  activeExcursions: number;
+  failedAssets: number;
+  minFuelDaysRemaining: number;
+};
+
+export type NodeBloodReadinessDonors = {
+  eligibleDonors: number;
+  weeklyCollectionCapacity: number;
+  /** Collection capacity haircut by current reagent/kit availability. */
+  effectiveCollectionCapacity: number;
+  wbbReady: WbbReadyByType;
+  /** @nullable */
+  lastDriveAt?: string | null;
+};
+
+export type NodeBloodReadinessTestingSupplies = {
+  items: TestingSupplyView[];
+  minDaysOfSupply: number;
+  constraintsCollection: boolean;
+  constraintsTransfusion: boolean;
+};
+
+export interface NodeBloodReadiness {
+  nodeId: string;
+  totalViableUnits: number;
+  unitsExpiringWithin24h: number;
+  unitsExpiringWithin72h: number;
+  unitsExpiringWithin7d: number;
+  /** Days of supply against blood-product demand using only units that
+will still be transfusable through the relevant lead-time window
+(i.e. lots expiring within 7 days are excluded).
+ */
+  viableDaysOfSupply: number;
+  viability: BloodViabilityRow[];
+  coldChain: NodeBloodReadinessColdChain;
+  donors: NodeBloodReadinessDonors;
+  testingSupplies: NodeBloodReadinessTestingSupplies;
+  recentTemperatureEvents?: TemperatureEventView[];
+}
+
 export interface SiteDetail {
   node: Node;
   demandProfile: DemandProfile;
@@ -434,6 +592,10 @@ export interface SiteDetail {
   recentOrders: Order[];
   recommendations: Recommendation[];
   history?: HistoryPoint[];
+  /** Per-site blood-products roll-up. Null when the node holds no blood
+(e.g. suppliers / prime vendors).
+ */
+  bloodReadiness?: NodeBloodReadiness | null;
 }
 
 /**
@@ -898,6 +1060,23 @@ export type DashboardOverviewAlertCountsBySeverityItem = {
   count: number;
 };
 
+export interface TheaterBloodReadiness {
+  totalViableUnits: number;
+  unitsExpiringWithin24h: number;
+  unitsExpiringWithin72h: number;
+  unitsExpiringWithin7d: number;
+  coldChainHealthPercent: number;
+  coldChainAssetsTotal: number;
+  coldChainAssetsExcursion: number;
+  coldChainAssetsFailed: number;
+  walkingBloodBankReadyDonors: number;
+  /** Minimum days-of-supply across critical reagents/kits across all blood-storing nodes. */
+  reagentDaysRemaining: number;
+  nodesWithBlood: number;
+  /** Number of blood-storing nodes whose reagent DOS is at or below the critical threshold. */
+  nodesWithCriticalShortage: number;
+}
+
 export interface DashboardOverview {
   networkDaysOfSupply: number;
   openCriticalAlerts: number;
@@ -909,6 +1088,7 @@ export interface DashboardOverview {
   kpis: DashboardOverviewKpis;
   dosTrend: HistoryPoint[];
   alertCountsBySeverity: DashboardOverviewAlertCountsBySeverityItem[];
+  bloodReadiness?: TheaterBloodReadiness;
 }
 
 export type RiskBoardTopRiskItemsItem = {

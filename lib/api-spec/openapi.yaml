@@ -23,6 +23,7 @@ tags:
   - name: dashboard
   - name: admin
   - name: activity
+  - name: blood
 
 paths:
   /healthz:
@@ -623,6 +624,35 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/RiskBoard" }
 
+  /sites/{nodeId}/blood-readiness:
+    get:
+      operationId: getNodeBloodReadiness
+      tags: [blood]
+      parameters:
+        - in: path
+          name: nodeId
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NodeBloodReadiness" }
+        "404":
+          description: node not found
+
+  /dashboard/blood-readiness:
+    get:
+      operationId: getTheaterBloodReadiness
+      tags: [blood]
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TheaterBloodReadiness" }
+
   /activity:
     get:
       operationId: listActivity
@@ -894,6 +924,13 @@ components:
         history:
           type: array
           items: { $ref: "#/components/schemas/HistoryPoint" }
+        bloodReadiness:
+          oneOf:
+            - { $ref: "#/components/schemas/NodeBloodReadiness" }
+            - { type: "null" }
+          description: |
+            Per-site blood-products roll-up. Null when the node holds no blood
+            (e.g. suppliers / prime vendors).
 
     DemandProfile:
       type: object
@@ -1466,6 +1503,8 @@ components:
             properties:
               severity: { type: string }
               count: { type: integer }
+        bloodReadiness:
+          $ref: "#/components/schemas/TheaterBloodReadiness"
 
     RiskBoard:
       type: object
@@ -1511,3 +1550,178 @@ components:
         scenarioId: { type: ["string", "null"] }
         actorRole: { type: ["string", "null"] }
         createdAt: { type: string, format: date-time }
+
+    BloodViabilityRow:
+      type: object
+      required: [component, viableUnits, nearExpiryUnits, expiredUnits, compromisedUnits]
+      properties:
+        component:
+          type: string
+          description: LTOWB | PRBC | FFP | PLASMA | PLATELETS | CRYO | FDP
+        aboGroup: { type: ["string", "null"], description: "O | A | B | AB | null" }
+        rhFactor: { type: ["string", "null"], description: "POS | NEG | null" }
+        viableUnits: { type: integer, description: Units that are still transfusable (includes near-expiry) }
+        nearExpiryUnits: { type: integer, description: Units expiring within 72 h }
+        expiredUnits: { type: integer }
+        compromisedUnits: { type: integer, description: Units flagged COMPROMISED (cold-chain failure, contamination, etc.) }
+
+    ColdChainAssetView:
+      type: object
+      required: [id, assetType, name, status, currentTempC, hasGenerator, fuelDaysRemaining]
+      properties:
+        id: { type: string }
+        assetType:
+          type: string
+          enum: [refrigerator, freezer, cryopreserver, platelet_incubator, transport_cooler, generator]
+        name: { type: string }
+        status: { type: string, enum: [NOMINAL, EXCURSION, FAILED] }
+        currentTempC: { type: number }
+        targetTempMinC: { type: number }
+        targetTempMaxC: { type: number }
+        hasGenerator: { type: boolean }
+        fuelDaysRemaining: { type: number }
+        capacityUnits: { type: integer }
+        lastCheckedAt: { type: string, format: date-time }
+
+    TestingSupplyView:
+      type: object
+      required: [itemId, itemName, onHand, dailyBurn, daysOfSupply, constrains, isConstraint]
+      properties:
+        itemId: { type: string }
+        itemName: { type: string }
+        onHand: { type: number }
+        dailyBurn: { type: number }
+        daysOfSupply: { type: number }
+        constrains:
+          type: string
+          enum: [collection, transfusion, both]
+          description: Whether this reagent gates donor qualification, transfusion, or both.
+        isConstraint:
+          type: boolean
+          description: True when this item's DOS is at or below the critical threshold.
+
+    WbbReadyByType:
+      type: object
+      required: [oPos, oNeg, aPos, aNeg, bPos, bNeg, abPos, abNeg, total]
+      properties:
+        oPos: { type: integer }
+        oNeg: { type: integer }
+        aPos: { type: integer }
+        aNeg: { type: integer }
+        bPos: { type: integer }
+        bNeg: { type: integer }
+        abPos: { type: integer }
+        abNeg: { type: integer }
+        total: { type: integer }
+
+    TemperatureEventView:
+      type: object
+      required: [id, assetId, nodeId, occurredAt, recordedTempC, severity]
+      properties:
+        id: { type: integer }
+        assetId: { type: string }
+        nodeId: { type: string }
+        occurredAt: { type: string, format: date-time }
+        recordedTempC: { type: number }
+        severity: { type: string, enum: [WATCH, WARNING, CRITICAL] }
+        resolvedAt: { type: ["string", "null"], format: date-time }
+        notes: { type: string }
+
+    NodeBloodReadiness:
+      type: object
+      required:
+        - nodeId
+        - totalViableUnits
+        - unitsExpiringWithin24h
+        - unitsExpiringWithin72h
+        - unitsExpiringWithin7d
+        - viableDaysOfSupply
+        - viability
+        - coldChain
+        - donors
+        - testingSupplies
+      properties:
+        nodeId: { type: string }
+        totalViableUnits: { type: integer }
+        unitsExpiringWithin24h: { type: integer }
+        unitsExpiringWithin72h: { type: integer }
+        unitsExpiringWithin7d: { type: integer }
+        viableDaysOfSupply:
+          type: number
+          description: |
+            Days of supply against blood-product demand using only units that
+            will still be transfusable through the relevant lead-time window
+            (i.e. lots expiring within 7 days are excluded).
+        viability:
+          type: array
+          items: { $ref: "#/components/schemas/BloodViabilityRow" }
+        coldChain:
+          type: object
+          required: [assets, healthPercent, activeExcursions, failedAssets, minFuelDaysRemaining]
+          properties:
+            assets:
+              type: array
+              items: { $ref: "#/components/schemas/ColdChainAssetView" }
+            healthPercent:
+              type: number
+              description: 0–100 percent health across this node's storage assets.
+            activeExcursions: { type: integer }
+            failedAssets: { type: integer }
+            minFuelDaysRemaining: { type: number }
+        donors:
+          type: object
+          required: [eligibleDonors, weeklyCollectionCapacity, effectiveCollectionCapacity, wbbReady]
+          properties:
+            eligibleDonors: { type: integer }
+            weeklyCollectionCapacity: { type: integer }
+            effectiveCollectionCapacity:
+              type: integer
+              description: Collection capacity haircut by current reagent/kit availability.
+            wbbReady: { $ref: "#/components/schemas/WbbReadyByType" }
+            lastDriveAt: { type: ["string", "null"], format: date-time }
+        testingSupplies:
+          type: object
+          required: [items, minDaysOfSupply, constraintsCollection, constraintsTransfusion]
+          properties:
+            items:
+              type: array
+              items: { $ref: "#/components/schemas/TestingSupplyView" }
+            minDaysOfSupply: { type: number }
+            constraintsCollection: { type: boolean }
+            constraintsTransfusion: { type: boolean }
+        recentTemperatureEvents:
+          type: array
+          items: { $ref: "#/components/schemas/TemperatureEventView" }
+
+    TheaterBloodReadiness:
+      type: object
+      required:
+        - totalViableUnits
+        - unitsExpiringWithin24h
+        - unitsExpiringWithin72h
+        - unitsExpiringWithin7d
+        - coldChainHealthPercent
+        - coldChainAssetsTotal
+        - coldChainAssetsExcursion
+        - coldChainAssetsFailed
+        - walkingBloodBankReadyDonors
+        - reagentDaysRemaining
+        - nodesWithBlood
+        - nodesWithCriticalShortage
+      properties:
+        totalViableUnits: { type: integer }
+        unitsExpiringWithin24h: { type: integer }
+        unitsExpiringWithin72h: { type: integer }
+        unitsExpiringWithin7d: { type: integer }
+        coldChainHealthPercent: { type: number }
+        coldChainAssetsTotal: { type: integer }
+        coldChainAssetsExcursion: { type: integer }
+        coldChainAssetsFailed: { type: integer }
+        walkingBloodBankReadyDonors: { type: integer }
+        reagentDaysRemaining:
+          type: number
+          description: Minimum days-of-supply across critical reagents/kits across all blood-storing nodes.
+        nodesWithBlood: { type: integer }
+        nodesWithCriticalShortage:
+          type: integer
+          description: Number of blood-storing nodes whose reagent DOS is at or below the critical threshold.

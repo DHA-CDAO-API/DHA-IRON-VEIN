@@ -16,6 +16,7 @@ import settingsRouter from "./settings";
 import profileRouter from "./profile";
 import dashboardRouter from "./dashboard";
 import activityRouter from "./activity";
+import bloodRouter from "./blood";
 
 const router: IRouter = Router();
 
@@ -36,5 +37,6 @@ router.use(settingsRouter);
 router.use(profileRouter);
 router.use(dashboardRouter);
 router.use(activityRouter);
+router.use(bloodRouter);
 
 export default router;
