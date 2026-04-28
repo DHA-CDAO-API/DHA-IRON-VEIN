@@ -4,9 +4,11 @@ import {
   useListItems,
   useListNodes,
   useListSuppliers,
+  useListInventoryBalances,
   getListItemsQueryKey,
   getListNodesQueryKey,
   getListSuppliersQueryKey,
+  getListInventoryBalancesQueryKey,
   getListOrdersQueryKey,
   type Item,
   type Node as NetworkNode,
@@ -112,6 +114,9 @@ export function NewOrderDialog({ open, onOpenChange }: NewOrderDialogProps) {
   const { data: suppliers } = useListSuppliers({
     query: { queryKey: getListSuppliersQueryKey(), enabled: open },
   });
+  const { data: inventoryBalances } = useListInventoryBalances(undefined, {
+    query: { queryKey: getListInventoryBalancesQueryKey(), enabled: open },
+  });
 
   const sortedItems = useMemo(
     () =>
@@ -128,6 +133,52 @@ export function NewOrderDialog({ open, onOpenChange }: NewOrderDialogProps) {
     () => (suppliers ?? []) as Supplier[],
     [suppliers],
   );
+
+  // Aggregate network on-hand per item across all nodes. The API can emit
+  // either `onHand` or `quantityOnHand` depending on contract version, so
+  // accept either.
+  const onHandByItem = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const b of inventoryBalances ?? []) {
+      const raw = b as { onHand?: number; quantityOnHand?: number };
+      const qty = raw.quantityOnHand ?? raw.onHand ?? 0;
+      map.set(b.itemId, (map.get(b.itemId) ?? 0) + qty);
+    }
+    return map;
+  }, [inventoryBalances]);
+
+  // Per-category low-stock threshold = 20% of the median total on-hand for
+  // that category. Auto-scales between blood products (units) and bulk
+  // supplies (pads/tubes/sets) without hard-coded magic numbers.
+  const lowStockThresholdByCategory = useMemo(() => {
+    const buckets = new Map<string, number[]>();
+    for (const it of sortedItems) {
+      const cat = it.category ?? "other";
+      const total = onHandByItem.get(it.id) ?? 0;
+      if (!buckets.has(cat)) buckets.set(cat, []);
+      buckets.get(cat)!.push(total);
+    }
+    const thresholds = new Map<string, number>();
+    for (const [cat, values] of buckets) {
+      const sorted = [...values].sort((a, b) => a - b);
+      const median =
+        sorted.length === 0
+          ? 0
+          : sorted.length % 2 === 1
+            ? sorted[(sorted.length - 1) / 2]
+            : (sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2;
+      thresholds.set(cat, Math.max(0, median * 0.2));
+    }
+    return thresholds;
+  }, [sortedItems, onHandByItem]);
+
+  function stockLevelFor(it: Item): "out" | "low" | "ok" {
+    const total = onHandByItem.get(it.id) ?? 0;
+    if (total <= 0) return "out";
+    const threshold = lowStockThresholdByCategory.get(it.category ?? "other") ?? 0;
+    if (threshold > 0 && total < threshold) return "low";
+    return "ok";
+  }
 
   const [itemId, setItemId] = useState("");
   const [itemPickerOpen, setItemPickerOpen] = useState(false);
@@ -370,6 +421,9 @@ export function NewOrderDialog({ open, onOpenChange }: NewOrderDialogProps) {
                         const categoryLabel = formatCategory(it.category);
                         const classOfSupply = it.classOfSupply;
                         const niinOrSku = it.niinOrSku;
+                        const onHand = onHandByItem.get(it.id) ?? 0;
+                        const leadTime = it.leadTimeDays;
+                        const stockLevel = stockLevelFor(it);
                         const searchValue = [
                           it.name,
                           categoryLabel ?? "",
@@ -409,9 +463,29 @@ export function NewOrderDialog({ open, onOpenChange }: NewOrderDialogProps) {
                                     {categoryLabel}
                                   </Badge>
                                 )}
+                                {stockLevel === "out" && (
+                                  <Badge
+                                    variant="outline"
+                                    data-testid={`item-stock-pill-${it.id}`}
+                                    className="shrink-0 text-[10px] uppercase tracking-wide border-red-500/40 text-red-600 dark:text-red-400 bg-red-500/10"
+                                  >
+                                    <span className="inline-block h-1.5 w-1.5 rounded-full bg-red-500 mr-1" />
+                                    Out of stock
+                                  </Badge>
+                                )}
+                                {stockLevel === "low" && (
+                                  <Badge
+                                    variant="outline"
+                                    data-testid={`item-stock-pill-${it.id}`}
+                                    className="shrink-0 text-[10px] uppercase tracking-wide border-amber-500/40 text-amber-600 dark:text-amber-400 bg-amber-500/10"
+                                  >
+                                    <span className="inline-block h-1.5 w-1.5 rounded-full bg-amber-500 mr-1" />
+                                    Low stock
+                                  </Badge>
+                                )}
                               </div>
-                              {(classOfSupply || niinOrSku) && (
-                                <div className="text-xs text-muted-foreground truncate">
+                              <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+                                <div className="truncate">
                                   {classOfSupply && (
                                     <span>Class {classOfSupply}</span>
                                   )}
@@ -420,7 +494,26 @@ export function NewOrderDialog({ open, onOpenChange }: NewOrderDialogProps) {
                                   )}
                                   {niinOrSku && <span>{niinOrSku}</span>}
                                 </div>
-                              )}
+                                <div
+                                  className="shrink-0 tabular-nums"
+                                  data-testid={`item-stock-meta-${it.id}`}
+                                >
+                                  <span
+                                    className={cn(
+                                      stockLevel === "out" &&
+                                        "text-red-600 dark:text-red-400 font-medium",
+                                      stockLevel === "low" &&
+                                        "text-amber-600 dark:text-amber-400 font-medium",
+                                    )}
+                                  >
+                                    On-hand {onHand.toLocaleString()}{" "}
+                                    {it.unitOfIssue ?? it.unit}
+                                  </span>
+                                  {typeof leadTime === "number" && (
+                                    <span> · {Math.round(leadTime)}d lead</span>
+                                  )}
+                                </div>
+                              </div>
                             </div>
                           </CommandItem>
                         );
