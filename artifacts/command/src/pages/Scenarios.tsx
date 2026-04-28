@@ -1556,6 +1556,9 @@ function RecommendationCards({
     succeeded: number;
     failed: number;
   } | null>(null);
+  const [batchCancelled, setBatchCancelled] = React.useState(false);
+  const [batchCancelRequested, setBatchCancelRequested] = React.useState(false);
+  const cancelRequestedRef = React.useRef(false);
   const isBatchRunning = batchRunningIds.size > 0;
   const showProgressSummary = !isBatchRunning && batchProgress !== null;
 
@@ -1721,6 +1724,9 @@ function RecommendationCards({
     const ids = Array.from(selectedIds).filter((id) => promotableSet.has(id));
     if (ids.length === 0) return;
     const CONCURRENCY = 4;
+    cancelRequestedRef.current = false;
+    setBatchCancelRequested(false);
+    setBatchCancelled(false);
     let succeeded = 0;
     let failed = 0;
     let done = 0;
@@ -1761,6 +1767,7 @@ function RecommendationCards({
 
     const worker = async () => {
       while (true) {
+        if (cancelRequestedRef.current) return;
         const i = cursor;
         cursor += 1;
         if (i >= ids.length) return;
@@ -1775,6 +1782,16 @@ function RecommendationCards({
     }
     await Promise.all(workers);
     setBatchRunningIds(new Set());
+    if (cancelRequestedRef.current) {
+      setBatchCancelled(true);
+    }
+    setBatchCancelRequested(false);
+  };
+
+  const handleCancelBatch = () => {
+    if (!isBatchRunning || cancelRequestedRef.current) return;
+    cancelRequestedRef.current = true;
+    setBatchCancelRequested(true);
   };
 
   const selectedCount = selectedIds.size;
@@ -1899,16 +1916,25 @@ function RecommendationCards({
                 className={cn(
                   "text-muted-foreground",
                   showProgressSummary &&
+                    !batchCancelled &&
                     batchProgress.failed === 0 &&
                     "text-emerald-400 font-medium",
                   showProgressSummary &&
+                    !batchCancelled &&
                     batchProgress.failed > 0 &&
+                    "text-amber-400 font-medium",
+                  showProgressSummary &&
+                    batchCancelled &&
                     "text-amber-400 font-medium",
                 )}
                 data-testid="rec-bulk-progress"
               >
-                {isBatchRunning ? "Promoting" : "Done"} {batchProgress.done}/
-                {batchProgress.total}
+                {isBatchRunning
+                  ? "Promoting"
+                  : batchCancelled
+                    ? "Cancelled"
+                    : "Done"}{" "}
+                {batchProgress.done}/{batchProgress.total}
                 {batchProgress.failed > 0
                   ? ` · ${batchProgress.failed} failed`
                   : ""}
@@ -1925,13 +1951,28 @@ function RecommendationCards({
                   : `Select all open (${visiblePromotableIds.length})`}
               </button>
             ) : null}
+            {isBatchRunning ? (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleCancelBatch}
+                disabled={batchCancelRequested}
+                className="h-6 px-2 text-[11px]"
+                data-testid="rec-bulk-cancel"
+              >
+                {batchCancelRequested ? "Cancelling…" : "Cancel"}
+              </Button>
+            ) : null}
           </div>
           <div className="flex items-center gap-2">
             {showProgressSummary ? (
               <Button
                 size="sm"
                 variant="ghost"
-                onClick={() => setBatchProgress(null)}
+                onClick={() => {
+                  setBatchProgress(null);
+                  setBatchCancelled(false);
+                }}
                 className="h-7 text-xs"
                 data-testid="rec-bulk-dismiss"
               >
