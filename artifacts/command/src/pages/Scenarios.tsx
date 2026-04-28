@@ -183,6 +183,8 @@ export default function Scenarios() {
 
   const [builder, setBuilder] = React.useState<CustomBuilderState>(DEFAULT_BUILDER);
   const [result, setResult] = React.useState<ScenarioResult | null>(null);
+  const [previousResult, setPreviousResult] =
+    React.useState<ScenarioResult | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   const [loadingSavedId, setLoadingSavedId] = React.useState<string | null>(null);
   const [rerunningSavedId, setRerunningSavedId] = React.useState<string | null>(null);
@@ -203,6 +205,7 @@ export default function Scenarios() {
   const handleRunPreset = React.useCallback(
     async (preset: PresetEvent) => {
       setError(null);
+      setPreviousResult(null);
       try {
         const res = (await runScenario.mutateAsync({
           data: {
@@ -236,6 +239,7 @@ export default function Scenarios() {
     async (scenarioId: string) => {
       setError(null);
       setLoadingSavedId(scenarioId);
+      setPreviousResult(null);
       try {
         const detail = await fetchSavedDetail(scenarioId);
         skipNextPreviewRef.current = true;
@@ -274,6 +278,7 @@ export default function Scenarios() {
           } as Parameters<typeof runScenario.mutateAsync>[0]["data"],
         })) as ScenarioResult;
         skipNextPreviewRef.current = true;
+        setPreviousResult(detail);
         setResult(res);
         await queryClient.invalidateQueries({ queryKey: getListScenariosQueryKey() });
       } catch (e) {
@@ -287,6 +292,7 @@ export default function Scenarios() {
 
   const handleSaveCustom = React.useCallback(async () => {
     setError(null);
+    setPreviousResult(null);
     if (!builder.name.trim()) {
       setError("Name your scenario before saving.");
       return;
@@ -361,6 +367,7 @@ export default function Scenarios() {
         if (!cancelled) {
           setResult(res);
           setSavedAt(null);
+          setPreviousResult(null);
         }
       } catch (e) {
         if (!cancelled) {
@@ -453,7 +460,7 @@ export default function Scenarios() {
             {(runScenario.isPending || previewScenario.isPending) && !result ? (
               <RunningPlaceholder />
             ) : result ? (
-              <ResultPanel result={result} />
+              <ResultPanel result={result} previous={previousResult} />
             ) : (
               <EmptyPlaceholder />
             )}
@@ -929,7 +936,13 @@ function RunningPlaceholder() {
   );
 }
 
-function ResultPanel({ result }: { result: ScenarioResult }) {
+function ResultPanel({
+  result,
+  previous,
+}: {
+  result: ScenarioResult;
+  previous?: ScenarioResult | null;
+}) {
   const summary = result.summary;
   const peakNode = summary.peakRiskNodeName ?? summary.peakRiskNodeId ?? "—";
   return (
@@ -946,6 +959,8 @@ function ResultPanel({ result }: { result: ScenarioResult }) {
             {result.scenario.description}
           </p>
         ) : null}
+
+        {previous ? <RerunDiffBar current={result} previous={previous} /> : null}
 
         <div className="grid grid-cols-4 gap-2">
           <KpiTile
@@ -2021,6 +2036,105 @@ function KpiTile({
       >
         {value}
       </div>
+    </div>
+  );
+}
+
+function RerunDiffBar({
+  current,
+  previous,
+}: {
+  current: ScenarioResult;
+  previous: ScenarioResult;
+}) {
+  const cur = current.summary;
+  const prev = previous.summary;
+
+  const dosAfter = cur.networkDaysOfSupplyAfter;
+  const prevDosAfter = prev.networkDaysOfSupplyAfter;
+  const dosDelta =
+    typeof dosAfter === "number" && typeof prevDosAfter === "number"
+      ? dosAfter - prevDosAfter
+      : null;
+
+  const events = cur.estimatedShortageEvents ?? 0;
+  const prevEvents = prev.estimatedShortageEvents ?? 0;
+  const eventsDelta = events - prevEvents;
+
+  const peakNow = cur.peakRiskNodeName ?? cur.peakRiskNodeId ?? "—";
+  const peakPrev = prev.peakRiskNodeName ?? prev.peakRiskNodeId ?? "—";
+  const peakChanged = peakNow !== peakPrev;
+
+  // DOS After: lower is worse (warn red), higher is better (emerald)
+  const dosTone =
+    dosDelta == null || Math.abs(dosDelta) < 0.05
+      ? "neutral"
+      : dosDelta < 0
+        ? "warn"
+        : "ok";
+  // Shortage events: more is worse
+  const eventsTone =
+    eventsDelta === 0 ? "neutral" : eventsDelta > 0 ? "warn" : "ok";
+
+  const fmtSignedFixed = (n: number, d: number) =>
+    `${n >= 0 ? "+" : ""}${n.toFixed(d)}`;
+  const fmtSignedInt = (n: number) => `${n >= 0 ? "+" : ""}${n}`;
+
+  return (
+    <div
+      data-testid="rerun-diff-bar"
+      className="mb-3 rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-xs flex flex-wrap items-center gap-x-4 gap-y-1"
+    >
+      <span className="text-[10px] uppercase tracking-wider text-primary font-semibold">
+        vs. previous run
+      </span>
+      <span className="flex items-center gap-1">
+        <span className="text-muted-foreground">DOS After</span>
+        <span className="font-mono font-semibold">
+          {typeof dosAfter === "number" ? `${dosAfter.toFixed(1)}d` : "—"}
+        </span>
+        {dosDelta != null ? (
+          <span
+            className={cn(
+              "font-mono",
+              dosTone === "warn" && "text-amber-400",
+              dosTone === "ok" && "text-emerald-400",
+              dosTone === "neutral" && "text-muted-foreground",
+            )}
+          >
+            ({fmtSignedFixed(dosDelta, 1)}d)
+          </span>
+        ) : null}
+      </span>
+      <span className="flex items-center gap-1">
+        <span className="text-muted-foreground">Shortage Events</span>
+        <span className="font-mono font-semibold">{events}</span>
+        <span
+          className={cn(
+            "font-mono",
+            eventsTone === "warn" && "text-amber-400",
+            eventsTone === "ok" && "text-emerald-400",
+            eventsTone === "neutral" && "text-muted-foreground",
+          )}
+        >
+          ({fmtSignedInt(eventsDelta)})
+        </span>
+      </span>
+      <span className="flex items-center gap-1">
+        <span className="text-muted-foreground">Peak Risk Node</span>
+        {peakChanged ? (
+          <span className="font-mono">
+            <span className="text-muted-foreground">{peakPrev}</span>
+            <span className="text-muted-foreground mx-1">→</span>
+            <span className="text-foreground font-semibold">{peakNow}</span>
+          </span>
+        ) : (
+          <span className="font-mono font-semibold">
+            {peakNow}
+            <span className="ml-1 text-muted-foreground font-normal">(unchanged)</span>
+          </span>
+        )}
+      </span>
     </div>
   );
 }
