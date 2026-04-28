@@ -1,5 +1,14 @@
 import { Router, type IRouter } from "express";
-import { db, recommendations as recsTable, orders, orderLines, activityEntries } from "@workspace/db";
+import {
+  db,
+  recommendations as recsTable,
+  orders,
+  orderLines,
+  activityEntries,
+  items as itemsTable,
+  nodes as nodesTable,
+  suppliers as suppliersTable,
+} from "@workspace/db";
 import { desc, eq } from "drizzle-orm";
 import { loadSimContext } from "../lib/ctx";
 import {
@@ -8,6 +17,7 @@ import {
   projectDaysOfSupply,
 } from "@workspace/sim";
 import { invalidateSimCache } from "../lib/ctx";
+import { mapRecommendationToApi } from "../lib/mappers";
 
 const router: IRouter = Router();
 
@@ -105,20 +115,32 @@ router.get("/predictive/recommendations", async (req, res, next) => {
       paddingDays: ctx.paddingDays,
     }).slice(0, limit);
 
-    const promoted = await db.select().from(recsTable);
+    const [promoted, itemRows, nodeRows, supplierRows] = await Promise.all([
+      db.select().from(recsTable),
+      db.select().from(itemsTable),
+      db.select().from(nodesTable),
+      db.select().from(suppliersTable),
+    ]);
     const promotedByLogicalId = new Map(
       promoted.filter((p) => p.promotedOrderId).map((p) => [p.id, p]),
     );
+    const lookups = {
+      itemNamesById: new Map(itemRows.map((i) => [i.id, i.name])),
+      nodeNamesById: new Map(nodeRows.map((n) => [n.id, n.name])),
+      supplierNamesById: new Map(supplierRows.map((s) => [s.id, s.name])),
+      supplierFromNodeById: new Map<string, string>(),
+    };
+    const generatedAt = new Date().toISOString();
 
     res.json(
       recs.map((r) => {
         const persisted = promotedByLogicalId.get(r.id);
-        return {
-          ...r,
+        return mapRecommendationToApi(r, {
           status: persisted ? "PROMOTED" : "OPEN",
           promotedOrderId: persisted?.promotedOrderId ?? null,
-          createdAt: new Date().toISOString(),
-        };
+          generatedAt,
+          lookups,
+        });
       }),
     );
   } catch (err) {
@@ -198,7 +220,12 @@ router.post(
             nodeId: persisted.nodeId,
             supplierId: persisted.sourceSupplierId ?? "supplier",
             status: "SUBMITTED",
-            priority: persisted.kind === "ESCALATE" ? "FLASH" : "ROUTINE",
+            priority:
+              persisted.kind === "ESCALATE"
+                ? "FLASH"
+                : persisted.kind === "REROUTE"
+                  ? "URGENT"
+                  : "ROUTINE",
             createdAt: new Date().toISOString(),
             requestedDeliveryAt: new Date(
               Date.now() + Math.max(1, persisted.etaDays) * 86400_000,

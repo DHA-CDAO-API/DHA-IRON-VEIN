@@ -6,12 +6,14 @@ import {
   alerts,
   orders,
   items as itemsTable,
+  suppliers as suppliersTable,
   demandProfiles,
 } from "@workspace/db";
 import { and, desc, eq } from "drizzle-orm";
 import { computeRiskByNode } from "../lib/snapshot";
 import { loadSimContext } from "../lib/ctx";
 import { computeNodeBloodReadiness } from "../lib/blood-readiness";
+import { mapRecommendationToApi } from "../lib/mappers";
 import { computeDailyDemand, projectDaysOfSupply, statusFromDOS, generateRecommendations } from "@workspace/sim";
 
 const router: IRouter = Router();
@@ -128,6 +130,15 @@ router.get("/sites/:nodeId", async (req, res, next) => {
       paddingDays: ctx.paddingDays,
     });
 
+    const supplierRows = await db.select().from(suppliersTable);
+    const recLookups = {
+      itemNamesById: new Map(allItems.map((i) => [i.id, i.name])),
+      nodeNamesById: new Map([[nodeRow.id, nodeRow.name]]),
+      supplierNamesById: new Map(supplierRows.map((s) => [s.id, s.name])),
+      supplierFromNodeById: new Map<string, string>(),
+    };
+    const generatedAt = new Date().toISOString();
+
     const history = buildSyntheticHistory(nodeId, dailyDemand);
 
     res.json({
@@ -147,11 +158,13 @@ router.get("/sites/:nodeId", async (req, res, next) => {
         requestedDeliveryAt: o.requestedDeliveryAt.toISOString(),
         lineCount: 0,
       })),
-      recommendations: recs.map((r) => ({
-        ...r,
-        status: "OPEN",
-        createdAt: new Date().toISOString(),
-      })),
+      recommendations: recs.map((r) =>
+        mapRecommendationToApi(r, {
+          status: "OPEN",
+          generatedAt,
+          lookups: recLookups,
+        }),
+      ),
       history,
       bloodReadiness,
     });
