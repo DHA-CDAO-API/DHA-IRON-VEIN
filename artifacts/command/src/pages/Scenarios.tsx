@@ -1226,6 +1226,36 @@ const PRIORITY_FILTERS: Array<{ value: string; label: string }> = [
   { value: "ROUTINE", label: "ROUTINE" },
 ];
 
+type RecSortValue = "priority" | "eta" | "cost" | "quantity";
+
+const REC_SORT_OPTIONS: Array<{ value: RecSortValue; label: string }> = [
+  { value: "priority", label: "Priority (default)" },
+  { value: "eta", label: "ETA (fastest first)" },
+  { value: "cost", label: "Cost (lowest first)" },
+  { value: "quantity", label: "Quantity (largest first)" },
+];
+
+function sortRecommendations(
+  recs: Recommendation[],
+  sortBy: RecSortValue,
+): Recommendation[] {
+  if (sortBy === "priority") return recs;
+  const arr = [...recs];
+  arr.sort((a, b) => {
+    if (sortBy === "eta") {
+      return (a.etaDays ?? Infinity) - (b.etaDays ?? Infinity);
+    }
+    if (sortBy === "cost") {
+      const aCost = typeof a.estimatedCost === "number" ? a.estimatedCost : Infinity;
+      const bCost = typeof b.estimatedCost === "number" ? b.estimatedCost : Infinity;
+      return aCost - bCost;
+    }
+    // quantity: largest first
+    return (b.quantity ?? 0) - (a.quantity ?? 0);
+  });
+  return arr;
+}
+
 type PromoteOverrides = {
   quantity: number;
   supplierId: string;
@@ -1272,6 +1302,7 @@ function RecommendationCards({
   );
   const [searchQuery, setSearchQuery] = React.useState("");
   const [hidePromoted, setHidePromoted] = React.useState(false);
+  const [sortBy, setSortBy] = React.useState<RecSortValue>("priority");
 
   const togglePriority = (value: string) => {
     setPriorityFilter((prev) => {
@@ -1322,7 +1353,7 @@ function RecommendationCards({
 
   const filtered = React.useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    return recommendations.filter((r) => {
+    const matched = recommendations.filter((r) => {
       if (priorityFilter.size > 0) {
         const p = (r.priority ?? "").toUpperCase();
         if (!priorityFilter.has(p)) return false;
@@ -1345,7 +1376,8 @@ function RecommendationCards({
       }
       return true;
     });
-  }, [recommendations, priorityFilter, searchQuery, hidePromoted, promotedById]);
+    return sortRecommendations(matched, sortBy);
+  }, [recommendations, priorityFilter, searchQuery, hidePromoted, promotedById, sortBy]);
 
   // Promotable = open (not yet promoted) recs from the full list.
   // Used for selection pruning and for the promote pipeline.
@@ -1520,6 +1552,34 @@ function RecommendationCards({
               data-testid="rec-filter-search"
               className="h-7 pl-7 text-xs"
             />
+          </div>
+          <div className="inline-flex items-center gap-1.5">
+            <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
+              Sort
+            </span>
+            <Select
+              value={sortBy}
+              onValueChange={(v) => setSortBy(v as RecSortValue)}
+            >
+              <SelectTrigger
+                data-testid="rec-sort"
+                className="h-7 w-[180px] text-xs"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {REC_SORT_OPTIONS.map((opt) => (
+                  <SelectItem
+                    key={opt.value}
+                    value={opt.value}
+                    data-testid={`rec-sort-option-${opt.value}`}
+                    className="text-xs"
+                  >
+                    {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <label className="inline-flex items-center gap-2 text-[11px] text-muted-foreground cursor-pointer">
             <Switch
