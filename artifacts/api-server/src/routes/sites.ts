@@ -102,6 +102,7 @@ router.get("/sites/:nodeId", async (req, res, next) => {
     const dosByItem = balances.map((b) => ({
       itemId: b.itemId,
       itemName: b.itemName,
+      unit: b.unitOfIssue,
       onHand: b.onHand,
       dailyBurn: Number((demandByItem.get(b.itemId) ?? 0).toFixed(2)),
       daysOfSupply: b.daysOfSupply,

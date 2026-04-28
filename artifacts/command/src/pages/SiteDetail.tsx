@@ -26,12 +26,27 @@ type DosRow = DaysOfSupplyEntry & {
   category: ItemCategoryKey;
   categoryLabelText: string;
   onHand: number;
+  unit: string;
 };
 
 function readOnHand(d: DaysOfSupplyEntry): number {
   // API may emit either `onHand` or `quantityOnHand` depending on contract version
   const raw = (d as { onHand?: number; quantityOnHand?: number });
   return raw.quantityOnHand ?? raw.onHand ?? 0;
+}
+
+function formatUnit(unit: string | undefined | null, qty: number): string {
+  if (!unit) return '';
+  const u = unit.trim();
+  if (!u) return '';
+  // Pluralize simple English unit nouns; leave abbreviations (ea, kg, ml, L, etc.) alone.
+  const lower = u.toLowerCase();
+  const isWord = /^[a-z]+$/i.test(u) && u.length > 2;
+  if (!isWord || qty === 1 || lower.endsWith('s')) return u;
+  if (lower.endsWith('x') || lower.endsWith('s') || lower.endsWith('z') || lower.endsWith('ch') || lower.endsWith('sh')) {
+    return `${u}es`;
+  }
+  return `${u}s`;
 }
 
 const CATEGORY_ICON: Record<ItemCategoryKey, React.ComponentType<{ className?: string }>> = {
@@ -76,6 +91,7 @@ export default function SiteDetail() {
         category: key,
         categoryLabelText: categoryLabel(key),
         onHand: readOnHand(d),
+        unit: (d.unit ?? it?.unitOfIssue ?? it?.unit ?? '').trim(),
       };
     });
   }, [detail, itemMap]);
@@ -544,6 +560,11 @@ function CategorySection({
   const minDos = validDos.length > 0 ? Math.min(...validDos) : null;
   const avgDos = validDos.length > 0 ? validDos.reduce((a, b) => a + b, 0) / validDos.length : null;
 
+  // Show a unit suffix on the subtotal only when every row in the category shares the same unit.
+  const unitSet = new Set(rows.map((r) => r.unit).filter((u) => !!u));
+  const sharedUnit = unitSet.size === 1 ? rows.find((r) => !!r.unit)?.unit ?? '' : '';
+  const subtotalUnit = sharedUnit ? formatUnit(sharedUnit, onHandTotal) : '';
+
   return (
     <div>
       {!hideHeader && (
@@ -555,7 +576,14 @@ function CategorySection({
           </div>
           <div className="flex items-center gap-4 text-xs">
             <span className="text-muted-foreground">
-              On hand: <span className="font-mono text-foreground">{formatNumber(onHandTotal)}</span>
+              On hand:{' '}
+              <span className="font-mono text-foreground">{formatNumber(onHandTotal)}</span>
+              {subtotalUnit && <span className="ml-1 text-muted-foreground">{subtotalUnit}</span>}
+              {!sharedUnit && unitSet.size > 1 && (
+                <span className="ml-1 text-muted-foreground" title="Items in this category use different units">
+                  (mixed units)
+                </span>
+              )}
             </span>
             <span className="text-muted-foreground">
               min DOS: <span className={`font-mono ${minDos != null ? dosClass(minDos) : ''}`}>{formatDOS(minDos)}</span>
@@ -587,7 +615,15 @@ function CategorySection({
             label: 'On Hand',
             align: 'right',
             sortAccessor: (item) => item.onHand ?? 0,
-            render: (item) => <span className="font-mono">{formatNumber(item.onHand)}</span>,
+            render: (item) => {
+              const unitText = formatUnit(item.unit, item.onHand);
+              return (
+                <span className="font-mono">
+                  {formatNumber(item.onHand)}
+                  {unitText && <span className="ml-1 text-muted-foreground">{unitText}</span>}
+                </span>
+              );
+            },
           },
           {
             key: 'burn',
