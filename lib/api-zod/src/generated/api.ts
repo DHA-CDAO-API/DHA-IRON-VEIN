@@ -1252,6 +1252,34 @@ export const GetScenarioResponse = zod.object({
 });
 
 /**
+ * @summary Rename or update metadata for a saved scenario run.
+ */
+export const UpdateScenarioParams = zod.object({
+  scenarioId: zod.coerce.string(),
+});
+
+export const UpdateScenarioBody = zod.object({
+  name: zod.string(),
+});
+
+export const UpdateScenarioResponse = zod.object({
+  id: zod.string(),
+  name: zod.string(),
+  description: zod.string().nullish(),
+  status: zod.string(),
+  createdAt: zod.coerce.date(),
+  completedAt: zod.coerce.date().nullish(),
+  createdByRole: zod.string().nullish(),
+});
+
+/**
+ * @summary Delete a saved scenario run and its associated recommendations.
+ */
+export const DeleteScenarioParams = zod.object({
+  scenarioId: zod.coerce.string(),
+});
+
+/**
  * @summary Run a scenario simulation without persisting it (used for live custom-builder preview).
  */
 export const PreviewScenarioBody = zod.object({

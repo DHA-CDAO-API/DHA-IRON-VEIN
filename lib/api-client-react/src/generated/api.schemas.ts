@@ -874,6 +874,10 @@ export interface RunScenarioInput {
   generateBrief?: boolean;
 }
 
+export interface UpdateScenarioInput {
+  name: string;
+}
+
 export interface ScenarioSummary {
   estimatedShortageEvents: number;
   /** @nullable */

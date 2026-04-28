@@ -136,6 +136,7 @@ export * from "./updateOrderStatusInput";
 export * from "./updateOrderStatusInputPriority";
 export * from "./updateOrderStatusInputStatus";
 export * from "./updateProfileInput";
+export * from "./updateScenarioInput";
 export * from "./updateSettingsInput";
 export * from "./updateSettingsInputProvider";
 export * from "./wbbReadyByType";

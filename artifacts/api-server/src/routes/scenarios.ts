@@ -170,6 +170,90 @@ router.get("/scenarios/preset-events", async (_req, res, next) => {
   }
 });
 
+const UpdateScenarioInput = z.object({
+  name: z.string().min(1).max(200),
+});
+
+router.patch("/scenarios/:scenarioId", async (req, res, next) => {
+  try {
+    const parsed = UpdateScenarioInput.safeParse(req.body);
+    if (!parsed.success) {
+      return res
+        .status(400)
+        .json({ error: "invalid scenario patch payload", details: parsed.error.flatten() });
+    }
+    const id = req.params.scenarioId;
+    const [existing] = await db
+      .select()
+      .from(scenariosTable)
+      .where(eq(scenariosTable.id, id));
+    if (!existing) return res.status(404).json({ error: "scenario not found" });
+    const newName = parsed.data.name.trim();
+    if (newName.length === 0) {
+      return res.status(400).json({ error: "scenario name cannot be empty" });
+    }
+    if (newName !== existing.name) {
+      await db
+        .update(scenariosTable)
+        .set({ name: newName })
+        .where(eq(scenariosTable.id, id));
+      await db.insert(activityEntries).values({
+        kind: "SCENARIO_RENAMED",
+        actor: "operator",
+        message: `Scenario renamed "${existing.name}" → "${newName}"`,
+        refType: "scenario",
+        refId: id,
+        meta: { previousName: existing.name, newName },
+      });
+    }
+    const [row] = await db
+      .select()
+      .from(scenariosTable)
+      .where(eq(scenariosTable.id, id));
+    if (!row) return res.status(404).json({ error: "scenario not found" });
+    res.json({
+      id: row.id,
+      name: row.name,
+      description: row.summary,
+      status: "completed",
+      createdAt: row.runAt.toISOString(),
+      completedAt: row.runAt.toISOString(),
+      createdByRole: null,
+      summary: row.summary,
+      kind: row.kind,
+      runAt: row.runAt.toISOString(),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.delete("/scenarios/:scenarioId", async (req, res, next) => {
+  try {
+    const id = req.params.scenarioId;
+    const [existing] = await db
+      .select()
+      .from(scenariosTable)
+      .where(eq(scenariosTable.id, id));
+    if (!existing) return res.status(404).json({ error: "scenario not found" });
+    // Drop any recommendations the scenario produced (recommendations carry
+    // a soft scenarioId reference but no DB-level cascade).
+    await db.delete(recsTable).where(eq(recsTable.scenarioId, id));
+    await db.delete(scenariosTable).where(eq(scenariosTable.id, id));
+    await db.insert(activityEntries).values({
+      kind: "SCENARIO_DELETED",
+      actor: "operator",
+      message: `Scenario "${existing.name}" deleted`,
+      refType: "scenario",
+      refId: id,
+      meta: { name: existing.name, kind: existing.kind },
+    });
+    res.status(204).end();
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.get("/scenarios/:scenarioId", async (req, res, next) => {
   try {
     const [row] = await db

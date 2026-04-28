@@ -74,6 +74,7 @@ import type {
   TheaterZone,
   UpdateOrderStatusInput,
   UpdateProfileInput,
+  UpdateScenarioInput,
   UpdateSettingsInput,
 } from "./api.schemas";
 
@@ -1966,6 +1967,177 @@ export function useGetScenario<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * @summary Rename or update metadata for a saved scenario run.
+ */
+export const getUpdateScenarioUrl = (scenarioId: string) => {
+  return `/api/scenarios/${scenarioId}`;
+};
+
+export const updateScenario = async (
+  scenarioId: string,
+  updateScenarioInput: UpdateScenarioInput,
+  options?: RequestInit,
+): Promise<Scenario> => {
+  return customFetch<Scenario>(getUpdateScenarioUrl(scenarioId), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updateScenarioInput),
+  });
+};
+
+export const getUpdateScenarioMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateScenario>>,
+    TError,
+    { scenarioId: string; data: BodyType<UpdateScenarioInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateScenario>>,
+  TError,
+  { scenarioId: string; data: BodyType<UpdateScenarioInput> },
+  TContext
+> => {
+  const mutationKey = ["updateScenario"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateScenario>>,
+    { scenarioId: string; data: BodyType<UpdateScenarioInput> }
+  > = (props) => {
+    const { scenarioId, data } = props ?? {};
+
+    return updateScenario(scenarioId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateScenarioMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateScenario>>
+>;
+export type UpdateScenarioMutationBody = BodyType<UpdateScenarioInput>;
+export type UpdateScenarioMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Rename or update metadata for a saved scenario run.
+ */
+export const useUpdateScenario = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateScenario>>,
+    TError,
+    { scenarioId: string; data: BodyType<UpdateScenarioInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateScenario>>,
+  TError,
+  { scenarioId: string; data: BodyType<UpdateScenarioInput> },
+  TContext
+> => {
+  return useMutation(getUpdateScenarioMutationOptions(options));
+};
+
+/**
+ * @summary Delete a saved scenario run and its associated recommendations.
+ */
+export const getDeleteScenarioUrl = (scenarioId: string) => {
+  return `/api/scenarios/${scenarioId}`;
+};
+
+export const deleteScenario = async (
+  scenarioId: string,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getDeleteScenarioUrl(scenarioId), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDeleteScenarioMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteScenario>>,
+    TError,
+    { scenarioId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteScenario>>,
+  TError,
+  { scenarioId: string },
+  TContext
+> => {
+  const mutationKey = ["deleteScenario"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteScenario>>,
+    { scenarioId: string }
+  > = (props) => {
+    const { scenarioId } = props ?? {};
+
+    return deleteScenario(scenarioId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteScenarioMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteScenario>>
+>;
+
+export type DeleteScenarioMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Delete a saved scenario run and its associated recommendations.
+ */
+export const useDeleteScenario = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteScenario>>,
+    TError,
+    { scenarioId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteScenario>>,
+  TError,
+  { scenarioId: string },
+  TContext
+> => {
+  return useMutation(getDeleteScenarioMutationOptions(options));
+};
 
 /**
  * @summary Run a scenario simulation without persisting it (used for live custom-builder preview).

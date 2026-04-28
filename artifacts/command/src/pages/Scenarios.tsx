@@ -4,15 +4,19 @@ import {
   useListScenarios,
   useRunScenario,
   usePreviewScenario,
+  useUpdateScenario,
+  useDeleteScenario,
   useListNodes,
   useListSuppliers,
   usePromoteRecommendationToOrder,
   getGetScenarioQueryOptions,
+  getGetScenarioQueryKey,
   getListScenariosQueryKey,
   useListTheaterZones,
   getListTheaterZonesQueryKey,
   type PresetEvent,
   type Recommendation,
+  type Scenario as SavedScenario,
   type ScenarioResult,
   type TheaterZone,
   type Node as NetworkNode,
@@ -34,6 +38,16 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { AiBadge } from "@/components/ui/ai-badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { SortableTable, type SortableColumn } from "@/components/ui/sortable-table";
@@ -58,6 +72,9 @@ import {
   Upload,
   Save,
   Search,
+  Pencil,
+  Trash2,
+  Check,
 } from "lucide-react";
 import {
   CartesianGrid,
@@ -189,6 +206,10 @@ export default function Scenarios() {
   const [loadingSavedId, setLoadingSavedId] = React.useState<string | null>(null);
   const [rerunningSavedId, setRerunningSavedId] = React.useState<string | null>(null);
   const [savedAt, setSavedAt] = React.useState<number | null>(null);
+  const [renamingId, setRenamingId] = React.useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = React.useState<SavedScenario | null>(null);
+  const updateScenario = useUpdateScenario();
+  const deleteScenario = useDeleteScenario();
   // When the builder state is replaced programmatically (load a saved run,
   // re-run, etc.) we don't want the live-preview effect to fire and
   // overwrite the freshly fetched/computed result.
@@ -289,6 +310,55 @@ export default function Scenarios() {
     },
     [fetchSavedDetail, runScenario, queryClient],
   );
+
+  const handleRenameSaved = React.useCallback(
+    async (scenarioId: string, nextName: string) => {
+      setError(null);
+      const trimmed = nextName.trim();
+      if (trimmed.length === 0) {
+        setError("Scenario name cannot be empty.");
+        return false;
+      }
+      try {
+        await updateScenario.mutateAsync({
+          scenarioId,
+          data: { name: trimmed },
+        });
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: getListScenariosQueryKey() }),
+          queryClient.invalidateQueries({
+            queryKey: getGetScenarioQueryKey(scenarioId),
+          }),
+        ]);
+        setRenamingId(null);
+        return true;
+      } catch (e) {
+        setError((e as Error)?.message ?? "Rename failed");
+        return false;
+      }
+    },
+    [updateScenario, queryClient],
+  );
+
+  const handleConfirmDelete = React.useCallback(async () => {
+    if (!pendingDelete) return;
+    setError(null);
+    const id = pendingDelete.id;
+    try {
+      await deleteScenario.mutateAsync({ scenarioId: id });
+      await queryClient.invalidateQueries({ queryKey: getListScenariosQueryKey() });
+      queryClient.removeQueries({ queryKey: getGetScenarioQueryKey(id) });
+      setPendingDelete(null);
+      // If the deleted scenario was the one currently displayed, clear the
+      // output so the operator isn't staring at a stale result.
+      if (result?.scenario?.id === id) {
+        setResult(null);
+        setSavedAt(null);
+      }
+    } catch (e) {
+      setError((e as Error)?.message ?? "Delete failed");
+    }
+  }, [pendingDelete, deleteScenario, queryClient, result]);
 
   const handleSaveCustom = React.useCallback(async () => {
     setError(null);
@@ -479,72 +549,33 @@ export default function Scenarios() {
           scenarios?.map((scenario) => {
             const isLoadingThis = loadingSavedId === scenario.id;
             const isRerunningThis = rerunningSavedId === scenario.id;
-            const anyBusy = !!loadingSavedId || !!rerunningSavedId || runScenario.isPending;
+            const isDeletingThis =
+              deleteScenario.isPending && pendingDelete?.id === scenario.id;
+            const anyBusy =
+              !!loadingSavedId ||
+              !!rerunningSavedId ||
+              runScenario.isPending ||
+              deleteScenario.isPending;
             return (
-              <Card
+              <SavedRunCard
                 key={scenario.id}
-                className="bg-card/50 border-border hover:border-primary/40 transition-colors"
-              >
-                <CardContent className="p-3">
-                  <button
-                    type="button"
-                    onClick={() => handleLoadSaved(scenario.id)}
-                    disabled={anyBusy}
-                    className="w-full text-left disabled:opacity-70 disabled:cursor-not-allowed"
-                    title="Load this scenario back into the builder"
-                  >
-                    <div className="font-medium text-sm mb-1 line-clamp-2">
-                      {scenario.name}
-                    </div>
-                    <div className="flex justify-between text-xs text-muted-foreground">
-                      <span>
-                        {new Date(scenario.createdAt).toLocaleDateString()}
-                      </span>
-                      <span className="uppercase">{scenario.status}</span>
-                    </div>
-                  </button>
-                  <div className="mt-2 flex gap-1">
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      disabled={anyBusy}
-                      onClick={() => handleLoadSaved(scenario.id)}
-                      className="h-7 px-2 text-[11px] flex-1"
-                    >
-                      {isLoadingThis ? (
-                        <>
-                          <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-                          Loading…
-                        </>
-                      ) : (
-                        <>
-                          <Upload className="h-3 w-3 mr-1" />
-                          Load
-                        </>
-                      )}
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={anyBusy}
-                      onClick={() => handleRerunSaved(scenario.id)}
-                      className="h-7 px-2 text-[11px] flex-1 border-primary/40 text-primary hover:bg-primary/10"
-                    >
-                      {isRerunningThis ? (
-                        <>
-                          <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-                          Re-running…
-                        </>
-                      ) : (
-                        <>
-                          <RotateCw className="h-3 w-3 mr-1" />
-                          Re-run
-                        </>
-                      )}
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
+                scenario={scenario}
+                isLoading={isLoadingThis}
+                isRerunning={isRerunningThis}
+                isDeleting={isDeletingThis}
+                disabled={anyBusy}
+                isRenaming={renamingId === scenario.id}
+                isSavingRename={
+                  updateScenario.isPending &&
+                  updateScenario.variables?.scenarioId === scenario.id
+                }
+                onLoad={() => handleLoadSaved(scenario.id)}
+                onRerun={() => handleRerunSaved(scenario.id)}
+                onStartRename={() => setRenamingId(scenario.id)}
+                onCancelRename={() => setRenamingId(null)}
+                onSubmitRename={(name) => handleRenameSaved(scenario.id, name)}
+                onRequestDelete={() => setPendingDelete(scenario)}
+              />
             );
           })
         )}
@@ -554,7 +585,257 @@ export default function Scenarios() {
           </div>
         ) : null}
       </div>
+
+      <AlertDialog
+        open={pendingDelete !== null}
+        onOpenChange={(open) => {
+          if (!open && !deleteScenario.isPending) setPendingDelete(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete saved scenario?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingDelete ? (
+                <>
+                  This will permanently remove{" "}
+                  <span className="font-medium text-foreground">
+                    “{pendingDelete.name}”
+                  </span>{" "}
+                  and any recommendations it produced. This cannot be undone.
+                </>
+              ) : null}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleteScenario.isPending}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                handleConfirmDelete();
+              }}
+              disabled={deleteScenario.isPending}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleteScenario.isPending ? (
+                <>
+                  <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                  Deleting…
+                </>
+              ) : (
+                "Delete"
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
+  );
+}
+
+// ---------- Saved run card (right rail) ----------
+
+function SavedRunCard({
+  scenario,
+  isLoading,
+  isRerunning,
+  isDeleting,
+  disabled,
+  isRenaming,
+  isSavingRename,
+  onLoad,
+  onRerun,
+  onStartRename,
+  onCancelRename,
+  onSubmitRename,
+  onRequestDelete,
+}: {
+  scenario: SavedScenario;
+  isLoading: boolean;
+  isRerunning: boolean;
+  isDeleting: boolean;
+  disabled: boolean;
+  isRenaming: boolean;
+  isSavingRename: boolean;
+  onLoad: () => void;
+  onRerun: () => void;
+  onStartRename: () => void;
+  onCancelRename: () => void;
+  onSubmitRename: (name: string) => Promise<boolean> | boolean;
+  onRequestDelete: () => void;
+}) {
+  const [draftName, setDraftName] = React.useState(scenario.name);
+  const inputRef = React.useRef<HTMLInputElement | null>(null);
+
+  // Reset the draft each time we enter rename mode so the input mirrors
+  // the latest persisted name (in case the card was just re-fetched).
+  React.useEffect(() => {
+    if (isRenaming) {
+      setDraftName(scenario.name);
+      // Focus + select on the next tick so the input is ready.
+      window.setTimeout(() => {
+        inputRef.current?.focus();
+        inputRef.current?.select();
+      }, 0);
+    }
+  }, [isRenaming, scenario.name]);
+
+  const submit = async () => {
+    if (draftName.trim() === scenario.name.trim()) {
+      onCancelRename();
+      return;
+    }
+    await onSubmitRename(draftName);
+  };
+
+  return (
+    <Card className="bg-card/50 border-border hover:border-primary/40 transition-colors">
+      <CardContent className="p-3">
+        {isRenaming ? (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              submit();
+            }}
+            className="flex items-center gap-1 mb-1"
+          >
+            <Input
+              ref={inputRef}
+              value={draftName}
+              onChange={(e) => setDraftName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") {
+                  e.preventDefault();
+                  onCancelRename();
+                }
+              }}
+              disabled={isSavingRename}
+              maxLength={200}
+              className="h-7 text-sm flex-1"
+              aria-label="Scenario name"
+            />
+            <Button
+              type="submit"
+              size="icon"
+              variant="ghost"
+              className="h-7 w-7 shrink-0"
+              disabled={isSavingRename || draftName.trim().length === 0}
+              title="Save name"
+              aria-label="Save name"
+            >
+              {isSavingRename ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Check className="h-3.5 w-3.5" />
+              )}
+            </Button>
+            <Button
+              type="button"
+              size="icon"
+              variant="ghost"
+              className="h-7 w-7 shrink-0"
+              onClick={onCancelRename}
+              disabled={isSavingRename}
+              title="Cancel rename"
+              aria-label="Cancel rename"
+            >
+              <X className="h-3.5 w-3.5" />
+            </Button>
+          </form>
+        ) : (
+          <button
+            type="button"
+            onClick={onLoad}
+            disabled={disabled}
+            className="w-full text-left disabled:opacity-70 disabled:cursor-not-allowed"
+            title="Load this scenario back into the builder"
+          >
+            <div className="font-medium text-sm mb-1 line-clamp-2">
+              {scenario.name}
+            </div>
+          </button>
+        )}
+        <div className="flex justify-between text-xs text-muted-foreground">
+          <span>{new Date(scenario.createdAt).toLocaleDateString()}</span>
+          <span className="uppercase">{scenario.status}</span>
+        </div>
+        <div className="mt-2 flex gap-1">
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={disabled || isRenaming}
+            onClick={onLoad}
+            className="h-7 px-2 text-[11px] flex-1"
+          >
+            {isLoading ? (
+              <>
+                <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                Loading…
+              </>
+            ) : (
+              <>
+                <Upload className="h-3 w-3 mr-1" />
+                Load
+              </>
+            )}
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={disabled || isRenaming}
+            onClick={onRerun}
+            className="h-7 px-2 text-[11px] flex-1 border-primary/40 text-primary hover:bg-primary/10"
+          >
+            {isRerunning ? (
+              <>
+                <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                Re-running…
+              </>
+            ) : (
+              <>
+                <RotateCw className="h-3 w-3 mr-1" />
+                Re-run
+              </>
+            )}
+          </Button>
+        </div>
+        <div className="mt-1 flex gap-1">
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={disabled || isRenaming}
+            onClick={onStartRename}
+            className="h-7 px-2 text-[11px] flex-1 text-muted-foreground hover:text-foreground"
+            title="Rename this scenario"
+          >
+            <Pencil className="h-3 w-3 mr-1" />
+            Rename
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={disabled || isRenaming}
+            onClick={onRequestDelete}
+            className="h-7 px-2 text-[11px] flex-1 text-muted-foreground hover:text-destructive"
+            title="Delete this scenario"
+          >
+            {isDeleting ? (
+              <>
+                <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                Deleting…
+              </>
+            ) : (
+              <>
+                <Trash2 className="h-3 w-3 mr-1" />
+                Delete
+              </>
+            )}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 

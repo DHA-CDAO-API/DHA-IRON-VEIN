@@ -395,6 +395,38 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ScenarioResult" }
+    patch:
+      operationId: updateScenario
+      tags: [scenarios]
+      summary: Rename or update metadata for a saved scenario run.
+      parameters:
+        - in: path
+          name: scenarioId
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateScenarioInput" }
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Scenario" }
+    delete:
+      operationId: deleteScenario
+      tags: [scenarios]
+      summary: Delete a saved scenario run and its associated recommendations.
+      parameters:
+        - in: path
+          name: scenarioId
+          required: true
+          schema: { type: string }
+      responses:
+        "204":
+          description: deleted
   /scenarios/preview:
     post:
       operationId: previewScenario
@@ -1358,6 +1390,12 @@ components:
         operationalState: { type: ["string", "null"] }
         perturbation: { $ref: "#/components/schemas/EventParameters" }
         generateBrief: { type: boolean }
+
+    UpdateScenarioInput:
+      type: object
+      properties:
+        name: { type: string }
+      required: [name]
 
     ScenarioResult:
       type: object
