@@ -1,0 +1,23 @@
+There are major issues with the solution. Your development method is going way too slow, and I need you to drastically speed up, parallelize your tasks because I need to deliver this solution ASAP and at the pace you are developing, I am not going to be able to do that.
+
+1. The Layers in Network don't actually do anything. There are supposed to be actual layers for that. I wanted layers that can be drilled down according to blood products, gloves, and PPE on that page.
+2. The "interactivity" of the map is not what I had in mind. I wanted to see the ROUTES animate, not the entire map. The throbbing locations are a nice touch, however, for locations that need to show threat level. These can stay. However, you need to have red for critical threat level, yellow for heightened, and green for nominal. This map's routes need to be more 3D. The nodes for the locations need to be more 3D. There needs to be more emphasis on threat levels and their colors.
+3. The popups for the MTF/locations on the maps don't look nice. They are very ugly, and don't have enough information to convey any meaningful information to the user. They need to be reconstructed to allow the user to click on it, and action things on it.
+4. When I'm in a Supplier page, it's VERY confusing. I have no idea what page I'm on (in relation to the left navigation). All the Inventory are piled up together instead of categorized by Blood products, supplies, PPE, etc. This is unacceptable.
+5. All the items in the Supplier pages have 999 as counts. 
+6. The Orders board is a complete fail. It has literally no information on it. Nothing in the To:, no context.
+7. The scenarios are completely blank and have no text. The Simulation Output watermark is not centered. 
+8. The ONLY time numbers are supposed to change automatically is if I run a scenario. Otherwise, the data needs to be static from the database.
+9. The time on the site is not real. You need to make it actual time.
+10. On hand in the suppliers page is blank. 
+11. In items, Available Suppliers has Lead Time set to d and Rel: NaN%. Also, I cannot sort this. 
+12. Globally in the solution, I need to be able to sort by any and all columns in a table. 
+13. Globally, if I can click on something, the cursor is supposed to change to a hand. Not remain a pointer.
+14. Currently, in the solution, I can go to the Supplier page, but why isn't there a page for a location (MTF or other), where I can review all the supplies at that location and any alerts that may be forthcoming?
+15. Anything that is AI driven needs to have a "Powered by AI" icon of sorts (like a magic icon).
+16. Also, why does the map and routes not actually include any of a large portion of INDOPACOM? Please look at this map for the official area of responsibility. The map overlay is supposed to account for that.
+https://www.pacom.mil/About-USINDOPACOM/Area-of-Responsibility-map/
+17. Reorder the scenario builder so that all contested/war level scenarios are at the TOP. Weather should be at the bottom. Introduce more war scenarios. Provide the ability for the user to create their own scenario.
+18. The Orders Board doesn't really do much for the user. You can't see an order unless you click on the Print icon. The user needs to be able to click on the order and see what conditions triggered it. 
+19. All the cards in the Orders Board need to be the same size.
+20. 
