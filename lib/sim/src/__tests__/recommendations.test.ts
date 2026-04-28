@@ -175,4 +175,11 @@ test("generateRecommendations: emits sourceChannel + cost on each rec", () => {
   assert.ok(r.estimatedTotalCostUsd! > 0, "total cost annotated");
   assert.ok(r.alternatives && r.alternatives.length >= 2, "alternatives list populated");
   assert.match(r.reason, /Host-nation source|host-nation/);
+  // Cost in the rationale string must always render with two decimals
+  // and thousands separators (no `$1234.5` or `$1,234`).
+  assert.match(
+    r.reason,
+    /Est\. cost \$[0-9]{1,3}(,[0-9]{3})*\.[0-9]{2}\./,
+    "Est. cost renders with two decimal places",
+  );
 });

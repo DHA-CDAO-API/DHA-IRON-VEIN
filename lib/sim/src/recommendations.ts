@@ -237,7 +237,7 @@ export function generateRecommendations(args: {
               : ""
         : "";
       const costClause = top
-        ? ` Est. cost $${top.estimatedTotalCostUsd.toLocaleString()}.`
+        ? ` Est. cost $${top.estimatedTotalCostUsd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}.`
         : "";
       recs.push({
         id: `rec-${node.id}-${item.id}`,

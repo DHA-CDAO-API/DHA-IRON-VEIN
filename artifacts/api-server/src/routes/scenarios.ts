@@ -792,8 +792,8 @@ function buildScenarioRecRationale(args: {
           : " — DOD prime"
     : "";
   const costClause =
-    typeof args.estimatedTotalCostUsd === "number" && args.estimatedTotalCostUsd > 0
-      ? ` Est. cost $${args.estimatedTotalCostUsd.toLocaleString()}.`
+    typeof args.estimatedTotalCostUsd === "number" && Number.isFinite(args.estimatedTotalCostUsd)
+      ? ` Est. cost $${args.estimatedTotalCostUsd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}.`
       : "";
   return `Pre-position ${args.qty.toLocaleString()} ${args.unitOfIssue} ${args.itemName} to ${args.nodeName} — projected DOS ${args.dos.toFixed(1)} d at ${args.burn.toFixed(1)}/d burn${supplierClause}${channelClause}.${costClause}`;
 }
