@@ -769,6 +769,12 @@ export async function runSeed(opts: SeedOptions = {}): Promise<void> {
   // ---- Generate sample orders ----
   await generateSampleOrders();
 
+  // ---- Populate the live in-flight shipments pool so the map shows
+  //      30-45 active convoys/aircraft from the moment the app boots.
+  const { tickShipments } = await import("../lib/shipments-tick");
+  const { added, active } = await tickShipments();
+  logger.info({ added, active }, "seed: in-flight shipments populated");
+
   // ---- Seed activity ----
   await db.insert(activityEntries).values([
     {

@@ -24,6 +24,11 @@ interface NetworkMapProps {
   showThreats?: boolean;
   showAOR?: boolean;
   onNodeClick?: (node: any, riskInfo: any | null) => void;
+  /**
+   * Fired when an animated shipment trip is clicked. Receives the underlying
+   * shipment row (id, item, qty, ETA, …) so the parent can show a detail card.
+   */
+  onShipmentClick?: (shipment: any) => void;
   viewState?: MapViewState;
   onViewStateChange?: (params: { viewState: MapViewState }) => void;
 }
@@ -203,6 +208,7 @@ export default function NetworkGLMap(props: NetworkMapProps) {
     showThreats = true,
     showAOR = true,
     onNodeClick,
+    onShipmentClick,
     viewState,
     onViewStateChange,
   } = props;
@@ -282,26 +288,25 @@ export default function NetworkGLMap(props: NetworkMapProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [routes, nodeIndex, allCategoriesActive, selectedCategories]);
 
-  // Build animated shipment trips. Filter by category + match against route data.
-  // Every trip's timestamps must fit inside [0, TRIP_LENGTH) so that when the
-  // animation loops via `loopLength`, no trip is left "in the future" and
-  // none get clipped mid-flight (which previously made routes appear to vanish
-  // into the ocean on zoom).
+  // Build animated shipment trips. Each trip is a real shipment row, so the
+  // particle the operator sees is clickable and surfaces the underlying
+  // cargo (item, quantity, ETA) — not a placeholder. The layer filter is
+  // honoured strictly: narrowing to e.g. Blood Products only animates
+  // blood-products shipments (no route-based decoy fill). Every trip's
+  // timestamps must fit inside [0, TRIP_LENGTH) so that when the animation
+  // loops via `loopLength`, no trip is left "in the future" and none get
+  // clipped mid-flight.
   const tripData = useMemo(() => {
     type Trip = {
       path: Array<[number, number]>;
       timestamps: number[];
       color: [number, number, number];
+      shipment: any;
     };
     const trips: Trip[] = [];
     const SHIPMENT_SPAN = TRIP_LENGTH * 0.55;
-    const ROUTE_SPAN = TRIP_LENGTH * 0.5;
 
-    // Use real in-flight shipments first; if none match the active filter, fall
-    // back to a representative subset of active routes so the map always has
-    // a sense of motion.
     const activeShipments = shipments.filter((s: any) => categoryActive(s.category));
-    const sourceShipments = activeShipments.length > 0 ? activeShipments : [];
 
     // Distribute offsets across the safe window [0, TRIP_LENGTH - span) so
     // timestamps stay strictly inside the loop and trips reach their
@@ -313,7 +318,7 @@ export default function NetworkGLMap(props: NetworkMapProps) {
     };
 
     let i = 0;
-    for (const s of sourceShipments) {
+    for (const s of activeShipments) {
       const a: any = nodeIndex.get(s.fromNode);
       const b: any = nodeIndex.get(s.toNode);
       if (!a || !b) continue;
@@ -324,26 +329,12 @@ export default function NetworkGLMap(props: NetworkMapProps) {
         path: wp,
         timestamps: ts,
         color: CATEGORY_COLOR[(s.category as SupplyCategory) ?? 'other'],
-      });
-      i++;
-    }
-    // Always animate a representative slice of active routes so the network
-    // looks alive even when there are few in-flight shipments.
-    const activeRoutes = routePaths.filter((r) => r.active);
-    const slice = activeRoutes.slice(0, Math.min(activeRoutes.length, 18));
-    for (const rp of slice) {
-      const matchedCat = rp.categories.find((c) => categoryActive(c)) ?? 'supplies';
-      const offset = stagger(i, ROUTE_SPAN);
-      const ts = rp.path.map((_, k) => offset + (k / (rp.path.length - 1)) * ROUTE_SPAN);
-      trips.push({
-        path: rp.path,
-        timestamps: ts,
-        color: CATEGORY_COLOR[matchedCat as SupplyCategory] ?? CATEGORY_COLOR.supplies,
+        shipment: s,
       });
       i++;
     }
     return trips;
-  }, [shipments, routePaths, nodeIndex, allCategoriesActive, selectedCategories]);
+  }, [shipments, nodeIndex, allCategoriesActive, selectedCategories]);
 
   // Decorate nodes with their tier + risk for fast lookups in layer callbacks.
   type DecoratedNode = {
@@ -476,6 +467,11 @@ export default function NetworkGLMap(props: NetworkMapProps) {
       }
     }
 
+    // 5/6. Animated trips + pulse halos are built per-frame inside the rAF
+    //      loop (see `buildAnimatedLayers` below). Click handling for trips
+    //      lives there so deck.gl's per-frame layer rebuild keeps picking
+    //      tied to the current shipment rows.
+
     // 7. 3D node columns. Extruded height encodes site importance + risk.
     out.push(
       new ColumnLayer({
@@ -537,7 +533,9 @@ export default function NetworkGLMap(props: NetworkMapProps) {
   const buildAnimatedLayers = useCallback((t: number) => {
     const pulse = 1 + 0.45 * Math.sin((t / 30) * Math.PI);
     return [
-      // 5. Animated convoys (trip particles flowing along routes)
+      // 5. Animated convoys (trip particles flowing along routes). Pickable
+      //    so operators can click any moving particle and see the underlying
+      //    shipment row (item, qty, ETA, priority).
       new TripsLayer({
         id: 'shipment-trips',
         data: tripData,
@@ -553,6 +551,14 @@ export default function NetworkGLMap(props: NetworkMapProps) {
         loopLength: TRIP_LENGTH,
         capRounded: true,
         jointRounded: true,
+        pickable: true,
+        autoHighlight: true,
+        highlightColor: [255, 255, 255, 200],
+        onClick: (info: any) => {
+          if (info.object?.shipment && onShipmentClick) {
+            onShipmentClick(info.object.shipment);
+          }
+        },
       }),
       // 6. Pulse halos for at-risk nodes (only tier > nominal)
       new ScatterplotLayer({
@@ -572,7 +578,7 @@ export default function NetworkGLMap(props: NetworkMapProps) {
         updateTriggers: { getFillColor: [pulseNodes] },
       }),
     ];
-  }, [tripData, pulseNodes]);
+  }, [tripData, pulseNodes, onShipmentClick]);
 
   // Initial layer array for the first React render (before the rAF loop kicks
   // in). Subsequent updates are pushed via `deck.setProps` from the loop.

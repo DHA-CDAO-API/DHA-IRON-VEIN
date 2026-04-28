@@ -26,12 +26,15 @@ import {
   ArrowDownToLine,
   ArrowUpFromLine,
   CheckCircle2,
+  Clock,
   Droplets,
   ExternalLink,
   Layers,
   Package,
+  Plane,
   ShieldAlert,
   ShieldCheck,
+  Truck,
   X,
 } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
@@ -104,6 +107,7 @@ export default function NetworkMapPage() {
 
   // Active popup
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [selectedShipmentId, setSelectedShipmentId] = useState<string | null>(null);
 
   const riskByNodeMap = useMemo(
     () => new Map((snapshot?.riskByNode ?? []).map((r: any) => [r.nodeId, r])),
@@ -118,6 +122,13 @@ export default function NetworkMapPage() {
   const selectedRisk = selectedNodeId ? (riskByNodeMap.get(selectedNodeId) as any) : null;
   const selectedTier: ThreatTier = selectedRisk?.tier
     ?? tierForRisk(selectedRisk?.riskScore ?? 0, selectedRisk?.openAlerts ?? 0);
+
+  const shipmentsList = (snapshot?.shipments as any[] | undefined) ?? [];
+  const selectedShipment = selectedShipmentId
+    ? shipmentsList.find((s) => s.id === selectedShipmentId) ?? null
+    : null;
+  const shipmentFromNode = selectedShipment ? (nodeById.get(selectedShipment.fromNode) as any) : null;
+  const shipmentToNode = selectedShipment ? (nodeById.get(selectedShipment.toNode) as any) : null;
 
   const openAlertsForSelected = useMemo(() => {
     if (!selectedNodeId) return [];
@@ -271,7 +282,14 @@ export default function NetworkMapPage() {
           selectedCategories={selectedCats}
           showThreats={showThreats}
           showAOR={showAOR}
-          onNodeClick={(node) => setSelectedNodeId(node?.id ?? null)}
+          onNodeClick={(node) => {
+            setSelectedShipmentId(null);
+            setSelectedNodeId(node?.id ?? null);
+          }}
+          onShipmentClick={(s) => {
+            setSelectedNodeId(null);
+            setSelectedShipmentId(s?.id ?? null);
+          }}
         />
       </div>
 
@@ -407,6 +425,115 @@ export default function NetworkMapPage() {
                     : 'No open alerts'}
                 </Button>
               </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Shipment popup card — appears when an animated trip is clicked */}
+      {selectedShipment && (
+        <div className="absolute top-4 right-4 z-20 w-[340px] pointer-events-auto">
+          <Card className="bg-card/95 backdrop-blur-md border-border shadow-2xl">
+            <CardContent className="p-4 flex flex-col gap-3">
+              <div className="flex items-start justify-between">
+                <div className="flex flex-col gap-0.5">
+                  <span className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
+                    {(() => {
+                      const ModeIcon =
+                        (selectedShipment.etaDays ?? 0) <= 1.5 ? Plane : Truck;
+                      return <ModeIcon className="h-3 w-3" />;
+                    })()}
+                    In-flight shipment · {selectedShipment.priority ?? 'ROUTINE'}
+                  </span>
+                  <h3 className="font-semibold text-base leading-tight">
+                    {selectedShipment.itemName ?? selectedShipment.itemId}
+                  </h3>
+                </div>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-7 w-7 -mr-1 -mt-1"
+                  onClick={() => setSelectedShipmentId(null)}
+                  aria-label="Close"
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+
+              <div className="flex items-center gap-2 flex-wrap">
+                {(() => {
+                  const cat = (selectedShipment.category ?? 'other') as SupplyCategory;
+                  const meta = CATEGORY_META[cat];
+                  return (
+                    <Badge
+                      variant="outline"
+                      className={`font-mono text-[10px] tracking-widest ${meta.tint}`}
+                    >
+                      <span className="mr-1 inline-flex">{meta.icon}</span>
+                      {meta.label}
+                    </Badge>
+                  );
+                })()}
+                <Badge variant="outline" className="font-mono text-[10px] tracking-widest">
+                  {selectedShipment.quantity} units
+                </Badge>
+                <Badge variant="outline" className="font-mono text-[10px] tracking-widest">
+                  <Clock className="h-3 w-3 mr-1 inline" />
+                  ETA {Number(selectedShipment.etaDays ?? 0).toFixed(1)}d
+                </Badge>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 text-[11px] border-t border-border pt-2">
+                <div className="flex items-start gap-1.5">
+                  <ArrowUpFromLine className="h-3 w-3 mt-0.5 text-amber-400" />
+                  <div>
+                    <div className="text-muted-foreground uppercase tracking-widest text-[9px]">
+                      Origin
+                    </div>
+                    <div className="font-mono truncate">
+                      {shipmentFromNode?.name ?? selectedShipment.fromNode}
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-start gap-1.5">
+                  <ArrowDownToLine className="h-3 w-3 mt-0.5 text-emerald-400" />
+                  <div>
+                    <div className="text-muted-foreground uppercase tracking-widest text-[9px]">
+                      Destination
+                    </div>
+                    <div className="font-mono truncate">
+                      {shipmentToNode?.name ?? selectedShipment.toNode}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="border-t border-border pt-2">
+                <div className="text-[9px] font-mono uppercase tracking-widest text-muted-foreground mb-1">
+                  Trip progress
+                </div>
+                <div className="h-1.5 w-full bg-muted/40 rounded overflow-hidden">
+                  <div
+                    className="h-full bg-primary"
+                    style={{
+                      width: `${Math.round((Number(selectedShipment.progress) || 0) * 100)}%`,
+                    }}
+                  />
+                </div>
+                <div className="flex items-center justify-between text-[10px] font-mono mt-1 text-muted-foreground">
+                  <span>{Math.round((Number(selectedShipment.progress) || 0) * 100)}%</span>
+                  <span>arrives in {Number(selectedShipment.etaDays ?? 0).toFixed(1)}d</span>
+                </div>
+              </div>
+
+              {shipmentToNode && (
+                <Link href={`/sites/${shipmentToNode.id}`}>
+                  <Button size="sm" variant="default" className="w-full justify-start">
+                    <ExternalLink className="h-3.5 w-3.5 mr-2" />
+                    Open destination site
+                  </Button>
+                </Link>
+              )}
             </CardContent>
           </Card>
         </div>

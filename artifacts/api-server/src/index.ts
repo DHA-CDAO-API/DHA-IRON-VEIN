@@ -1,5 +1,6 @@
 import app from "./app";
 import { logger } from "./lib/logger";
+import { startShipmentsTick } from "./lib/shipments-tick";
 
 const rawPort = process.env["PORT"];
 
@@ -22,4 +23,7 @@ app.listen(port, (err) => {
   }
 
   logger.info({ port }, "Server listening");
+  // Background loop that keeps 30-45 in-flight shipments populated so the
+  // network map always shows realistic convoy/aircraft motion across the AOR.
+  startShipmentsTick();
 });
