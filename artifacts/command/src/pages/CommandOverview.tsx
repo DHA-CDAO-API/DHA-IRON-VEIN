@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { useGetNetworkSnapshot, useGetDashboardOverview, useListActivity, getGetNetworkSnapshotQueryKey, getGetDashboardOverviewQueryKey, getListActivityQueryKey } from '@workspace/api-client-react';
 import NetworkGLMap from '@/components/Map';
-import { AlertTriangle, TrendingDown, TrendingUp, Activity, Box, Ship } from 'lucide-react';
+import { AlertTriangle, TrendingDown, TrendingUp, Activity, Box, Truck } from 'lucide-react';
 import { Link } from 'wouter';
 import { Skeleton } from '@/components/ui/skeleton';
 
@@ -35,7 +35,7 @@ export default function CommandOverview() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 shrink-0">
         <KPICard title="Theater DOS" value={overview?.kpis?.theaterDaysOfSupply?.toFixed(1) ?? '--'} icon={<Box className="h-4 w-4 text-primary" />} trend="-1.2" unit="days" />
         <KPICard title="Open Alerts" value={overview?.kpis?.openAlertsTotal ?? 0} icon={<AlertTriangle className="h-4 w-4 text-destructive" />} trend={`${overview?.kpis?.openCriticalAlerts ?? 0} crit`} unit="alerts" alert />
-        <KPICard title="In-Flight Shipments" value={overview?.kpis?.shipmentsInFlight ?? 0} icon={<Ship className="h-4 w-4 text-primary" />} />
+        <KPICard title="In-Transit Shipments" value={overview?.kpis?.shipmentsInFlight ?? 0} icon={<Truck className="h-4 w-4 text-primary" />} />
         <KPICard title="Pending Recs" value={overview?.kpis?.recommendationsAwaitingPromotion ?? 0} icon={<Activity className="h-4 w-4 text-primary" />} />
       </div>
 
