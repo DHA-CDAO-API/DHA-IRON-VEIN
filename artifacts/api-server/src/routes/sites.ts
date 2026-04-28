@@ -14,6 +14,7 @@ import { computeRiskByNode } from "../lib/snapshot";
 import { loadSimContext } from "../lib/ctx";
 import { computeNodeBloodReadiness } from "../lib/blood-readiness";
 import { mapRecommendationToApi } from "../lib/mappers";
+import { mapDbAlertToApi } from "./alerts";
 import { computeDailyDemand, projectDaysOfSupply, statusFromDOS, generateRecommendations } from "@workspace/sim";
 
 const router: IRouter = Router();
@@ -146,12 +147,7 @@ router.get("/sites/:nodeId", async (req, res, next) => {
       demandProfile: profile ?? null,
       balances,
       dosByItem,
-      alerts: alertRows.map((a) => ({
-        ...a,
-        openedAt: a.openedAt.toISOString(),
-        ackedAt: a.ackedAt ? a.ackedAt.toISOString() : null,
-        resolvedAt: a.resolvedAt ? a.resolvedAt.toISOString() : null,
-      })),
+      alerts: alertRows.map(mapDbAlertToApi),
       recentOrders: orderRows.map((o) => ({
         ...o,
         createdAt: o.createdAt.toISOString(),

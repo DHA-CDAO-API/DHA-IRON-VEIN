@@ -11,6 +11,7 @@ import AlertsRail from "@/components/AlertsRail";
 import LiveClock from "@/components/layout/LiveClock";
 import { SearchPalette, useSearchPalette } from "@/components/SearchPalette";
 import { useGetProfile } from "@workspace/api-client-react";
+import dhaSeal from "@assets/Seal_of_War_Health_Agency_1777349167048.png";
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
@@ -53,7 +54,13 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       {/* Sidebar */}
       <div className="w-16 md:w-64 border-r border-border bg-sidebar flex flex-col justify-between transition-all shrink-0">
         <div>
-          <div className="h-16 flex items-center justify-center md:justify-start md:px-4 border-b border-border shrink-0">
+          <div className="h-16 flex items-center justify-center md:justify-start md:px-3 border-b border-border shrink-0 gap-2.5">
+            <img
+              src={dhaSeal}
+              alt="Defense Health Agency seal"
+              className="h-9 w-9 shrink-0 object-contain drop-shadow-[0_0_6px_rgba(76,196,196,0.25)]"
+              draggable={false}
+            />
             <div className="hidden md:flex flex-col leading-tight min-w-0">
               <span className="font-bold text-primary tracking-widest text-xs uppercase truncate">
                 DHA: IRON-VEIN
@@ -71,7 +78,6 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                 for Vital Expeditionary Inventory Nodes
               </span>
             </div>
-            <Activity className="h-6 w-6 text-primary md:hidden" />
           </div>
           <nav className="flex flex-col gap-1 p-2 mt-4">
             {navItems.map((item) => {
