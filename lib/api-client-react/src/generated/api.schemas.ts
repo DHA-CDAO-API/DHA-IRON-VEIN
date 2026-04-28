@@ -504,11 +504,32 @@ export interface CreateOrderInput {
   sourceRecommendationId?: string | null;
 }
 
-export interface UpdateOrderStatusInput {
-  status: string;
+export type UpdateOrderStatusInputStatus =
+  (typeof UpdateOrderStatusInputStatus)[keyof typeof UpdateOrderStatusInputStatus];
+
+export const UpdateOrderStatusInputStatus = {
+  SUBMITTED: "SUBMITTED",
+  ACKNOWLEDGED: "ACKNOWLEDGED",
+  IN_TRANSIT: "IN_TRANSIT",
+  RECEIVED: "RECEIVED",
+} as const;
+
+export type UpdateOrderStatusInputPriority =
+  (typeof UpdateOrderStatusInputPriority)[keyof typeof UpdateOrderStatusInputPriority];
+
+export const UpdateOrderStatusInputPriority = {
+  ROUTINE: "ROUTINE",
+  PRIORITY: "PRIORITY",
+  URGENT: "URGENT",
+  FLASH: "FLASH",
+} as const;
+
+export type UpdateOrderStatusInput = unknown & {
+  status?: UpdateOrderStatusInputStatus;
+  priority?: UpdateOrderStatusInputPriority;
   /** @nullable */
   note?: string | null;
-}
+};
 
 export interface AcknowledgeAlertInput {
   acknowledgedBy: string;

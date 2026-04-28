@@ -989,10 +989,17 @@ components:
 
     UpdateOrderStatusInput:
       type: object
-      required: [status]
       properties:
-        status: { type: string }
+        status:
+          type: string
+          enum: [SUBMITTED, ACKNOWLEDGED, IN_TRANSIT, RECEIVED]
+        priority:
+          type: string
+          enum: [ROUTINE, PRIORITY, URGENT, FLASH]
         note: { type: ["string", "null"] }
+      anyOf:
+        - required: [status]
+        - required: [priority]
 
     Alert:
       type: object

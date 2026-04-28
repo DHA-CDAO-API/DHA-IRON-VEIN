@@ -717,10 +717,17 @@ export const UpdateOrderStatusParams = zod.object({
   orderId: zod.coerce.string(),
 });
 
-export const UpdateOrderStatusBody = zod.object({
-  status: zod.string(),
-  note: zod.string().nullish(),
-});
+export const UpdateOrderStatusBody = zod
+  .union([zod.unknown(), zod.unknown()])
+  .and(
+    zod.object({
+      status: zod
+        .enum(["SUBMITTED", "ACKNOWLEDGED", "IN_TRANSIT", "RECEIVED"])
+        .optional(),
+      priority: zod.enum(["ROUTINE", "PRIORITY", "URGENT", "FLASH"]).optional(),
+      note: zod.string().nullish(),
+    }),
+  );
 
 export const UpdateOrderStatusResponse = zod.object({
   id: zod.string(),

@@ -83,6 +83,8 @@ export * from "./siteSummary";
 export * from "./supplier";
 export * from "./threatOverlay";
 export * from "./updateOrderStatusInput";
+export * from "./updateOrderStatusInputPriority";
+export * from "./updateOrderStatusInputStatus";
 export * from "./updateProfileInput";
 export * from "./updateSettingsInput";
 export * from "./updateSettingsInputProvider";

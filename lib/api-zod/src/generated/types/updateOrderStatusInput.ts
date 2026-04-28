@@ -5,9 +5,12 @@
  * Predictive Sustainment Platform API for INDOPACOM medical logistics decision support.
  * OpenAPI spec version: 1.0.0
  */
+import type { UpdateOrderStatusInputPriority } from "./updateOrderStatusInputPriority";
+import type { UpdateOrderStatusInputStatus } from "./updateOrderStatusInputStatus";
 
-export interface UpdateOrderStatusInput {
-  status: string;
+export type UpdateOrderStatusInput = unknown & {
+  status?: UpdateOrderStatusInputStatus;
+  priority?: UpdateOrderStatusInputPriority;
   /** @nullable */
   note?: string | null;
-}
+};

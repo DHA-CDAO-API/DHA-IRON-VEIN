@@ -1,17 +1,29 @@
 import React from "react";
 import { Link, useParams } from "wouter";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   useGetOrder,
+  useUpdateOrderStatus,
   getGetOrderQueryKey,
   type Order,
+  type OrderDetail as OrderDetailEnvelope,
   type OrderLineDetail,
+  type UpdateOrderStatusInputPriority,
+  type UpdateOrderStatusInputStatus,
 } from "@workspace/api-client-react";
 import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SortableTable } from "@/components/ui/sortable-table";
 import { AiBadge } from "@/components/ui/ai-badge";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { useToast } from "@/hooks/use-toast";
 import {
   ArrowLeft,
   Printer,
@@ -41,6 +53,14 @@ type EnrichedOrder = Order & {
   requestedDeliveryAt?: string | null;
 };
 
+const PRIORITY_OPTIONS = ["ROUTINE", "PRIORITY", "URGENT", "FLASH"] as const;
+const STATUS_OPTIONS = [
+  "SUBMITTED",
+  "ACKNOWLEDGED",
+  "IN_TRANSIT",
+  "RECEIVED",
+] as const;
+
 function priorityClass(priority: string) {
   const p = priority?.toUpperCase();
   if (p === "FLASH") return "border-destructive bg-destructive/20 text-destructive";
@@ -58,11 +78,45 @@ function statusClass(status: string) {
 
 export default function OrderDetail() {
   const { id } = useParams();
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const queryKey = getGetOrderQueryKey(id || "");
 
   const { data, isLoading, error } = useGetOrder(id || "", {
     query: {
       enabled: !!id,
-      queryKey: getGetOrderQueryKey(id || ""),
+      queryKey,
+    },
+  });
+
+  const updateOrder = useUpdateOrderStatus({
+    mutation: {
+      onMutate: async (vars) => {
+        await queryClient.cancelQueries({ queryKey });
+        const previous = queryClient.getQueryData<OrderDetailEnvelope>(queryKey);
+        if (previous) {
+          queryClient.setQueryData<OrderDetailEnvelope>(queryKey, {
+            ...previous,
+            order: {
+              ...previous.order,
+              ...(vars.data.status ? { status: vars.data.status } : {}),
+              ...(vars.data.priority ? { priority: vars.data.priority } : {}),
+            },
+          });
+        }
+        return { previous };
+      },
+      onError: (_err, _vars, ctx) => {
+        if (ctx?.previous) queryClient.setQueryData(queryKey, ctx.previous);
+        toast({
+          title: "Update failed",
+          description: "Could not update the order. Please try again.",
+          variant: "destructive",
+        });
+      },
+      onSettled: () => {
+        queryClient.invalidateQueries({ queryKey });
+      },
     },
   });
 
@@ -137,12 +191,56 @@ export default function OrderDetail() {
                 <h1 className="text-2xl font-bold tracking-wider font-mono">
                   {order.orderNumber}
                 </h1>
-                <Badge variant="outline" className={priorityClass(order.priority)}>
-                  {order.priority}
-                </Badge>
-                <Badge variant="outline" className={statusClass(order.status)}>
-                  {order.status.replace("_", " ")}
-                </Badge>
+                <Select
+                  value={order.priority}
+                  disabled={updateOrder.isPending}
+                  onValueChange={(value) => {
+                    if (value === order.priority) return;
+                    updateOrder.mutate({
+                      orderId: order.id,
+                      data: { priority: value as UpdateOrderStatusInputPriority },
+                    });
+                  }}
+                >
+                  <SelectTrigger
+                    aria-label="Order priority"
+                    className={`h-7 w-32 px-2 text-xs uppercase tracking-wider font-semibold ${priorityClass(order.priority)}`}
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {PRIORITY_OPTIONS.map((p) => (
+                      <SelectItem key={p} value={p} className="text-xs uppercase tracking-wider">
+                        {p}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select
+                  value={order.status}
+                  disabled={updateOrder.isPending}
+                  onValueChange={(value) => {
+                    if (value === order.status) return;
+                    updateOrder.mutate({
+                      orderId: order.id,
+                      data: { status: value as UpdateOrderStatusInputStatus },
+                    });
+                  }}
+                >
+                  <SelectTrigger
+                    aria-label="Order status"
+                    className={`h-7 w-40 px-2 text-xs uppercase tracking-wider font-semibold ${statusClass(order.status)}`}
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {STATUS_OPTIONS.map((s) => (
+                      <SelectItem key={s} value={s} className="text-xs uppercase tracking-wider">
+                        {s.replace("_", " ")}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
                 {aiTriggered && <AiBadge />}
               </div>
               <div className="mt-2 text-sm text-muted-foreground">

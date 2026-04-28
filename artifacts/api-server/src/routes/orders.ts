@@ -407,45 +407,82 @@ router.get("/orders/:orderId", async (req, res, next) => {
   }
 });
 
-const UpdateOrderInput = z.object({ status: z.string().min(1) });
+const ALLOWED_STATUSES = ["SUBMITTED", "ACKNOWLEDGED", "IN_TRANSIT", "RECEIVED"] as const;
+const ALLOWED_PRIORITIES = ["ROUTINE", "PRIORITY", "URGENT", "FLASH"] as const;
+
+const UpdateOrderInput = z
+  .object({
+    status: z.enum(ALLOWED_STATUSES).optional(),
+    priority: z.enum(ALLOWED_PRIORITIES).optional(),
+    note: z.string().nullish(),
+  })
+  .refine((v) => v.status !== undefined || v.priority !== undefined, {
+    message: "must include status or priority",
+  });
 
 router.patch("/orders/:orderId", async (req, res, next) => {
   try {
     const parsed = UpdateOrderInput.safeParse(req.body);
     if (!parsed.success) {
-      return res.status(400).json({ error: "invalid status payload", details: parsed.error.flatten() });
+      return res.status(400).json({ error: "invalid order patch payload", details: parsed.error.flatten() });
     }
     const id = req.params.orderId;
-    const status = parsed.data.status;
-    await db.update(orders).set({ status }).where(eq(orders.id, id));
+    const { status, priority, note } = parsed.data;
+
+    const [existing] = await db.select().from(orders).where(eq(orders.id, id));
+    if (!existing) return res.status(404).json({ error: "order not found" });
+
+    const patch: Partial<typeof orders.$inferInsert> = {};
+    if (status && status !== existing.status) patch.status = status;
+    if (priority && priority !== existing.priority) patch.priority = priority;
+
+    if (Object.keys(patch).length > 0) {
+      await db.update(orders).set(patch).where(eq(orders.id, id));
+    }
+
     const [order] = await db.select().from(orders).where(eq(orders.id, id));
     if (!order) return res.status(404).json({ error: "order not found" });
 
-    if (status === "IN_TRANSIT") {
+    if (patch.status === "IN_TRANSIT") {
       const lines = await db.select().from(orderLines).where(eq(orderLines.orderId, id));
       for (const ln of lines) {
         const eta = new Date(Date.now() + 5 * 86400_000);
-        await db.insert(shipments).values({
-          id: `sh-${id}-${ln.itemId}`,
-          orderId: id,
-          fromNode: order.supplierId,
-          toNode: order.nodeId,
-          itemId: ln.itemId,
-          quantity: ln.quantity,
-          etaAt: eta,
-          priority: order.priority,
-        });
+        await db
+          .insert(shipments)
+          .values({
+            id: `sh-${id}-${ln.itemId}`,
+            orderId: id,
+            fromNode: order.supplierId,
+            toNode: order.nodeId,
+            itemId: ln.itemId,
+            quantity: ln.quantity,
+            etaAt: eta,
+            priority: order.priority,
+          })
+          .onConflictDoNothing();
       }
     }
 
-    await db.insert(activityEntries).values({
-      kind: "ORDER_STATUS_CHANGE",
-      actor: "operator",
-      message: `Order ${order.orderNo} -> ${status}`,
-      refType: "order",
-      refId: id,
-      meta: { status },
-    });
+    if (patch.status) {
+      await db.insert(activityEntries).values({
+        kind: "ORDER_STATUS_CHANGE",
+        actor: "operator",
+        message: `Order ${order.orderNo} status ${existing.status} → ${patch.status}${note ? ` (${note})` : ""}`,
+        refType: "order",
+        refId: id,
+        meta: { from: existing.status, to: patch.status, note: note ?? null },
+      });
+    }
+    if (patch.priority) {
+      await db.insert(activityEntries).values({
+        kind: "ORDER_PRIORITY_CHANGE",
+        actor: "operator",
+        message: `Order ${order.orderNo} priority ${existing.priority} → ${patch.priority}${note ? ` (${note})` : ""}`,
+        refType: "order",
+        refId: id,
+        meta: { from: existing.priority, to: patch.priority, note: note ?? null },
+      });
+    }
 
     invalidateSimCache();
     const lines = await db.select().from(orderLines).where(eq(orderLines.orderId, id));
