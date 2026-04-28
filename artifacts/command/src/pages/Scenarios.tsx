@@ -1285,8 +1285,8 @@ function RecommendationCards({
   const [selectedIds, setSelectedIds] = React.useState<Set<string>>(
     () => new Set(),
   );
-  const [batchRunningId, setBatchRunningId] = React.useState<string | null>(
-    null,
+  const [batchRunningIds, setBatchRunningIds] = React.useState<Set<string>>(
+    () => new Set(),
   );
   const [batchProgress, setBatchProgress] = React.useState<{
     done: number;
@@ -1294,7 +1294,7 @@ function RecommendationCards({
     succeeded: number;
     failed: number;
   } | null>(null);
-  const isBatchRunning = batchRunningId !== null;
+  const isBatchRunning = batchRunningIds.size > 0;
   const showProgressSummary = !isBatchRunning && batchProgress !== null;
 
   const [priorityFilter, setPriorityFilter] = React.useState<Set<string>>(
@@ -1458,22 +1458,35 @@ function RecommendationCards({
     const promotableSet = new Set(promotableIds);
     const ids = Array.from(selectedIds).filter((id) => promotableSet.has(id));
     if (ids.length === 0) return;
+    const CONCURRENCY = 4;
     let succeeded = 0;
     let failed = 0;
+    let done = 0;
     setBatchProgress({ done: 0, total: ids.length, succeeded: 0, failed: 0 });
-    for (let i = 0; i < ids.length; i++) {
-      const id = ids[i];
-      setBatchRunningId(id);
+
+    let cursor = 0;
+    const runOne = async (id: string) => {
+      setBatchRunningIds((prev) => {
+        const next = new Set(prev);
+        next.add(id);
+        return next;
+      });
       const ok = await promoteOne(id);
+      setBatchRunningIds((prev) => {
+        if (!prev.has(id)) return prev;
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
       if (ok) succeeded += 1;
       else failed += 1;
+      done += 1;
       setBatchProgress({
-        done: i + 1,
+        done,
         total: ids.length,
         succeeded,
         failed,
       });
-      // Remove successful ones from selection as we go.
       if (ok) {
         setSelectedIds((prev) => {
           if (!prev.has(id)) return prev;
@@ -1482,8 +1495,24 @@ function RecommendationCards({
           return next;
         });
       }
+    };
+
+    const worker = async () => {
+      while (true) {
+        const i = cursor;
+        cursor += 1;
+        if (i >= ids.length) return;
+        await runOne(ids[i]);
+      }
+    };
+
+    const workerCount = Math.min(CONCURRENCY, ids.length);
+    const workers: Promise<void>[] = [];
+    for (let i = 0; i < workerCount; i++) {
+      workers.push(worker());
     }
-    setBatchRunningId(null);
+    await Promise.all(workers);
+    setBatchRunningIds(new Set());
   };
 
   const selectedCount = selectedIds.size;
@@ -1695,8 +1724,8 @@ function RecommendationCards({
             const isRunningSingle =
               promote.isPending &&
               promote.variables?.recommendationId === r.id &&
-              batchRunningId === null;
-            const isRunningInBatch = batchRunningId === r.id;
+              batchRunningIds.size === 0;
+            const isRunningInBatch = batchRunningIds.has(r.id);
             const isPending = isRunningSingle || isRunningInBatch;
             const isQueued =
               isBatchRunning && selectedIds.has(r.id) && !isPending;
