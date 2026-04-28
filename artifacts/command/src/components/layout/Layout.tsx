@@ -2,7 +2,8 @@ import React from "react";
 import { Link, useLocation } from "wouter";
 import { 
   Activity, Map as MapIcon, Box, ShoppingCart, PlayCircle, 
-  MessageSquare, Database, Settings, UserCircle, Search
+  MessageSquare, Database, Settings, UserCircle, Search,
+  Building2, Truck
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import RoleBadge from "@/components/RoleBadge";
@@ -14,9 +15,26 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
   const { data: profile } = useGetProfile();
 
-  const navItems = [
-    { href: "/", label: "Overview", icon: Activity },
+  const navItems: Array<{
+    href: string;
+    label: string;
+    icon: typeof Activity;
+    matches?: (path: string) => boolean;
+  }> = [
+    { href: "/", label: "Overview", icon: Activity, matches: (p) => p === "/" },
     { href: "/network", label: "Network", icon: MapIcon },
+    {
+      href: "/locations",
+      label: "Locations",
+      icon: Building2,
+      matches: (p) => p === "/locations" || p.startsWith("/locations/") || p.startsWith("/sites/"),
+    },
+    {
+      href: "/suppliers",
+      label: "Suppliers",
+      icon: Truck,
+      matches: (p) => p === "/suppliers" || p.startsWith("/suppliers/"),
+    },
     { href: "/orders", label: "Orders", icon: ShoppingCart },
     { href: "/scenarios", label: "Scenarios", icon: PlayCircle },
     { href: "/copilot", label: "Copilot", icon: MessageSquare },
@@ -41,7 +59,9 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           </div>
           <nav className="flex flex-col gap-1 p-2 mt-4">
             {navItems.map((item) => {
-              const active = location === item.href || (item.href !== "/" && location.startsWith(item.href));
+              const active = item.matches
+                ? item.matches(location)
+                : location === item.href || (item.href !== "/" && location.startsWith(item.href));
               return (
                 <Link key={item.href} href={item.href} className={`flex items-center gap-3 px-3 py-2 rounded-md transition-colors ${active ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-secondary hover:text-foreground"}`}>
                   <item.icon className="h-5 w-5 shrink-0" />

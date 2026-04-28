@@ -18,6 +18,8 @@ import Copilot from "@/pages/Copilot";
 import DataAdmin from "@/pages/DataAdmin";
 import Settings from "@/pages/Settings";
 import Profile from "@/pages/Profile";
+import Locations from "@/pages/Locations";
+import Suppliers from "@/pages/Suppliers";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -44,6 +46,8 @@ function Router() {
           <Switch>
             <Route path="/" component={CommandOverview} />
             <Route path="/network" component={NetworkMap} />
+            <Route path="/locations" component={Locations} />
+            <Route path="/suppliers" component={Suppliers} />
             <Route path="/sites/:nodeId" component={SiteDetail} />
             <Route path="/items/:itemId" component={ItemDetail} />
             <Route path="/orders" component={OrdersBoard} />

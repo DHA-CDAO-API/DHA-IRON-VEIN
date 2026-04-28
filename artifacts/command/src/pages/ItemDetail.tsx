@@ -6,12 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { SortableTable } from '@/components/ui/sortable-table';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Box, Network, AlertTriangle, MapPin } from 'lucide-react';
-
-function riskClass(dos: number) {
-  if (dos <= 3) return 'text-destructive font-bold';
-  if (dos <= 7) return 'text-amber-500 font-bold';
-  return 'text-emerald-500 font-bold';
-}
+import { formatPercent, formatDays, formatDOS, dosClass as riskClass } from '@/lib/format';
 
 export default function ItemDetail() {
   const { itemId } = useParams();
@@ -61,10 +56,10 @@ export default function ItemDetail() {
             <span>UoM: {item.unit}</span>
             <span>Usage Rate: {item.usageRate}/day</span>
             {(item as { shelfLifeDays?: number }).shelfLifeDays !== undefined && (
-              <span>Shelf life: {(item as { shelfLifeDays?: number }).shelfLifeDays}d</span>
+              <span>Shelf life: {formatDays((item as { shelfLifeDays?: number }).shelfLifeDays)}</span>
             )}
             {(item as { leadTimeDays?: number }).leadTimeDays !== undefined && (
-              <span>Lead time: {(item as { leadTimeDays?: number }).leadTimeDays}d</span>
+              <span>Lead time: {formatDays((item as { leadTimeDays?: number }).leadTimeDays)}</span>
             )}
           </div>
         </div>
@@ -75,7 +70,7 @@ export default function ItemDetail() {
           <CardContent className="p-4 flex items-center justify-between">
             <div>
               <p className="text-sm text-muted-foreground">Network DOS</p>
-              <h3 className={`text-2xl font-bold mt-1 ${riskClass(networkDaysOfSupply)}`}>{networkDaysOfSupply.toFixed(1)}</h3>
+              <h3 className={`text-2xl font-bold mt-1 ${riskClass(networkDaysOfSupply)}`}>{formatDOS(networkDaysOfSupply)}</h3>
             </div>
             <Network className="h-8 w-8 text-primary/30" />
           </CardContent>
@@ -135,9 +130,9 @@ export default function ItemDetail() {
                     key: 'onHand',
                     label: 'On Hand',
                     align: 'right',
-                    sortAccessor: (node) => node.quantityOnHand,
+                    sortAccessor: (node) => node.quantityOnHand ?? 0,
                     render: (node) => (
-                      <span className="font-mono">{node.quantityOnHand}</span>
+                      <span className="font-mono">{node.quantityOnHand ?? 0}</span>
                     ),
                   },
                   {
@@ -146,8 +141,8 @@ export default function ItemDetail() {
                     align: 'right',
                     sortAccessor: (node) => node.daysOfSupply ?? 0,
                     render: (node) => (
-                      <span className={`font-mono ${riskClass(node.daysOfSupply || 0)}`}>
-                        {(node.daysOfSupply || 0).toFixed(1)}
+                      <span className={`font-mono ${riskClass(node.daysOfSupply ?? 0)}`}>
+                        {formatDOS(node.daysOfSupply)}
                       </span>
                     ),
                   },
@@ -174,13 +169,13 @@ export default function ItemDetail() {
             <div className="flex-1 overflow-auto">
               <div className="divide-y divide-border/50">
                 {suppliers.map(sup => (
-                  <div key={sup.id} className="p-4">
+                  <Link key={sup.id} href="/suppliers" className="block p-4 hover:bg-muted/20 transition-colors">
                     <div className="font-bold text-sm mb-1">{sup.name}</div>
                     <div className="flex justify-between text-xs text-muted-foreground">
-                      <span>Lead Time: {sup.leadTimeDays}d</span>
-                      <span>Rel: {(sup.reliability * 100).toFixed(0)}%</span>
+                      <span>Lead Time: {formatDays(sup.leadTimeDays)}</span>
+                      <span>Rel: {formatPercent(sup.reliability)}</span>
                     </div>
-                  </div>
+                  </Link>
                 ))}
                 {suppliers.length === 0 && <div className="p-4 text-center text-muted-foreground text-sm">No suppliers mapped</div>}
               </div>
