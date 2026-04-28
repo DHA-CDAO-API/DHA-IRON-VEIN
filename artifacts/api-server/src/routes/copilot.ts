@@ -5,8 +5,10 @@ import {
   conversationMessages,
   appSettings,
   activityEntries,
+  alerts as alertsTable,
+  orders as ordersTable,
 } from "@workspace/db";
-import { asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, gte } from "drizzle-orm";
 import {
   COMMANDER_SYSTEM,
   buildTheaterContext,
@@ -116,12 +118,30 @@ router.post(
         content: body.content,
       });
 
-      const [risk, shipments, ctx, settings] = await Promise.all([
-        computeRiskByNode(),
-        computeInFlightShipments(),
-        loadSimContext(),
-        db.select().from(appSettings).then((rows) => rows[0]),
-      ]);
+      const sinceRecentOrders = new Date(Date.now() - 14 * 86_400_000);
+      const [risk, shipments, ctx, settings, openAlerts, recentOrders] =
+        await Promise.all([
+          computeRiskByNode(),
+          computeInFlightShipments(),
+          loadSimContext(),
+          db.select().from(appSettings).then((rows) => rows[0]),
+          db
+            .select()
+            .from(alertsTable)
+            .where(eq(alertsTable.status, "OPEN"))
+            .orderBy(desc(alertsTable.openedAt))
+            .limit(60),
+          db
+            .select()
+            .from(ordersTable)
+            .where(
+              and(
+                gte(ordersTable.createdAt, sinceRecentOrders),
+              ),
+            )
+            .orderBy(desc(ordersTable.createdAt))
+            .limit(40),
+        ]);
       const provider = (settings?.aiProvider ?? conv.aiProvider) as "openai" | "anthropic";
       const model = resolveModel(provider, settings?.aiModel ?? conv.aiModel);
 
@@ -135,11 +155,64 @@ router.post(
           dos: r.daysOfSupply,
         }));
 
+      // Sort alerts critical-first so the truncation keeps the most important.
+      const sortedAlerts = [...openAlerts].sort((a, b) => {
+        const sevRank = (s: string) => (s === "CRITICAL" ? 0 : s === "WARNING" ? 1 : 2);
+        return sevRank(a.severity) - sevRank(b.severity);
+      });
+
       const theaterContext = buildTheaterContext({
         operationalState: risk.operationalState,
         topRiskNodes: top5,
         openCriticalAlerts: risk.riskByNode.reduce((s, r) => s + (r.openAlerts ?? 0), 0),
         shipmentsInFlight: shipments.length,
+        nodes: ctx.ctx.nodes.map((n) => ({
+          id: n.id,
+          name: n.name,
+          countryCode: (n as { countryCode?: string | null }).countryCode ?? null,
+          type: (n as { type?: string | null }).type ?? null,
+        })),
+        items: ctx.ctx.items.map((i) => ({
+          id: i.id,
+          name: i.name,
+          unitOfIssue: i.unitOfIssue ?? null,
+          criticality: i.criticality ?? null,
+        })),
+        suppliers: ctx.suppliers.map((s) => ({
+          id: s.id,
+          name: s.name,
+          leadTimeDaysMean: s.leadTimeDaysMean ?? null,
+          reliabilityScore: s.reliabilityScore ?? null,
+          itemsCovered: s.itemsCovered ?? [],
+        })),
+        alerts: sortedAlerts.map((a) => ({
+          id: a.id,
+          severity: a.severity,
+          nodeId: a.nodeId,
+          itemId: a.itemId ?? null,
+          message: a.message ?? null,
+        })),
+        orders: recentOrders.map((o) => ({
+          id: o.id,
+          nodeId: o.nodeId,
+          supplierId: o.supplierId ?? null,
+          status: o.status,
+          priority: o.priority ?? null,
+          requestedDeliveryAt:
+            o.requestedDeliveryAt instanceof Date
+              ? o.requestedDeliveryAt.toISOString()
+              : (o.requestedDeliveryAt as string | null) ?? null,
+        })),
+        shipments: shipments.map((s) => ({
+          id: s.id,
+          fromNode: s.fromNode,
+          toNode: s.toNode,
+          itemId: s.itemId,
+          itemName: s.itemName,
+          quantity: s.quantity,
+          etaDays: s.etaDays,
+          priority: s.priority,
+        })),
       });
 
       const history = await db
@@ -214,7 +287,7 @@ router.post(
 
 function extractCitations(text: string): Array<{ refType: string; refId: string }> {
   const out: Array<{ refType: string; refId: string }> = [];
-  const re = /\[(node|item|order|alert):([\w-]+)\]/g;
+  const re = /\[(node|item|order|alert|supplier|shipment):([\w-]+)\]/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(text)) !== null) {
     const refType = m[1];
