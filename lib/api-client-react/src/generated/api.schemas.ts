@@ -694,6 +694,24 @@ export interface ScenarioResult {
   kind?: string;
 }
 
+export type PromoteRecommendationOverridesPriority =
+  (typeof PromoteRecommendationOverridesPriority)[keyof typeof PromoteRecommendationOverridesPriority];
+
+export const PromoteRecommendationOverridesPriority = {
+  ROUTINE: "ROUTINE",
+  URGENT: "URGENT",
+  FLASH: "FLASH",
+} as const;
+
+export interface PromoteRecommendationOverrides {
+  /** @minimum 1 */
+  quantity?: number;
+  supplierId?: string;
+  /** @minimum 0 */
+  etaDays?: number;
+  priority?: PromoteRecommendationOverridesPriority;
+}
+
 export interface ForecastInput {
   itemIds: string[];
   nodeIds: string[];

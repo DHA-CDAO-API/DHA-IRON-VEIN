@@ -5,6 +5,7 @@ import {
   useRunScenario,
   usePreviewScenario,
   useListNodes,
+  useListSuppliers,
   usePromoteRecommendationToOrder,
   getGetScenarioQueryOptions,
   getListScenariosQueryKey,
@@ -15,8 +16,17 @@ import {
   type ScenarioResult,
   type TheaterZone,
   type Node as NetworkNode,
+  type Supplier,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -1200,16 +1210,32 @@ const PRIORITY_FILTERS: Array<{ value: string; label: string }> = [
   { value: "ROUTINE", label: "ROUTINE" },
 ];
 
+type PromoteOverrides = {
+  quantity: number;
+  supplierId: string;
+  etaDays: number;
+  priority: "ROUTINE" | "URGENT" | "FLASH";
+};
+
+function defaultPriorityForKind(kind: string | undefined): PromoteOverrides["priority"] {
+  const k = (kind ?? "").toUpperCase();
+  if (k === "ESCALATE") return "FLASH";
+  if (k === "REROUTE") return "URGENT";
+  return "ROUTINE";
+}
+
 function RecommendationCards({
   recommendations,
 }: {
   recommendations: Recommendation[];
 }) {
   const promote = usePromoteRecommendationToOrder();
+  const { data: suppliers } = useListSuppliers();
   const [promotedById, setPromotedById] = React.useState<
     Record<string, { orderId: string; orderNo: string }>
   >({});
   const [errorById, setErrorById] = React.useState<Record<string, string>>({});
+  const [editing, setEditing] = React.useState<Recommendation | null>(null);
 
   const [priorityFilter, setPriorityFilter] = React.useState<Set<string>>(
     new Set(),
@@ -1232,10 +1258,21 @@ function RecommendationCards({
     setHidePromoted(false);
   };
 
-  const handlePromote = async (rec: Recommendation) => {
+  const handleConfirm = async (
+    rec: Recommendation,
+    overrides: PromoteOverrides,
+  ) => {
     setErrorById((prev) => ({ ...prev, [rec.id]: "" }));
     try {
-      const res = await promote.mutateAsync({ recommendationId: rec.id });
+      const res = await promote.mutateAsync({
+        recommendationId: rec.id,
+        data: {
+          quantity: overrides.quantity,
+          supplierId: overrides.supplierId,
+          etaDays: overrides.etaDays,
+          priority: overrides.priority,
+        },
+      });
       const order = res as { id?: string; orderNo?: string } | undefined;
       setPromotedById((prev) => ({
         ...prev,
@@ -1244,6 +1281,7 @@ function RecommendationCards({
           orderNo: order?.orderNo ?? order?.id ?? "PROMOTED",
         },
       }));
+      setEditing(null);
     } catch (e) {
       setErrorById((prev) => ({
         ...prev,
@@ -1435,7 +1473,7 @@ function RecommendationCards({
                   size="sm"
                   variant="outline"
                   disabled={isPending}
-                  onClick={() => handlePromote(r)}
+                  onClick={() => setEditing(r)}
                   data-testid={`rec-promote-${r.id}`}
                   className="border-primary/50 text-primary hover:bg-primary/10 h-7"
                 >
@@ -1458,7 +1496,253 @@ function RecommendationCards({
       })}
         </ul>
       )}
+      <PromoteDialog
+        rec={editing}
+        suppliers={suppliers ?? []}
+        isSubmitting={
+          promote.isPending &&
+          editing != null &&
+          promote.variables?.recommendationId === editing.id
+        }
+        onCancel={() => setEditing(null)}
+        onConfirm={(overrides) => {
+          if (editing) handleConfirm(editing, overrides);
+        }}
+      />
     </>
+  );
+}
+
+function PromoteDialog({
+  rec,
+  suppliers,
+  isSubmitting,
+  onCancel,
+  onConfirm,
+}: {
+  rec: Recommendation | null;
+  suppliers: Supplier[];
+  isSubmitting: boolean;
+  onCancel: () => void;
+  onConfirm: (overrides: PromoteOverrides) => void;
+}) {
+  const [draft, setDraft] = React.useState<PromoteOverrides | null>(null);
+  const [qtyText, setQtyText] = React.useState<string>("");
+  const [etaText, setEtaText] = React.useState<string>("");
+  const [validationError, setValidationError] = React.useState<string | null>(
+    null,
+  );
+
+  React.useEffect(() => {
+    if (rec) {
+      const initial: PromoteOverrides = {
+        quantity: Math.max(1, Math.round(rec.quantity)),
+        supplierId:
+          rec.suggestedSupplierId ?? suppliers[0]?.id ?? "supplier",
+        etaDays: Math.max(0, Number(rec.etaDays.toFixed(1))),
+        priority:
+          (rec.priority?.toUpperCase() as PromoteOverrides["priority"]) ??
+          defaultPriorityForKind(rec.kind),
+      };
+      setDraft(initial);
+      setQtyText(String(initial.quantity));
+      setEtaText(String(initial.etaDays));
+      setValidationError(null);
+    }
+  }, [rec, suppliers]);
+
+  const open = rec != null && draft != null;
+
+  const handleSubmit = () => {
+    if (!draft) return;
+    const qty = Number(qtyText);
+    const eta = Number(etaText);
+    if (!Number.isFinite(qty) || qty <= 0) {
+      setValidationError("Quantity must be greater than 0.");
+      return;
+    }
+    if (!Number.isFinite(eta) || eta < 0) {
+      setValidationError("ETA must be 0 or greater.");
+      return;
+    }
+    if (!draft.supplierId) {
+      setValidationError("Pick a supplier.");
+      return;
+    }
+    setValidationError(null);
+    onConfirm({
+      ...draft,
+      quantity: Math.round(qty),
+      etaDays: eta,
+    });
+  };
+
+  const orderedSuppliers = React.useMemo(() => {
+    if (!rec) return suppliers;
+    const preferredId = rec.suggestedSupplierId;
+    if (!preferredId) return suppliers;
+    const preferred = suppliers.find((s) => s.id === preferredId);
+    if (!preferred) return suppliers;
+    return [preferred, ...suppliers.filter((s) => s.id !== preferredId)];
+  }, [rec, suppliers]);
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next && !isSubmitting) onCancel();
+      }}
+    >
+      <DialogContent
+        className="sm:max-w-md"
+        data-testid="promote-dialog"
+      >
+        <DialogHeader>
+          <DialogTitle>Promote to Purchase Order</DialogTitle>
+          <DialogDescription>
+            Review and adjust the recommended order before submitting.
+          </DialogDescription>
+        </DialogHeader>
+        {rec && draft ? (
+          <div className="space-y-3 text-sm">
+            <div className="rounded-md border border-border bg-background/40 px-3 py-2 text-xs">
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-semibold">
+                  {rec.itemName ?? rec.itemId}
+                </span>
+                <span className="text-muted-foreground">
+                  → {rec.nodeName ?? rec.nodeId}
+                </span>
+              </div>
+              <div className="text-[11px] text-muted-foreground mt-1">
+                Suggested {Math.round(rec.quantity).toLocaleString()} units · ETA{" "}
+                {rec.etaDays.toFixed(0)}d
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="promote-qty" className="text-xs">
+                  Quantity
+                </Label>
+                <Input
+                  id="promote-qty"
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={qtyText}
+                  onChange={(e) => setQtyText(e.target.value)}
+                  data-testid="promote-quantity"
+                  className="h-8 text-sm"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="promote-eta" className="text-xs">
+                  ETA (days)
+                </Label>
+                <Input
+                  id="promote-eta"
+                  type="number"
+                  min={0}
+                  step={0.5}
+                  value={etaText}
+                  onChange={(e) => setEtaText(e.target.value)}
+                  data-testid="promote-eta"
+                  className="h-8 text-sm"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs">Supplier</Label>
+              <Select
+                value={draft.supplierId}
+                onValueChange={(v) =>
+                  setDraft({ ...draft, supplierId: v })
+                }
+              >
+                <SelectTrigger className="h-8 text-sm" data-testid="promote-supplier">
+                  <SelectValue placeholder="Select supplier" />
+                </SelectTrigger>
+                <SelectContent>
+                  {orderedSuppliers.length === 0 ? (
+                    <SelectItem value={draft.supplierId} disabled>
+                      No suppliers available
+                    </SelectItem>
+                  ) : (
+                    orderedSuppliers.map((s) => (
+                      <SelectItem key={s.id} value={s.id}>
+                        <span className="flex items-center gap-2">
+                          <span>{s.name}</span>
+                          <span className="text-[10px] uppercase text-muted-foreground">
+                            {s.channel}
+                          </span>
+                          {s.id === rec.suggestedSupplierId ? (
+                            <span className="text-[10px] text-primary">
+                              · suggested
+                            </span>
+                          ) : null}
+                        </span>
+                      </SelectItem>
+                    ))
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs">Priority</Label>
+              <Select
+                value={draft.priority}
+                onValueChange={(v) =>
+                  setDraft({
+                    ...draft,
+                    priority: v as PromoteOverrides["priority"],
+                  })
+                }
+              >
+                <SelectTrigger className="h-8 text-sm" data-testid="promote-priority">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ROUTINE">Routine</SelectItem>
+                  <SelectItem value="URGENT">Urgent</SelectItem>
+                  <SelectItem value="FLASH">Flash</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {validationError ? (
+              <div className="text-xs text-destructive">{validationError}</div>
+            ) : null}
+          </div>
+        ) : null}
+        <DialogFooter>
+          <Button
+            variant="outline"
+            onClick={onCancel}
+            disabled={isSubmitting}
+            data-testid="promote-cancel"
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={handleSubmit}
+            disabled={isSubmitting || !draft}
+            data-testid="promote-confirm"
+          >
+            {isSubmitting ? (
+              <>
+                <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                Submitting…
+              </>
+            ) : (
+              "Confirm & Submit"
+            )}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

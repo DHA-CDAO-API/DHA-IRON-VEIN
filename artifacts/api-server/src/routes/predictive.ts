@@ -115,6 +115,41 @@ router.post(
       const recId = req.params.recommendationId;
       const ctx = await loadSimContext();
 
+      const overrides = (req.body ?? {}) as {
+        quantity?: number;
+        supplierId?: string;
+        etaDays?: number;
+        priority?: string;
+      };
+      const allowedPriorities = new Set(["ROUTINE", "URGENT", "FLASH"]);
+      const overridePriority =
+        typeof overrides.priority === "string" &&
+        allowedPriorities.has(overrides.priority.toUpperCase())
+          ? overrides.priority.toUpperCase()
+          : undefined;
+      const overrideQty =
+        typeof overrides.quantity === "number" &&
+        Number.isFinite(overrides.quantity) &&
+        overrides.quantity > 0
+          ? Math.round(overrides.quantity)
+          : undefined;
+      const overrideEta =
+        typeof overrides.etaDays === "number" &&
+        Number.isFinite(overrides.etaDays) &&
+        overrides.etaDays >= 0
+          ? overrides.etaDays
+          : undefined;
+      let overrideSupplierId: string | undefined;
+      if (typeof overrides.supplierId === "string" && overrides.supplierId) {
+        const exists = ctx.suppliers.some((s) => s.id === overrides.supplierId);
+        if (!exists) {
+          return res
+            .status(400)
+            .json({ error: `unknown supplier ${overrides.supplierId}` });
+        }
+        overrideSupplierId = overrides.supplierId;
+      }
+
       // First, try to find the recommendation in the DB (covers scenario-derived recs).
       const [persisted] = await db
         .select()
@@ -138,6 +173,7 @@ router.post(
       if (persisted) {
         if (persisted.promotedOrderId) {
           // Already promoted — return the existing order's promotion shape.
+          // Already-promoted is final; overrides cannot be applied retroactively here.
           return res.status(200).json({
             id: persisted.promotedOrderId,
             orderNo: persisted.promotedOrderId,
@@ -182,28 +218,45 @@ router.post(
       }
       if (!rec) return res.status(404).json({ error: "recommendation not found" });
 
+      const finalQty = overrideQty ?? rec.suggestedQty;
+      const finalEta = overrideEta ?? rec.etaDays;
+      const finalSupplierId =
+        overrideSupplierId ?? rec.sourceSupplierId ?? "supplier";
+      const defaultPriority =
+        rec.kind === "ESCALATE"
+          ? "FLASH"
+          : rec.kind === "REROUTE"
+            ? "URGENT"
+            : "ROUTINE";
+      const finalPriority = overridePriority ?? defaultPriority;
+      const overrideUsed =
+        overrideQty != null ||
+        overrideEta != null ||
+        overrideSupplierId != null ||
+        overridePriority != null;
+
       const orderId = `o-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
       const orderNo = `PO-${new Date().getFullYear()}-${Math.floor(Math.random() * 90000 + 10000)}`;
-      const requested = new Date(Date.now() + Math.max(1, rec.etaDays) * 86400_000);
-      const supplierId = rec.sourceSupplierId ?? "supplier";
+      const requested = new Date(Date.now() + Math.max(1, finalEta) * 86400_000);
+      const totalUsd = finalQty * 1.5;
       await db.insert(orders).values({
         id: orderId,
         orderNo,
         nodeId: rec.nodeId,
-        supplierId,
+        supplierId: finalSupplierId,
         status: "SUBMITTED",
-        priority: rec.kind === "ESCALATE" ? "FLASH" : rec.kind === "REROUTE" ? "URGENT" : "ROUTINE",
+        priority: finalPriority,
         requestedDeliveryAt: requested,
-        totalUsd: rec.suggestedQty * 1.5,
+        totalUsd,
         promotedFromRecommendationId: rec.id,
         notes: rec.reason,
       });
       await db.insert(orderLines).values({
         orderId,
         itemId: rec.itemId,
-        quantity: rec.suggestedQty,
+        quantity: finalQty,
         unitPriceUsd: 1.5,
-        lineTotalUsd: rec.suggestedQty * 1.5,
+        lineTotalUsd: totalUsd,
       });
 
       await db
@@ -213,17 +266,23 @@ router.post(
           nodeId: rec.nodeId,
           itemId: rec.itemId,
           kind: rec.kind,
-          suggestedQty: rec.suggestedQty,
+          suggestedQty: finalQty,
           reason: rec.reason,
           expectedRiskReduction: rec.expectedRiskReduction,
-          sourceSupplierId: rec.sourceSupplierId,
-          etaDays: rec.etaDays,
+          sourceSupplierId: finalSupplierId,
+          etaDays: finalEta,
           status: "PROMOTED",
           promotedOrderId: orderId,
         })
         .onConflictDoUpdate({
           target: recsTable.id,
-          set: { status: "PROMOTED", promotedOrderId: orderId },
+          set: {
+            status: "PROMOTED",
+            promotedOrderId: orderId,
+            suggestedQty: finalQty,
+            sourceSupplierId: finalSupplierId,
+            etaDays: finalEta,
+          },
         });
 
       await db.insert(activityEntries).values([
@@ -234,7 +293,7 @@ router.post(
           refType: "order",
           refId: orderId,
           meta: {
-            totalUsd: rec.suggestedQty * 1.5,
+            totalUsd,
             lines: 1,
             promotedFromRecommendationId: rec.id,
           },
@@ -242,13 +301,20 @@ router.post(
         {
           kind: "RECOMMENDATION_PROMOTED",
           actor: "operator",
-          message: `AI recommendation promoted to order ${orderNo}`,
+          message: overrideUsed
+            ? `AI recommendation promoted to order ${orderNo} with operator overrides`
+            : `AI recommendation promoted to order ${orderNo}`,
           refType: "order",
           refId: orderId,
           meta: {
             recommendationId: rec.id,
             recommendationKind: rec.kind,
             suggestedQty: rec.suggestedQty,
+            promotedQty: finalQty,
+            promotedSupplierId: finalSupplierId,
+            promotedEtaDays: finalEta,
+            promotedPriority: finalPriority,
+            overridden: overrideUsed,
           },
         },
       ]);
@@ -258,12 +324,12 @@ router.post(
         id: orderId,
         orderNo,
         nodeId: rec.nodeId,
-        supplierId,
+        supplierId: finalSupplierId,
         status: "SUBMITTED",
-        priority: rec.kind === "ESCALATE" ? "FLASH" : rec.kind === "REROUTE" ? "URGENT" : "ROUTINE",
+        priority: finalPriority,
         createdAt: new Date().toISOString(),
         requestedDeliveryAt: requested.toISOString(),
-        totalUsd: rec.suggestedQty * 1.5,
+        totalUsd,
         lineCount: 1,
       });
     } catch (err) {

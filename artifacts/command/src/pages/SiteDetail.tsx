@@ -463,7 +463,7 @@ export default function SiteDetail() {
                       <div className="text-sm font-mono">Qty: {rec.quantity}</div>
                       <Button
                         size="sm"
-                        onClick={() => promoteRec.mutate({ recommendationId: rec.id })}
+                        onClick={() => promoteRec.mutate({ recommendationId: rec.id, data: {} })}
                         disabled={!!rec.promotedOrderId}
                       >
                         {rec.promotedOrderId ? 'Promoted' : 'Promote to Order'}

@@ -46,6 +46,7 @@ import type {
   OrderDetail,
   PresetEvent,
   Profile,
+  PromoteRecommendationOverrides,
   Recommendation,
   RiskBoard,
   RoleDefinition,
@@ -2289,6 +2290,7 @@ export const getPromoteRecommendationToOrderUrl = (
 
 export const promoteRecommendationToOrder = async (
   recommendationId: string,
+  promoteRecommendationOverrides?: PromoteRecommendationOverrides,
   options?: RequestInit,
 ): Promise<Order> => {
   return customFetch<Order>(
@@ -2296,6 +2298,8 @@ export const promoteRecommendationToOrder = async (
     {
       ...options,
       method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(promoteRecommendationOverrides),
     },
   );
 };
@@ -2307,14 +2311,17 @@ export const getPromoteRecommendationToOrderMutationOptions = <
   mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof promoteRecommendationToOrder>>,
     TError,
-    { recommendationId: string },
+    {
+      recommendationId: string;
+      data: BodyType<PromoteRecommendationOverrides>;
+    },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationOptions<
   Awaited<ReturnType<typeof promoteRecommendationToOrder>>,
   TError,
-  { recommendationId: string },
+  { recommendationId: string; data: BodyType<PromoteRecommendationOverrides> },
   TContext
 > => {
   const mutationKey = ["promoteRecommendationToOrder"];
@@ -2328,11 +2335,11 @@ export const getPromoteRecommendationToOrderMutationOptions = <
 
   const mutationFn: MutationFunction<
     Awaited<ReturnType<typeof promoteRecommendationToOrder>>,
-    { recommendationId: string }
+    { recommendationId: string; data: BodyType<PromoteRecommendationOverrides> }
   > = (props) => {
-    const { recommendationId } = props ?? {};
+    const { recommendationId, data } = props ?? {};
 
-    return promoteRecommendationToOrder(recommendationId, requestOptions);
+    return promoteRecommendationToOrder(recommendationId, data, requestOptions);
   };
 
   return { mutationFn, ...mutationOptions };
@@ -2341,7 +2348,8 @@ export const getPromoteRecommendationToOrderMutationOptions = <
 export type PromoteRecommendationToOrderMutationResult = NonNullable<
   Awaited<ReturnType<typeof promoteRecommendationToOrder>>
 >;
-
+export type PromoteRecommendationToOrderMutationBody =
+  BodyType<PromoteRecommendationOverrides>;
 export type PromoteRecommendationToOrderMutationError = ErrorType<unknown>;
 
 export const usePromoteRecommendationToOrder = <
@@ -2351,14 +2359,17 @@ export const usePromoteRecommendationToOrder = <
   mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof promoteRecommendationToOrder>>,
     TError,
-    { recommendationId: string },
+    {
+      recommendationId: string;
+      data: BodyType<PromoteRecommendationOverrides>;
+    },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationResult<
   Awaited<ReturnType<typeof promoteRecommendationToOrder>>,
   TError,
-  { recommendationId: string },
+  { recommendationId: string; data: BodyType<PromoteRecommendationOverrides> },
   TContext
 > => {
   return useMutation(getPromoteRecommendationToOrderMutationOptions(options));

@@ -63,6 +63,8 @@ export * from "./orderLineDetail";
 export * from "./presetEvent";
 export * from "./profile";
 export * from "./profileRole";
+export * from "./promoteRecommendationOverrides";
+export * from "./promoteRecommendationOverridesPriority";
 export * from "./recommendation";
 export * from "./riskBoard";
 export * from "./riskBoardByHubItem";

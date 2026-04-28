@@ -466,6 +466,11 @@ paths:
           name: recommendationId
           required: true
           schema: { type: string }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PromoteRecommendationOverrides" }
       responses:
         "201":
           description: created
@@ -1267,6 +1272,14 @@ components:
         confidenceScore: { type: number }
         scenarioId: { type: ["string", "null"] }
         promotedOrderId: { type: ["string", "null"] }
+
+    PromoteRecommendationOverrides:
+      type: object
+      properties:
+        quantity: { type: number, minimum: 1 }
+        supplierId: { type: string }
+        etaDays: { type: number, minimum: 0 }
+        priority: { type: string, enum: [ROUTINE, URGENT, FLASH] }
 
     ForecastInput:
       type: object

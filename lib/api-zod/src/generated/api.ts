@@ -1262,6 +1262,18 @@ export const PromoteRecommendationToOrderParams = zod.object({
   recommendationId: zod.coerce.string(),
 });
 
+export const promoteRecommendationToOrderBodyEtaDaysMin = 0;
+
+export const PromoteRecommendationToOrderBody = zod.object({
+  quantity: zod.number().min(1).optional(),
+  supplierId: zod.string().optional(),
+  etaDays: zod
+    .number()
+    .min(promoteRecommendationToOrderBodyEtaDaysMin)
+    .optional(),
+  priority: zod.enum(["ROUTINE", "URGENT", "FLASH"]).optional(),
+});
+
 export const ListConversationsResponseItem = zod.object({
   id: zod.string(),
   title: zod.string(),
