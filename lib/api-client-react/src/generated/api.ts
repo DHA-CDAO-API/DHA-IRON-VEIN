@@ -71,6 +71,7 @@ import type {
   SiteDetail,
   SiteSummary,
   Supplier,
+  TableHealthList,
   TheaterBloodReadiness,
   TheaterZone,
   UpdateOrderStatusInput,
@@ -358,6 +359,81 @@ export function useGetDatabaseHealth<
   request?: SecondParameter<typeof customFetch>;
 }): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetDatabaseHealthQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary List every user table in the primary database with size, scan stats, and a health verdict.
+ */
+export const getGetTableHealthUrl = () => {
+  return `/api/admin/tables`;
+};
+
+export const getTableHealth = async (
+  options?: RequestInit,
+): Promise<TableHealthList> => {
+  return customFetch<TableHealthList>(getGetTableHealthUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetTableHealthQueryKey = () => {
+  return [`/api/admin/tables`] as const;
+};
+
+export const getGetTableHealthQueryOptions = <
+  TData = Awaited<ReturnType<typeof getTableHealth>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getTableHealth>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetTableHealthQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getTableHealth>>> = ({
+    signal,
+  }) => getTableHealth({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getTableHealth>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetTableHealthQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getTableHealth>>
+>;
+export type GetTableHealthQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List every user table in the primary database with size, scan stats, and a health verdict.
+ */
+
+export function useGetTableHealth<
+  TData = Awaited<ReturnType<typeof getTableHealth>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getTableHealth>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetTableHealthQueryOptions(options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

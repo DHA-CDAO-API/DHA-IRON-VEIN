@@ -65,6 +65,48 @@ export const GetDatabaseHealthResponse = zod.object({
   checkedAt: zod.coerce.date(),
 });
 
+/**
+ * @summary List every user table in the primary database with size, scan stats, and a health verdict.
+ */
+export const GetTableHealthResponse = zod.object({
+  tables: zod.array(
+    zod.object({
+      schema: zod.string().describe("Postgres schema, e.g. 'public'."),
+      name: zod.string().describe("Table name."),
+      rowCount: zod
+        .number()
+        .describe("Estimated live row count from pg_class.reltuples."),
+      sizeBytes: zod
+        .number()
+        .describe("pg_total_relation_size — heap + indexes + TOAST, in bytes."),
+      indexBytes: zod
+        .number()
+        .describe("pg_indexes_size — total bytes of all indexes on the table."),
+      indexCount: zod.number().describe("Number of indexes on the table."),
+      sequentialScans: zod
+        .number()
+        .describe("Sequential scans recorded by pg_stat_user_tables."),
+      indexScans: zod
+        .number()
+        .describe("Index scans recorded by pg_stat_user_tables."),
+      lastVacuum: zod.coerce.date().nullish(),
+      lastAutovacuum: zod.coerce.date().nullish(),
+      lastAnalyze: zod.coerce.date().nullish(),
+      lastAutoanalyze: zod.coerce.date().nullish(),
+      status: zod
+        .enum(["healthy", "degraded", "empty"])
+        .describe(
+          "Heuristic health verdict from row count + scan ratio + analyze recency.",
+        ),
+      detail: zod
+        .string()
+        .nullish()
+        .describe("Human-readable explanation when status is not 'healthy'."),
+    }),
+  ),
+  checkedAt: zod.coerce.date(),
+});
+
 export const listCatalogItemsQueryLimitDefault = 50;
 
 export const ListCatalogItemsQueryParams = zod.object({

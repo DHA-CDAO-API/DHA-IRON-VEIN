@@ -51,6 +51,57 @@ export interface DatabaseHealthList {
   checkedAt: string;
 }
 
+/**
+ * Heuristic health verdict from row count + scan ratio + analyze recency.
+ */
+export type TableHealthStatus =
+  (typeof TableHealthStatus)[keyof typeof TableHealthStatus];
+
+export const TableHealthStatus = {
+  healthy: "healthy",
+  degraded: "degraded",
+  empty: "empty",
+} as const;
+
+export interface TableHealth {
+  /** Postgres schema, e.g. 'public'. */
+  schema: string;
+  /** Table name. */
+  name: string;
+  /** Estimated live row count from pg_class.reltuples. */
+  rowCount: number;
+  /** pg_total_relation_size — heap + indexes + TOAST, in bytes. */
+  sizeBytes: number;
+  /** pg_indexes_size — total bytes of all indexes on the table. */
+  indexBytes: number;
+  /** Number of indexes on the table. */
+  indexCount: number;
+  /** Sequential scans recorded by pg_stat_user_tables. */
+  sequentialScans: number;
+  /** Index scans recorded by pg_stat_user_tables. */
+  indexScans: number;
+  /** @nullable */
+  lastVacuum?: string | null;
+  /** @nullable */
+  lastAutovacuum?: string | null;
+  /** @nullable */
+  lastAnalyze?: string | null;
+  /** @nullable */
+  lastAutoanalyze?: string | null;
+  /** Heuristic health verdict from row count + scan ratio + analyze recency. */
+  status: TableHealthStatus;
+  /**
+   * Human-readable explanation when status is not 'healthy'.
+   * @nullable
+   */
+  detail?: string | null;
+}
+
+export interface TableHealthList {
+  tables: TableHealth[];
+  checkedAt: string;
+}
+
 export interface SeedStatus {
   seeded: boolean;
   items: number;

@@ -70,6 +70,18 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/DatabaseHealthList" }
 
+  /admin/tables:
+    get:
+      operationId: getTableHealth
+      tags: [admin]
+      summary: List every user table in the primary database with size, scan stats, and a health verdict.
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TableHealthList" }
+
   /catalog/items:
     get:
       operationId: listCatalogItems
@@ -827,6 +839,68 @@ components:
         databases:
           type: array
           items: { $ref: "#/components/schemas/DatabaseHealth" }
+        checkedAt: { type: string, format: date-time }
+
+    TableHealth:
+      type: object
+      required:
+        - schema
+        - name
+        - rowCount
+        - sizeBytes
+        - indexBytes
+        - indexCount
+        - sequentialScans
+        - indexScans
+        - status
+      properties:
+        schema: { type: string, description: "Postgres schema, e.g. 'public'." }
+        name: { type: string, description: "Table name." }
+        rowCount:
+          type: integer
+          description: "Estimated live row count from pg_class.reltuples."
+        sizeBytes:
+          type: integer
+          description: "pg_total_relation_size — heap + indexes + TOAST, in bytes."
+        indexBytes:
+          type: integer
+          description: "pg_indexes_size — total bytes of all indexes on the table."
+        indexCount:
+          type: integer
+          description: "Number of indexes on the table."
+        sequentialScans:
+          type: integer
+          description: "Sequential scans recorded by pg_stat_user_tables."
+        indexScans:
+          type: integer
+          description: "Index scans recorded by pg_stat_user_tables."
+        lastVacuum:
+          type: ["string", "null"]
+          format: date-time
+        lastAutovacuum:
+          type: ["string", "null"]
+          format: date-time
+        lastAnalyze:
+          type: ["string", "null"]
+          format: date-time
+        lastAutoanalyze:
+          type: ["string", "null"]
+          format: date-time
+        status:
+          type: string
+          enum: [healthy, degraded, empty]
+          description: "Heuristic verdict: 'empty' if rowCount is 0, 'degraded' if a meaningfully-sized table is dominated by sequential scans, otherwise 'healthy'."
+        detail:
+          type: ["string", "null"]
+          description: "Human-readable explanation when status is not 'healthy'."
+
+    TableHealthList:
+      type: object
+      required: [tables, checkedAt]
+      properties:
+        tables:
+          type: array
+          items: { $ref: "#/components/schemas/TableHealth" }
         checkedAt: { type: string, format: date-time }
 
     SeedStatus:
