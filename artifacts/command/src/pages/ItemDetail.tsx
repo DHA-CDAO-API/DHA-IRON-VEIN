@@ -105,7 +105,7 @@ export default function ItemDetail() {
       </div>
 
       <div className="flex-1 grid grid-cols-1 lg:grid-cols-5 gap-4 min-h-0">
-        <div className="lg:col-span-3 flex flex-col gap-4">
+        <div className="lg:col-span-3 flex flex-col gap-4 min-w-0">
           <Card className="bg-card/50 border-border flex-1 flex flex-col overflow-hidden">
             <div className="p-4 border-b border-border/50 bg-muted/20 font-medium text-sm">Site Distribution</div>
             <div className="flex-1 overflow-auto p-0">
@@ -163,7 +163,7 @@ export default function ItemDetail() {
           </Card>
         </div>
         
-        <div className="flex flex-col gap-4">
+        <div className="lg:col-span-2 flex flex-col gap-4 min-w-0">
           <Card className="bg-card/50 border-border flex-1 overflow-hidden flex flex-col">
             <div className="p-4 border-b border-border/50 bg-muted/20 font-medium text-sm">Available Suppliers</div>
             <div className="flex-1 overflow-auto">
