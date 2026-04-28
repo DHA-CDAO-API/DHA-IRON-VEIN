@@ -14,52 +14,70 @@ const router: IRouter = Router();
 router.post("/predictive/forecast", async (req, res, next) => {
   try {
     const body = req.body as {
-      nodeId: string;
-      itemId?: string;
+      nodeIds?: string[];
+      itemIds?: string[];
       horizonDays?: number;
+      operationalState?: string | null;
     };
     const horizon = Math.max(1, Math.min(45, body.horizonDays ?? 14));
     const ctx = await loadSimContext();
-    const profile = ctx.ctx.profiles.get(body.nodeId);
-    if (!profile) return res.status(404).json({ error: "node not found" });
 
-    const items = body.itemId
-      ? ctx.ctx.items.filter((i) => i.id === body.itemId)
-      : ctx.ctx.items;
-    const dailyDemand = computeDailyDemand({
-      profile,
-      items,
-      operationalState: ctx.ctx.states.get(profile.operationalState),
-      itemSkew: ctx.ctx.itemSkew,
-    });
-    const balanceMap = new Map<string, number>();
-    for (const b of ctx.ctx.balances) {
-      if (b.nodeId === body.nodeId) balanceMap.set(b.itemId, b.onHand);
+    const requestedNodeIds = Array.isArray(body.nodeIds) ? body.nodeIds : [];
+    const nodeIds = requestedNodeIds.filter((id) => ctx.ctx.profiles.has(id));
+    if (nodeIds.length === 0) {
+      return res.status(404).json({ error: "no matching nodes" });
     }
 
-    const series = items.map((it) => {
-      const onHand0 = balanceMap.get(it.id) ?? 0;
-      const burn = dailyDemand.find((d) => d.itemId === it.id)?.quantity ?? 0;
-      const points: Array<{ day: number; onHand: number; demand: number; daysOfSupply: number }> = [];
-      let onHand = onHand0;
-      for (let d = 0; d <= horizon; d++) {
-        points.push({
-          day: d,
-          onHand: Math.max(0, Number(onHand.toFixed(1))),
-          demand: Number(burn.toFixed(1)),
-          daysOfSupply: Number(projectDaysOfSupply(Math.max(0, onHand), burn).toFixed(1)),
-        });
-        onHand -= burn;
-      }
-      return { itemId: it.id, itemName: it.name, points };
-    });
+    const requestedItemIds = Array.isArray(body.itemIds) ? body.itemIds : [];
+    const items =
+      requestedItemIds.length > 0
+        ? ctx.ctx.items.filter((i) => requestedItemIds.includes(i.id))
+        : ctx.ctx.items;
 
-    res.json({
-      nodeId: body.nodeId,
-      horizonDays: horizon,
-      generatedAt: new Date().toISOString(),
-      series,
-    });
+    const series: Array<{
+      nodeId: string;
+      itemId: string;
+      itemName: string;
+      points: Array<{ day: number; value: number; label?: string }>;
+    }> = [];
+
+    for (const nodeId of nodeIds) {
+      const baseProfile = ctx.ctx.profiles.get(nodeId);
+      if (!baseProfile) continue;
+      const profile =
+        typeof body.operationalState === "string" && body.operationalState
+          ? { ...baseProfile, operationalState: body.operationalState }
+          : baseProfile;
+      const dailyDemand = computeDailyDemand({
+        profile,
+        items,
+        operationalState: ctx.ctx.states.get(profile.operationalState),
+        itemSkew: ctx.ctx.itemSkew,
+      });
+      const balanceMap = new Map<string, number>();
+      for (const b of ctx.ctx.balances) {
+        if (b.nodeId === nodeId) balanceMap.set(b.itemId, b.onHand);
+      }
+
+      for (const it of items) {
+        const onHand0 = balanceMap.get(it.id) ?? 0;
+        const burn = dailyDemand.find((d) => d.itemId === it.id)?.quantity ?? 0;
+        const points: Array<{ day: number; value: number; label?: string }> = [];
+        let onHand = onHand0;
+        for (let d = 0; d <= horizon; d++) {
+          const remaining = Math.max(0, onHand);
+          points.push({
+            day: d,
+            value: Number(remaining.toFixed(1)),
+            label: `${projectDaysOfSupply(remaining, burn).toFixed(1)} DOS`,
+          });
+          onHand -= burn;
+        }
+        series.push({ nodeId, itemId: it.id, itemName: it.name, points });
+      }
+    }
+
+    res.json({ series });
   } catch (err) {
     next(err);
   }
