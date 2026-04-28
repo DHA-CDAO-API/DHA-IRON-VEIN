@@ -223,7 +223,7 @@ export default function Settings() {
                     className={`px-2 py-0.5 rounded text-[10px] uppercase tracking-wider border ${
                       env === "production"
                         ? "bg-emerald-500/10 border-emerald-500/40 text-emerald-400"
-                        : "bg-amber-400/10 border-amber-400/40 text-amber-400"
+                        : "bg-amber-500/10 border-amber-500/40 text-amber-400"
                     }`}
                   >
                     {env}

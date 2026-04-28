@@ -56,9 +56,9 @@ export function statusTone(status: string): {
     };
   if (status === "EXCURSION")
     return {
-      border: "border-amber-400/60",
-      text: "text-amber-400",
-      bg: "bg-amber-400/10",
+      border: "border-amber-500/60",
+      text: "text-amber-500",
+      bg: "bg-amber-500/10",
     };
   return {
     border: "border-emerald-500/60",
@@ -70,14 +70,14 @@ export function statusTone(status: string): {
 export function fuelTone(days: number): string {
   if (!Number.isFinite(days)) return "text-muted-foreground";
   if (days <= 1) return "text-destructive font-bold";
-  if (days <= 3) return "text-amber-400 font-bold";
+  if (days <= 3) return "text-amber-500 font-bold";
   return "text-emerald-500";
 }
 
 export function healthTone(percent: number): string {
   if (!Number.isFinite(percent)) return "text-muted-foreground";
   if (percent < 60) return "text-destructive";
-  if (percent < 85) return "text-amber-400";
+  if (percent < 85) return "text-amber-500";
   return "text-emerald-500";
 }
 

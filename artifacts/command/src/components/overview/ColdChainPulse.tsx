@@ -101,7 +101,7 @@ export function ColdChainPulse() {
             <span className="text-destructive">
               {counts.critical} critical
             </span>
-            <span className="text-amber-400">{counts.watch} watch</span>
+            <span className="text-amber-500">{counts.watch} watch</span>
           </div>
         </div>
       </CardHeader>

@@ -29,8 +29,8 @@ export function ViableUnitsPanel({ data }: { data: NodeBloodReadiness }) {
         <div className="grid grid-cols-4 divide-x divide-border/40 border-b border-border/40">
           <KpiCell label="Viable DOS" value={formatDOS(data.viableDaysOfSupply)} valueClass={dosClass(data.viableDaysOfSupply)} />
           <KpiCell label="Expiring 24h" value={formatNumber(data.unitsExpiringWithin24h)} valueClass={data.unitsExpiringWithin24h > 0 ? "text-destructive" : "text-muted-foreground"} />
-          <KpiCell label="Expiring 72h" value={formatNumber(data.unitsExpiringWithin72h)} valueClass={data.unitsExpiringWithin72h > 0 ? "text-amber-400" : "text-muted-foreground"} />
-          <KpiCell label="Expiring 7d" value={formatNumber(data.unitsExpiringWithin7d)} valueClass={data.unitsExpiringWithin7d > 0 ? "text-amber-400/80" : "text-muted-foreground"} />
+          <KpiCell label="Expiring 72h" value={formatNumber(data.unitsExpiringWithin72h)} valueClass={data.unitsExpiringWithin72h > 0 ? "text-amber-500" : "text-muted-foreground"} />
+          <KpiCell label="Expiring 7d" value={formatNumber(data.unitsExpiringWithin7d)} valueClass={data.unitsExpiringWithin7d > 0 ? "text-amber-500/80" : "text-muted-foreground"} />
         </div>
 
         {rows.length === 0 ? (
@@ -73,7 +73,7 @@ export function ViableUnitsPanel({ data }: { data: NodeBloodReadiness }) {
                 align: "right",
                 sortAccessor: (r) => r.nearExpiryUnits,
                 render: (r) => (
-                  <span className={`font-mono ${r.nearExpiryUnits > 0 ? "text-amber-400" : "text-muted-foreground"}`}>
+                  <span className={`font-mono ${r.nearExpiryUnits > 0 ? "text-amber-500" : "text-muted-foreground"}`}>
                     {formatNumber(r.nearExpiryUnits)}
                   </span>
                 ),

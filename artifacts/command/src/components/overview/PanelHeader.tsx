@@ -79,13 +79,13 @@ export function PanelHeader({
 
 const TIER_STYLES: Record<string, string> = {
   CRITICAL: "border-destructive/40 bg-destructive/15 text-destructive",
-  WATCH: "border-amber-400/40 bg-amber-400/10 text-amber-400",
+  WATCH: "border-amber-500/40 bg-amber-500/10 text-amber-500",
   NOMINAL: "border-emerald-500/40 bg-emerald-500/10 text-emerald-500",
 };
 
 const TIER_CELL_STYLES: Record<string, string> = {
   CRITICAL: "bg-destructive/20 text-destructive border-destructive/40",
-  WATCH: "bg-amber-400/15 text-amber-400 border-amber-400/40",
+  WATCH: "bg-amber-500/15 text-amber-400 border-amber-500/40",
   NOMINAL: "bg-emerald-500/10 text-emerald-400 border-emerald-500/40",
 };
 

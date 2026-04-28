@@ -77,7 +77,7 @@ const CATEGORY_META: Record<
   supplies: {
     label: 'Supplies',
     icon: <Package className="h-3.5 w-3.5" />,
-    tint: 'text-amber-300',
+    tint: 'text-teal-300',
   },
   ppe: {
     label: 'PPE',

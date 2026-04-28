@@ -18,25 +18,17 @@
 }
 
 :root {
-  /* USMC-coordinated slide palette. Gold is the primary accent for
-     section numbers / headlines, Scarlet is the secondary highlight
-     used for emphasised words and divider rules. Backgrounds are deep
-     warm near-black so Scarlet reads correctly on the projector. */
-  --slide-primary: #FFCC00;          /* USMC Gold */
-  --slide-accent: #BA0C2F;           /* USMC Scarlet */
-  --slide-bg: #0E0A0C;
-  --slide-bg2: #181013;
-  --slide-text: #ECE6E2;
-  --slide-muted: #9A8F8C;
-  --slide-edge: #2A1D22;
-  /* The slides use `text-cyan` / `text-amber` class names throughout.
-     We keep the names as semantic aliases but rebind their values:
-     `cyan` → Scarlet, `amber` → Gold — so existing slide markup picks
-     up the new palette without restructuring any layouts. */
-  --slide-cyan: #BA0C2F;             /* USMC Scarlet */
-  --slide-amber: #FFCC00;            /* USMC Gold */
-  --slide-emerald: #4DA374;          /* desaturated sage */
-  --slide-rose: #BA0C2F;             /* alias scarlet for legacy refs */
+  --slide-primary: #f59e0b;
+  --slide-accent: #22d3ee;
+  --slide-bg: #0b1220;
+  --slide-bg2: #111827;
+  --slide-text: #e5e7eb;
+  --slide-muted: #94a3b8;
+  --slide-edge: #1f2937;
+  --slide-cyan: #22d3ee;
+  --slide-amber: #f59e0b;
+  --slide-emerald: #10b981;
+  --slide-rose: #ef4444;
   --font-display-family: "Space Grotesk", system-ui, sans-serif;
   --font-body-family: "IBM Plex Sans", system-ui, sans-serif;
   --font-mono-family: "IBM Plex Mono", ui-monospace, monospace;
@@ -80,7 +72,7 @@ body {
   background: linear-gradient(
     180deg,
     transparent 0%,
-    rgba(186, 12, 47, 0.05) 50%,
+    rgba(34, 211, 238, 0.04) 50%,
     transparent 100%
   );
 }

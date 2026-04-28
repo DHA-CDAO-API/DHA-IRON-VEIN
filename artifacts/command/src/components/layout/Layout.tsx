@@ -130,7 +130,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                 ⌘K
               </kbd>
             </Button>
-            <FpconPill />
+            <FpconPill level="BRAVO" />
           </div>
           <div className="flex items-center gap-4">
             <RoleBadge />

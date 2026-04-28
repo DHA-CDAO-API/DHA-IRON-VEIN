@@ -40,15 +40,15 @@ export function DonorPoolPanel({ data }: { data: NodeBloodReadiness["donors"] })
             label="Effective Capacity"
             value={formatNumber(data.effectiveCollectionCapacity)}
             suffix="u"
-            valueClass={constrained ? "text-amber-400" : "text-emerald-500"}
+            valueClass={constrained ? "text-amber-500" : "text-emerald-500"}
           />
         </div>
 
         {/* Constraint banner */}
         {constrained && data.weeklyCollectionCapacity > 0 && (
-          <div className="flex items-start gap-2 px-3 py-2 rounded-md border border-amber-400/40 bg-amber-400/10 text-xs">
-            <AlertCircle className="h-4 w-4 text-amber-400 shrink-0 mt-0.5" />
-            <span className="text-amber-400">
+          <div className="flex items-start gap-2 px-3 py-2 rounded-md border border-amber-500/40 bg-amber-500/10 text-xs">
+            <AlertCircle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
+            <span className="text-amber-500">
               Reagent shortages reduce effective collection by ~{haircutPct}% — replenish testing supplies to restore the pipeline.
             </span>
           </div>

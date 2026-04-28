@@ -30,7 +30,7 @@ function priorityChipClass(priority: string) {
   if (p === "FLASH")
     return "border-destructive bg-destructive/20 text-destructive";
   if (p === "URGENT")
-    return "border-amber-400 bg-amber-400/15 text-amber-400";
+    return "border-amber-500 bg-amber-500/15 text-amber-500";
   if (p === "PRIORITY")
     return "border-primary bg-primary/15 text-primary";
   return "border-muted-foreground/40 bg-muted/30 text-muted-foreground";
@@ -54,9 +54,9 @@ const COLUMN_THEMES: Record<OrderStatusKey, Omit<ColumnTheme, "badge">> = {
     empty: "text-sky-300/60",
   },
   ACKNOWLEDGED: {
-    outer: "border-amber-400/30",
-    body: "bg-amber-400/[0.04]",
-    header: "bg-amber-400/15 border-b border-amber-400/40",
+    outer: "border-amber-500/30",
+    body: "bg-amber-500/[0.04]",
+    header: "bg-amber-500/15 border-b border-amber-500/40",
     headerText: "text-amber-300",
     empty: "text-amber-300/60",
   },

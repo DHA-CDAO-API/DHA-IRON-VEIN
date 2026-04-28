@@ -56,7 +56,7 @@ export function AiBriefPanel() {
             {data?.fallback && (
               <Badge
                 variant="outline"
-                className="text-[10px] uppercase tracking-wider border-amber-400/50 text-amber-400"
+                className="text-[10px] uppercase tracking-wider border-amber-500/50 text-amber-500"
                 title="AI provider unreachable — showing deterministic fallback brief."
               >
                 <AlertCircle className="h-3 w-3 mr-1" /> Fallback

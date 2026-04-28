@@ -249,7 +249,7 @@ function DeltaIndicator({ delta }: { delta: number | undefined }) {
   return (
     <span
       className={`ml-auto inline-flex items-center gap-0.5 text-[10px] font-mono ${
-        positive ? "text-emerald-500" : "text-amber-400"
+        positive ? "text-emerald-500" : "text-amber-500"
       }`}
       title={`Δ ${delta > 0 ? "+" : ""}${delta.toFixed(delta % 1 === 0 ? 0 : 1)} since last refresh`}
     >
