@@ -314,6 +314,25 @@ export default function NetworkGLMap(props: NetworkMapProps) {
   const timeRef = useRef(0);
   const deckRef = useRef<any>(null);
 
+  // Per-trip fade state. Indexed by shipment id. We track when each trip
+  // first appeared in the live pool (so we can ramp opacity up over ~1.5s)
+  // and when it left the live pool (so we can ramp opacity down before the
+  // particle is dropped). Without this, the background tick that refreshes
+  // the in-flight pool every minute makes particles snap in and out, which
+  // reads as flicker on the map.
+  type FadeTrip = {
+    shipmentId: string;
+    path: Array<[number, number]>;
+    timestamps: number[];
+    baseColor: [number, number, number];
+    shipment: any;
+    firstSeenAt: number;
+    fadeOutStartAt: number | null;
+  };
+  const tripsPoolRef = useRef<Map<string, FadeTrip>>(new Map());
+  const FADE_IN_MS = 1500;
+  const FADE_OUT_MS = 1500;
+
   useEffect(() => {
     setHasWebGL(detectWebGL());
   }, []);
@@ -741,6 +760,55 @@ export default function NetworkGLMap(props: NetworkMapProps) {
     [decoratedNodes],
   );
 
+  // Keep the per-trip fade pool in sync with the live shipment list. New
+  // shipment ids are added with `firstSeenAt = now` (so they ramp in), ids
+  // that left the live pool are marked `fadeOutStartAt = now` (so they ramp
+  // out before being culled in the rAF loop).
+  useEffect(() => {
+    const now = performance.now();
+    const pool = tripsPoolRef.current;
+    const incomingIds = new Set<string>();
+    for (const t of tripData) {
+      const id = t.shipment?.id as string | undefined;
+      if (!id) continue;
+      incomingIds.add(id);
+      const existing = pool.get(id);
+      if (existing) {
+        // Refresh underlying path/timestamps in case the upstream row
+        // shifted (rare, but cheap to keep in sync).
+        existing.path = t.path;
+        existing.timestamps = t.timestamps;
+        existing.baseColor = t.color;
+        existing.shipment = t.shipment;
+        // If the shipment was fading out and reappeared (e.g. user toggled
+        // a category back on), cancel the fade-out and restart fade-in
+        // from the current alpha so the transition feels continuous.
+        if (existing.fadeOutStartAt !== null) {
+          const elapsedFadeOut = now - existing.fadeOutStartAt;
+          const remainingAlpha = Math.max(0, 1 - elapsedFadeOut / FADE_OUT_MS);
+          existing.fadeOutStartAt = null;
+          existing.firstSeenAt = now - remainingAlpha * FADE_IN_MS;
+        }
+      } else {
+        pool.set(id, {
+          shipmentId: id,
+          path: t.path,
+          timestamps: t.timestamps,
+          baseColor: t.color,
+          shipment: t.shipment,
+          firstSeenAt: now,
+          fadeOutStartAt: null,
+        });
+      }
+    }
+    // Anything in the pool that's no longer in the live list starts fading.
+    for (const [id, trip] of pool) {
+      if (!incomingIds.has(id) && trip.fadeOutStartAt === null) {
+        trip.fadeOutStartAt = now;
+      }
+    }
+  }, [tripData]);
+
   const buildAnimatedLayers = useCallback((t: number, frozen: boolean) => {
     // When `frozen`, render a single representative still frame: halos at
     // base radius (no breathing) and trips paused mid-route. The accessor
@@ -748,13 +816,67 @@ export default function NetworkGLMap(props: NetworkMapProps) {
     // work for picking and tooltips.
     const pulse = frozen ? 1 : 1 + 0.45 * Math.sin((t / 30) * Math.PI);
     const currentTime = frozen ? TRIP_LENGTH * 0.5 : t;
+
+    // Compute alpha per trip from its fade-in / fade-out state and drop
+    // entries whose fade-out has fully completed. We rebuild a fresh data
+    // array each frame so deck.gl re-evaluates `getColor` and uploads new
+    // per-vertex alpha (cheap at our scale: ~30–50 trips). When `frozen`,
+    // we still walk the pool but snap each trip to full opacity so the
+    // still frame doesn't accidentally render half-faded ghosts to a
+    // motion-sensitive operator.
+    const wallNow = performance.now();
+    const pool = tripsPoolRef.current;
+    const renderTrips: Array<{
+      path: Array<[number, number]>;
+      timestamps: number[];
+      color: [number, number, number, number];
+      shipment: any;
+    }> = [];
+    for (const [id, trip] of pool) {
+      let alpha = 1;
+      if (frozen) {
+        // In the still frame, drop trips that are fully faded-out so they
+        // don't sit as stale entries, but render any other trip at full
+        // opacity (no in-progress alpha ramp).
+        if (
+          trip.fadeOutStartAt !== null &&
+          wallNow - trip.fadeOutStartAt >= FADE_OUT_MS
+        ) {
+          pool.delete(id);
+          continue;
+        }
+        alpha = 1;
+      } else if (trip.fadeOutStartAt !== null) {
+        const elapsed = wallNow - trip.fadeOutStartAt;
+        if (elapsed >= FADE_OUT_MS) {
+          pool.delete(id);
+          continue;
+        }
+        alpha = Math.max(0, 1 - elapsed / FADE_OUT_MS);
+      } else {
+        const elapsed = wallNow - trip.firstSeenAt;
+        alpha = Math.max(0, Math.min(1, elapsed / FADE_IN_MS));
+      }
+      renderTrips.push({
+        path: trip.path,
+        timestamps: trip.timestamps,
+        color: [
+          trip.baseColor[0],
+          trip.baseColor[1],
+          trip.baseColor[2],
+          Math.round(alpha * 255),
+        ],
+        shipment: trip.shipment,
+      });
+    }
+
     return [
       // 5. Animated convoys (trip particles flowing along routes). Pickable
       //    so operators can click any moving particle and see the underlying
       //    shipment row (item, qty, ETA, priority).
       new TripsLayer({
         id: 'shipment-trips',
-        data: tripData,
+        data: renderTrips,
         getPath: (d: any) => d.path,
         getTimestamps: (d: any) => d.timestamps,
         getColor: (d: any) => d.color,
@@ -794,7 +916,11 @@ export default function NetworkGLMap(props: NetworkMapProps) {
         updateTriggers: { getFillColor: [pulseNodes] },
       }),
     ];
-  }, [tripData, pulseNodes, onShipmentClick]);
+    // `tripData` is intentionally absent from the dependency list — the pool
+    // is mutated by the sync `useEffect` above, and the rAF loop reads the
+    // latest pool from `tripsPoolRef` on every frame. Keeping the callback
+    // identity stable avoids rebuilding the static layers array each fetch.
+  }, [pulseNodes, onShipmentClick]);
 
   // Initial layer array for the first React render (before the rAF loop kicks
   // in). Subsequent updates are pushed via `deck.setProps` from the loop.
