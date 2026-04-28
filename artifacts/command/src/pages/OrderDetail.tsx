@@ -511,10 +511,16 @@ export default function OrderDetail() {
       </Card>
 
       {(order.triggerNote || aiTriggered || recommendation) && (
-        <Card className={`shrink-0 ${aiTriggered ? "bg-primary/5 border-primary/30" : "bg-card/50 border-border"}`}>
+        <Card
+          className={`shrink-0 ${
+            aiTriggered
+              ? "bg-emerald-500/10 border-emerald-500/60 ring-1 ring-emerald-500/30 shadow-[0_0_20px_-8px_rgba(16,185,129,0.55)]"
+              : "bg-card/50 border-border"
+          }`}
+        >
           <CardContent className="p-4 space-y-2">
             <div className="flex items-center gap-2">
-              <Sparkles className={`h-4 w-4 ${aiTriggered ? "text-primary" : "text-muted-foreground"}`} />
+              <Sparkles className={`h-4 w-4 ${aiTriggered ? "text-emerald-400" : "text-muted-foreground"}`} />
               <span className="text-xs uppercase tracking-wider text-muted-foreground font-medium">
                 Triggered by
               </span>
@@ -541,7 +547,7 @@ export default function OrderDetail() {
         </Card>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 flex-1 min-h-0">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 min-h-[420px]">
         <Card className="lg:col-span-2 bg-card/50 border-border flex flex-col overflow-hidden">
           <div className="p-3 border-b border-border/50 bg-muted/20 font-medium text-sm flex items-center gap-2 shrink-0">
             <Package className="h-4 w-4 text-primary" /> Line Items ({lines.length})

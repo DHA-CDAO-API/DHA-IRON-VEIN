@@ -136,13 +136,14 @@ export default function NetworkMapPage() {
   const [showAOR, setShowAOR] = useState(true);
   const [showZones, setShowZones] = useState(true);
 
-  // Motion / animation preference. Defaults to following the OS-level
-  // `prefers-reduced-motion` setting, but the user can override either way
-  // via the Layers panel toggle (e.g. enable animation despite OS setting,
-  // or freeze the map even though the OS isn't requesting reduced motion).
+  // Motion / animation preference. Default is animation ON because the live
+  // pulse / convoy motion is part of the situational-awareness signal in a
+  // command-centre dashboard. We still surface the OS-level
+  // `prefers-reduced-motion` hint so the user can flip the toggle off in
+  // one click via the Layers panel, and any explicit override wins.
   const prefersReducedMotion = usePrefersReducedMotion();
   const [animateOverride, setAnimateOverride] = useState<boolean | null>(null);
-  const animateMap = animateOverride ?? !prefersReducedMotion;
+  const animateMap = animateOverride ?? true;
 
   // Collapsible Layers card (persisted in localStorage)
   const LAYERS_COLLAPSED_KEY = 'command:network:layers-collapsed';

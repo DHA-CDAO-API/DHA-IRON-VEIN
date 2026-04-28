@@ -121,12 +121,12 @@ function OrderCard({ order }: { order: EnrichedOrder }) {
         <div
           className={`text-[11px] leading-snug px-2 py-1.5 rounded border flex items-start gap-1.5 flex-1 min-h-0 overflow-hidden ${
             aiTriggered
-              ? "bg-primary/5 border-primary/20 text-foreground/90"
+              ? "bg-emerald-500/10 border-emerald-500/50 ring-1 ring-emerald-500/25 text-foreground"
               : "bg-muted/30 border-border/50 text-muted-foreground"
           }`}
         >
           <Sparkles
-            className={`h-3 w-3 shrink-0 mt-0.5 ${aiTriggered ? "text-primary" : "text-muted-foreground/60"}`}
+            className={`h-3 w-3 shrink-0 mt-0.5 ${aiTriggered ? "text-emerald-400" : "text-muted-foreground/60"}`}
           />
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-1.5 mb-0.5">
