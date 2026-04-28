@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { useGetNetworkSnapshot, useGetDashboardOverview, useListActivity, getGetNetworkSnapshotQueryKey, getGetDashboardOverviewQueryKey, getListActivityQueryKey } from '@workspace/api-client-react';
@@ -19,6 +19,28 @@ export default function CommandOverview() {
   const [, setLocation] = useLocation();
   const [intervalMs, setIntervalMs] = useState<number>(() =>
     readPersistedInterval(REFRESH_STORAGE_KEY, DEFAULT_REFRESH_INTERVAL_MS),
+  );
+
+  // Stable identities for the map's click handlers. The map's animation loop
+  // (in components/Map.tsx) depends transitively on these via staticLayers /
+  // buildAnimatedLayers; passing fresh inline arrows on every parent render
+  // caused the requestAnimationFrame loop to be torn down and rebuilt on
+  // every refresh tick, which made the in-flight shipment particles appear
+  // to "stop" animating. useCallback keeps the identities stable so the
+  // animation loop runs uninterrupted across snapshot refreshes.
+  const handleNodeClick = useCallback(
+    (node: any) => {
+      if (node?.id) setLocation(`/sites/${node.id}`);
+    },
+    [setLocation],
+  );
+  const handleShipmentClick = useCallback(
+    (shipment: any) => {
+      const orderId = shipment?.orderId as string | null | undefined;
+      if (orderId) setLocation(`/orders/${orderId}`);
+      else setLocation('/orders');
+    },
+    [setLocation],
   );
 
   const handleIntervalChange = (ms: number) => {
@@ -148,14 +170,8 @@ export default function CommandOverview() {
               shipments={snapshot?.shipments}
               riskByNode={snapshot?.riskByNode}
               threats={snapshot?.threats}
-              onNodeClick={(node) => {
-                if (node?.id) setLocation(`/sites/${node.id}`);
-              }}
-              onShipmentClick={(shipment) => {
-                const orderId = (shipment as { orderId?: string | null })?.orderId;
-                if (orderId) setLocation(`/orders/${orderId}`);
-                else setLocation('/orders');
-              }}
+              onNodeClick={handleNodeClick}
+              onShipmentClick={handleShipmentClick}
             />
           )}
         </div>
