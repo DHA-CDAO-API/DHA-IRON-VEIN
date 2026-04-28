@@ -58,3 +58,29 @@ export function dosClass(dos: number | null | undefined): string {
   if (dos <= 7) return "text-amber-500 font-bold";
   return "text-emerald-500 font-bold";
 }
+
+/** Render an ISO timestamp as a short date like `27 Apr 2026`. */
+export function formatShortDate(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString(undefined, {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+/** Render an ISO timestamp as a short date-time like `27 Apr 2026 14:30`. */
+export function formatShortDateTime(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "—";
+  return d.toLocaleString(undefined, {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}

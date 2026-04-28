@@ -5,9 +5,12 @@
  * Predictive Sustainment Platform API for INDOPACOM medical logistics decision support.
  * OpenAPI spec version: 1.0.0
  */
+import type { ActivityEntry } from "./activityEntry";
 import type { Item } from "./item";
 import type { Node } from "./node";
 import type { Order } from "./order";
+import type { OrderLineDetail } from "./orderLineDetail";
+import type { Recommendation } from "./recommendation";
 import type { Supplier } from "./supplier";
 
 export interface OrderDetail {
@@ -16,4 +19,7 @@ export interface OrderDetail {
   toNode: Node;
   item: Item;
   supplier?: Supplier;
+  lines?: OrderLineDetail[];
+  recommendation?: Recommendation;
+  activity?: ActivityEntry[];
 }

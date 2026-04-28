@@ -104,8 +104,8 @@ export default function ItemDetail() {
         </Card>
       </div>
 
-      <div className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-4 min-h-0">
-        <div className="lg:col-span-2 flex flex-col gap-4">
+      <div className="flex-1 grid grid-cols-1 lg:grid-cols-5 gap-4 min-h-0">
+        <div className="lg:col-span-3 flex flex-col gap-4">
           <Card className="bg-card/50 border-border flex-1 flex flex-col overflow-hidden">
             <div className="p-4 border-b border-border/50 bg-muted/20 font-medium text-sm">Site Distribution</div>
             <div className="flex-1 overflow-auto p-0">
@@ -167,18 +167,57 @@ export default function ItemDetail() {
           <Card className="bg-card/50 border-border flex-1 overflow-hidden flex flex-col">
             <div className="p-4 border-b border-border/50 bg-muted/20 font-medium text-sm">Available Suppliers</div>
             <div className="flex-1 overflow-auto">
-              <div className="divide-y divide-border/50">
-                {suppliers.map(sup => (
-                  <Link key={sup.id} href="/suppliers" className="block p-4 hover:bg-muted/20 transition-colors">
-                    <div className="font-bold text-sm mb-1">{sup.name}</div>
-                    <div className="flex justify-between text-xs text-muted-foreground">
-                      <span>Lead Time: {formatDays(sup.leadTimeDays)}</span>
-                      <span>Rel: {formatPercent(sup.reliability)}</span>
-                    </div>
-                  </Link>
-                ))}
-                {suppliers.length === 0 && <div className="p-4 text-center text-muted-foreground text-sm">No suppliers mapped</div>}
-              </div>
+              <SortableTable
+                stickyHeader
+                className="table-fixed"
+                initialSort={{ key: 'reliability', direction: 'desc' }}
+                data={suppliers}
+                rowKey={(sup) => sup.id}
+                emptyMessage="No suppliers mapped"
+                columns={[
+                  {
+                    key: 'name',
+                    label: 'Supplier',
+                    sortAccessor: (sup) => sup.name,
+                    className: 'w-[60%]',
+                    headerClassName: 'w-[60%]',
+                    render: (sup) => (
+                      <div className="min-w-0">
+                        <div className="font-medium text-sm truncate" title={sup.name}>{sup.name}</div>
+                        <div className="text-[11px] text-muted-foreground truncate">
+                          {sup.region || '—'}{sup.channel ? ` · ${sup.channel}` : ''}
+                        </div>
+                      </div>
+                    ),
+                  },
+                  {
+                    key: 'leadTime',
+                    label: 'Lead',
+                    align: 'right',
+                    sortAccessor: (sup) => sup.leadTimeDays,
+                    className: 'w-[20%]',
+                    headerClassName: 'w-[20%]',
+                    render: (sup) => (
+                      <span className="font-mono text-sm whitespace-nowrap">
+                        {formatDays(sup.leadTimeDays)}
+                      </span>
+                    ),
+                  },
+                  {
+                    key: 'reliability',
+                    label: 'Reliability',
+                    align: 'right',
+                    sortAccessor: (sup) => sup.reliability,
+                    className: 'w-[20%]',
+                    headerClassName: 'w-[20%]',
+                    render: (sup) => (
+                      <span className="font-mono text-sm whitespace-nowrap">
+                        {formatPercent(sup.reliability)}
+                      </span>
+                    ),
+                  },
+                ]}
+              />
             </div>
           </Card>
         </div>

@@ -5,47 +5,100 @@ import {
   orderLines,
   shipments,
   activityEntries,
+  nodes,
+  suppliers,
+  items,
+  recommendations as recsTable,
 } from "@workspace/db";
 import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { invalidateSimCache } from "../lib/ctx";
 import { logger } from "../lib/logger";
+import { mapSupplierToApi } from "../lib/mappers";
 
 const router: IRouter = Router();
 
 type RawOrder = typeof orders.$inferSelect;
 type RawLine = typeof orderLines.$inferSelect;
 
-function buildOrderEnvelope(o: RawOrder, lines: RawLine[], itemNamesById?: Map<string, string>) {
+interface EnvelopeContext {
+  itemNamesById?: Map<string, string>;
+  itemUnitsById?: Map<string, string>;
+  nodeNamesById?: Map<string, string>;
+  supplierNamesById?: Map<string, string>;
+}
+
+function buildOrderEnvelope(
+  o: RawOrder,
+  lines: RawLine[],
+  ctx: EnvelopeContext = {},
+) {
   const firstLine = lines[0];
   const totalQty = lines.reduce((s, l) => s + l.quantity, 0);
   const etaMs = o.requestedDeliveryAt.getTime() - o.createdAt.getTime();
   const etaDays = Math.max(1, Math.round(etaMs / 86_400_000));
+
+  const itemId = firstLine?.itemId ?? "";
+  const itemName = firstLine
+    ? ctx.itemNamesById?.get(firstLine.itemId) ?? firstLine.itemId
+    : "";
+  const unit = firstLine ? ctx.itemUnitsById?.get(firstLine.itemId) ?? null : null;
+  const toNodeName = ctx.nodeNamesById?.get(o.nodeId) ?? null;
+  const fromNodeName = o.supplierId ? ctx.nodeNamesById?.get(o.supplierId) ?? null : null;
+  const supplierName = o.supplierId
+    ? ctx.supplierNamesById?.get(o.supplierId) ?? null
+    : null;
+
+  const fromAi = !!o.promotedFromRecommendationId;
+  const triggerSource = fromAi ? "ai" : "manual";
+  const triggerNote = o.notes ?? null;
+
   return {
     id: o.id,
     // OpenAPI contract fields
     orderNumber: o.orderNo,
     status: o.status,
-    fromNodeId: o.supplierId ?? null,
+    fromNodeId: o.supplierId ?? "",
+    fromNodeName,
     toNodeId: o.nodeId,
+    toNodeName,
     supplierId: o.supplierId ?? null,
-    itemId: firstLine?.itemId ?? "",
-    itemName: firstLine ? itemNamesById?.get(firstLine.itemId) ?? firstLine.itemId : "",
+    supplierName,
+    itemId,
+    itemName,
+    unit,
     quantity: totalQty,
     priority: o.priority,
     etaDays,
+    requestedDeliveryAt: o.requestedDeliveryAt.toISOString(),
     totalCost: Number(o.totalUsd ?? 0),
     rationale: o.notes ?? null,
+    triggerNote,
+    triggerSource,
     createdAt: o.createdAt.toISOString(),
     createdByRole: null,
-    sourceRecommendationId: null,
+    sourceRecommendationId: o.promotedFromRecommendationId ?? null,
     // Legacy fields kept for PurchaseOrder/ItemDetail callers
     orderNo: o.orderNo,
     nodeId: o.nodeId,
-    requestedDeliveryAt: o.requestedDeliveryAt.toISOString(),
+    nodeName: toNodeName,
     totalUsd: Number(o.totalUsd ?? 0),
     notes: o.notes,
     lineCount: lines.length,
+  };
+}
+
+async function loadEnvelopeContext(): Promise<EnvelopeContext> {
+  const [itemRows, nodeRows, supplierRows] = await Promise.all([
+    db.select({ id: items.id, name: items.name, unit: items.unitOfIssue }).from(items),
+    db.select({ id: nodes.id, name: nodes.name }).from(nodes),
+    db.select({ id: suppliers.id, name: suppliers.name }).from(suppliers),
+  ]);
+  return {
+    itemNamesById: new Map(itemRows.map((i) => [i.id, i.name])),
+    itemUnitsById: new Map(itemRows.map((i) => [i.id, i.unit])),
+    nodeNamesById: new Map(nodeRows.map((n) => [n.id, n.name])),
+    supplierNamesById: new Map(supplierRows.map((s) => [s.id, s.name])),
   };
 }
 
@@ -69,12 +122,8 @@ router.get("/orders", async (req, res, next) => {
       linesByOrder.set(l.orderId, arr);
     }
 
-    // Resolve item names for the first-line denormalization
-    const { items } = await import("@workspace/db");
-    const itemRows = await db.select({ id: items.id, name: items.name }).from(items);
-    const itemNamesById = new Map(itemRows.map((i) => [i.id, i.name]));
-
-    res.json(rows.map((o) => buildOrderEnvelope(o, linesByOrder.get(o.id) ?? [], itemNamesById)));
+    const ctx = await loadEnvelopeContext();
+    res.json(rows.map((o) => buildOrderEnvelope(o, linesByOrder.get(o.id) ?? [], ctx)));
   } catch (err) {
     next(err);
   }
@@ -170,7 +219,8 @@ router.post("/orders", async (req, res, next) => {
 
     const [created] = await db.select().from(orders).where(eq(orders.id, orderId));
     const createdLines = await db.select().from(orderLines).where(eq(orderLines.orderId, orderId));
-    res.status(201).json(buildOrderEnvelope(created!, createdLines));
+    const ctx = await loadEnvelopeContext();
+    res.status(201).json(buildOrderEnvelope(created!, createdLines, ctx));
   } catch (err) {
     logger.error({ err }, "create order failed");
     next(err);
@@ -179,7 +229,6 @@ router.post("/orders", async (req, res, next) => {
 
 router.get("/orders/:orderId", async (req, res, next) => {
   try {
-    const { items, nodes, suppliers } = await import("@workspace/db");
     const id = req.params.orderId;
     const [order] = await db.select().from(orders).where(eq(orders.id, id));
     if (!order) return res.status(404).json({ error: "order not found" });
@@ -211,17 +260,100 @@ router.get("/orders/:orderId", async (req, res, next) => {
       demandBasis: itemRow.trigger,
     };
 
+    // Resolve item names for line table
+    const itemRows = await db.select({ id: items.id, name: items.name, unit: items.unitOfIssue }).from(items);
+    const itemNamesById = new Map(itemRows.map((i) => [i.id, i.name]));
+    const itemUnitsById = new Map(itemRows.map((i) => [i.id, i.unit]));
+
+    const ctx: EnvelopeContext = {
+      itemNamesById,
+      itemUnitsById,
+      nodeNamesById: new Map<string, string>([
+        [toNode.id, toNode.name],
+        ...(fromNodeRow ? [[fromNodeRow.id, fromNodeRow.name] as [string, string]] : []),
+      ]),
+      supplierNamesById: supplierRow
+        ? new Map<string, string>([[supplierRow.id, supplierRow.name]])
+        : new Map<string, string>(),
+    };
+
+    // Activity history for this order
+    const activityRows = await db
+      .select()
+      .from(activityEntries)
+      .where(and(eq(activityEntries.refType, "order"), eq(activityEntries.refId, id)))
+      .orderBy(desc(activityEntries.ts))
+      .limit(50);
+
+    const activity = activityRows.map((r) => ({
+      id: r.id,
+      kind: r.kind,
+      summary: r.message,
+      nodeId: null,
+      itemId: null,
+      orderId: id,
+      scenarioId: null,
+      actorRole: r.actor,
+      createdAt: r.ts.toISOString(),
+    }));
+
+    // If promoted from a recommendation, fetch the persisted rec for context
+    let recommendation: Record<string, unknown> | undefined;
+    if (order.promotedFromRecommendationId) {
+      const [rec] = await db
+        .select()
+        .from(recsTable)
+        .where(eq(recsTable.id, order.promotedFromRecommendationId));
+      if (rec) {
+        recommendation = {
+          id: rec.id,
+          kind: rec.kind,
+          nodeId: rec.nodeId,
+          nodeName: ctx.nodeNamesById?.get(rec.nodeId) ?? rec.nodeId,
+          itemId: rec.itemId,
+          itemName: itemNamesById.get(rec.itemId) ?? rec.itemId,
+          quantity: rec.suggestedQty,
+          priority: order.priority,
+          rationale: rec.reason,
+          suggestedSupplierId: rec.sourceSupplierId ?? null,
+          suggestedSupplierName: rec.sourceSupplierId
+            ? ctx.supplierNamesById?.get(rec.sourceSupplierId) ?? null
+            : null,
+          suggestedFromNodeId: rec.sourceSupplierId ?? null,
+          etaDays: rec.etaDays,
+          estimatedCost: 0,
+          generatedAt: rec.createdAt.toISOString(),
+          confidenceScore: 0,
+          scenarioId: null,
+          promotedOrderId: rec.promotedOrderId ?? null,
+        };
+      }
+    }
+
+    const linesEnvelope = lines.map((ln) => ({
+      id: ln.id,
+      itemId: ln.itemId,
+      itemName: itemNamesById.get(ln.itemId) ?? ln.itemId,
+      unit: itemUnitsById.get(ln.itemId) ?? null,
+      quantity: ln.quantity,
+      unitPriceUsd: Number(ln.unitPriceUsd ?? 0),
+      lineTotalUsd: Number(ln.lineTotalUsd ?? 0),
+    }));
+
     const body: Record<string, unknown> = {
-      order: buildOrderEnvelope(order, lines),
+      order: buildOrderEnvelope(order, lines, ctx),
       fromNode: fromNodeRow ?? toNode,
       toNode,
       item: itemEnvelope,
-      lines,
+      lines: linesEnvelope,
+      activity,
     };
 
     if (supplierRow) {
-      const { mapSupplierToApi } = await import("../lib/mappers");
       body.supplier = mapSupplierToApi(supplierRow);
+    }
+    if (recommendation) {
+      body.recommendation = recommendation;
     }
 
     res.json(body);
@@ -272,7 +404,8 @@ router.patch("/orders/:orderId", async (req, res, next) => {
 
     invalidateSimCache();
     const lines = await db.select().from(orderLines).where(eq(orderLines.orderId, id));
-    res.json(buildOrderEnvelope(order, lines));
+    const ctx = await loadEnvelopeContext();
+    res.json(buildOrderEnvelope(order, lines, ctx));
   } catch (err) {
     next(err);
   }

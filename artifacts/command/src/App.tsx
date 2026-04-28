@@ -12,6 +12,7 @@ import NetworkMap from "@/pages/NetworkMap";
 import SiteDetail from "@/pages/SiteDetail";
 import ItemDetail from "@/pages/ItemDetail";
 import OrdersBoard from "@/pages/OrdersBoard";
+import OrderDetail from "@/pages/OrderDetail";
 import PurchaseOrder from "@/pages/PurchaseOrder";
 import Scenarios from "@/pages/Scenarios";
 import Copilot from "@/pages/Copilot";
@@ -51,6 +52,7 @@ function Router() {
             <Route path="/sites/:nodeId" component={SiteDetail} />
             <Route path="/items/:itemId" component={ItemDetail} />
             <Route path="/orders" component={OrdersBoard} />
+            <Route path="/orders/:id" component={OrderDetail} />
             <Route path="/scenarios" component={Scenarios} />
             <Route path="/copilot" component={Copilot} />
             <Route path="/data" component={DataAdmin} />

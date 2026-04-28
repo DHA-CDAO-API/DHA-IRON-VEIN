@@ -906,18 +906,37 @@ components:
         orderNumber: { type: string }
         status: { type: string }
         fromNodeId: { type: string }
+        fromNodeName: { type: ["string", "null"] }
         toNodeId: { type: string }
+        toNodeName: { type: ["string", "null"] }
         supplierId: { type: ["string", "null"] }
+        supplierName: { type: ["string", "null"] }
         itemId: { type: string }
         itemName: { type: string }
+        unit: { type: ["string", "null"] }
         quantity: { type: number }
         priority: { type: string }
         etaDays: { type: number }
+        requestedDeliveryAt: { type: ["string", "null"], format: date-time }
         totalCost: { type: number }
         rationale: { type: ["string", "null"] }
+        triggerNote: { type: ["string", "null"] }
+        triggerSource: { type: ["string", "null"], description: "ai | manual | system" }
         createdAt: { type: string, format: date-time }
         createdByRole: { type: ["string", "null"] }
         sourceRecommendationId: { type: ["string", "null"] }
+
+    OrderLineDetail:
+      type: object
+      required: [id, itemId, quantity, unitPriceUsd, lineTotalUsd]
+      properties:
+        id: { type: ["string", "integer"] }
+        itemId: { type: string }
+        itemName: { type: ["string", "null"] }
+        unit: { type: ["string", "null"] }
+        quantity: { type: number }
+        unitPriceUsd: { type: number }
+        lineTotalUsd: { type: number }
 
     OrderDetail:
       type: object
@@ -928,6 +947,13 @@ components:
         toNode: { $ref: "#/components/schemas/Node" }
         item: { $ref: "#/components/schemas/Item" }
         supplier: { $ref: "#/components/schemas/Supplier" }
+        lines:
+          type: array
+          items: { $ref: "#/components/schemas/OrderLineDetail" }
+        recommendation: { $ref: "#/components/schemas/Recommendation" }
+        activity:
+          type: array
+          items: { $ref: "#/components/schemas/ActivityEntry" }
 
     CreateOrderInput:
       type: object

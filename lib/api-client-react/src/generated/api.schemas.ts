@@ -311,17 +311,34 @@ export interface Order {
   orderNumber: string;
   status: string;
   fromNodeId: string;
+  /** @nullable */
+  fromNodeName?: string | null;
   toNodeId: string;
   /** @nullable */
+  toNodeName?: string | null;
+  /** @nullable */
   supplierId: string | null;
+  /** @nullable */
+  supplierName?: string | null;
   itemId: string;
   itemName?: string;
+  /** @nullable */
+  unit?: string | null;
   quantity: number;
   priority: string;
   etaDays: number;
+  /** @nullable */
+  requestedDeliveryAt?: string | null;
   totalCost: number;
   /** @nullable */
   rationale?: string | null;
+  /** @nullable */
+  triggerNote?: string | null;
+  /**
+   * ai | manual | system
+   * @nullable
+   */
+  triggerSource?: string | null;
   createdAt: string;
   /** @nullable */
   createdByRole?: string | null;
@@ -430,12 +447,44 @@ export interface ItemDetail {
   history?: HistoryPoint[];
 }
 
+export interface OrderLineDetail {
+  id: string | number;
+  itemId: string;
+  /** @nullable */
+  itemName?: string | null;
+  /** @nullable */
+  unit?: string | null;
+  quantity: number;
+  unitPriceUsd: number;
+  lineTotalUsd: number;
+}
+
+export interface ActivityEntry {
+  id: string;
+  kind: string;
+  summary: string;
+  /** @nullable */
+  nodeId?: string | null;
+  /** @nullable */
+  itemId?: string | null;
+  /** @nullable */
+  orderId?: string | null;
+  /** @nullable */
+  scenarioId?: string | null;
+  /** @nullable */
+  actorRole?: string | null;
+  createdAt: string;
+}
+
 export interface OrderDetail {
   order: Order;
   fromNode: Node;
   toNode: Node;
   item: Item;
   supplier?: Supplier;
+  lines?: OrderLineDetail[];
+  recommendation?: Recommendation;
+  activity?: ActivityEntry[];
 }
 
 export interface CreateOrderInput {
@@ -792,23 +841,6 @@ export interface RiskBoard {
   topRiskItems: RiskBoardTopRiskItemsItem[];
   predictedShortagesNext7d: number;
   byHub: RiskBoardByHubItem[];
-}
-
-export interface ActivityEntry {
-  id: string;
-  kind: string;
-  summary: string;
-  /** @nullable */
-  nodeId?: string | null;
-  /** @nullable */
-  itemId?: string | null;
-  /** @nullable */
-  orderId?: string | null;
-  /** @nullable */
-  scenarioId?: string | null;
-  /** @nullable */
-  actorRole?: string | null;
-  createdAt: string;
 }
 
 export type ListCatalogItemsParams = {

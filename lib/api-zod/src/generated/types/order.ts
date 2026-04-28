@@ -11,17 +11,34 @@ export interface Order {
   orderNumber: string;
   status: string;
   fromNodeId: string;
+  /** @nullable */
+  fromNodeName?: string | null;
   toNodeId: string;
   /** @nullable */
+  toNodeName?: string | null;
+  /** @nullable */
   supplierId: string | null;
+  /** @nullable */
+  supplierName?: string | null;
   itemId: string;
   itemName?: string;
+  /** @nullable */
+  unit?: string | null;
   quantity: number;
   priority: string;
   etaDays: number;
+  /** @nullable */
+  requestedDeliveryAt?: Date | null;
   totalCost: number;
   /** @nullable */
   rationale?: string | null;
+  /** @nullable */
+  triggerNote?: string | null;
+  /**
+   * ai | manual | system
+   * @nullable
+   */
+  triggerSource?: string | null;
   createdAt: Date;
   /** @nullable */
   createdByRole?: string | null;
