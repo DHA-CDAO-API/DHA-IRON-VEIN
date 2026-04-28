@@ -85,6 +85,14 @@ function formatSupplierMeta(s: Supplier): string {
   return `${lt} · ${rel}`;
 }
 
+function formatNodeType(type?: string): string | null {
+  if (!type) return null;
+  return type
+    .split("_")
+    .map((s) => (s.length === 0 ? s : s[0].toUpperCase() + s.slice(1)))
+    .join(" ");
+}
+
 interface NewOrderDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -124,7 +132,9 @@ export function NewOrderDialog({ open, onOpenChange }: NewOrderDialogProps) {
   const [itemId, setItemId] = useState("");
   const [itemPickerOpen, setItemPickerOpen] = useState(false);
   const [toNodeId, setToNodeId] = useState("");
+  const [destinationPickerOpen, setDestinationPickerOpen] = useState(false);
   const [supplierId, setSupplierId] = useState("");
+  const [supplierPickerOpen, setSupplierPickerOpen] = useState(false);
   const [showAllSuppliers, setShowAllSuppliers] = useState(false);
   const [quantity, setQuantity] = useState("100");
   const [priority, setPriority] = useState<string>("ROUTINE");
@@ -140,7 +150,9 @@ export function NewOrderDialog({ open, onOpenChange }: NewOrderDialogProps) {
       setItemId("");
       setItemPickerOpen(false);
       setToNodeId("");
+      setDestinationPickerOpen(false);
       setSupplierId("");
+      setSupplierPickerOpen(false);
       setShowAllSuppliers(false);
       setQuantity("100");
       setPriority("ROUTINE");
@@ -153,6 +165,10 @@ export function NewOrderDialog({ open, onOpenChange }: NewOrderDialogProps) {
   const selectedItem = useMemo(
     () => sortedItems.find((it) => it.id === itemId) ?? null,
     [sortedItems, itemId],
+  );
+  const selectedNode = useMemo(
+    () => destinationNodes.find((n) => n.id === toNodeId) ?? null,
+    [destinationNodes, toNodeId],
   );
 
   // Suppliers that actually carry the selected item, sorted by reliability desc.
@@ -181,6 +197,11 @@ export function NewOrderDialog({ open, onOpenChange }: NewOrderDialogProps) {
     }
     return matchingSuppliers;
   }, [itemId, showAllSuppliers, matchingSuppliers, sortedAllSuppliers]);
+
+  const selectedSupplier = useMemo(
+    () => supplierOptions.find((s) => s.id === supplierId) ?? null,
+    [supplierOptions, supplierId],
+  );
 
   // When the item changes, default to the highest-reliability supplier
   // that carries it. Clear selection if no supplier covers it.
@@ -414,18 +435,124 @@ export function NewOrderDialog({ open, onOpenChange }: NewOrderDialogProps) {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="new-order-destination">Destination</Label>
-              <Select value={toNodeId} onValueChange={setToNodeId}>
-                <SelectTrigger id="new-order-destination">
-                  <SelectValue placeholder="Select a node" />
-                </SelectTrigger>
-                <SelectContent className="max-h-72">
-                  {destinationNodes.map((n) => (
-                    <SelectItem key={n.id} value={n.id}>
-                      {n.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Popover
+                open={destinationPickerOpen}
+                onOpenChange={setDestinationPickerOpen}
+              >
+                <PopoverTrigger asChild>
+                  <Button
+                    id="new-order-destination"
+                    type="button"
+                    variant="outline"
+                    role="combobox"
+                    aria-expanded={destinationPickerOpen}
+                    aria-haspopup="listbox"
+                    className={cn(
+                      "w-full justify-between font-normal",
+                      !selectedNode && "text-muted-foreground",
+                    )}
+                  >
+                    {selectedNode ? (
+                      <span className="flex items-center gap-2 min-w-0">
+                        <span className="truncate">{selectedNode.name}</span>
+                        {formatNodeType(selectedNode.type) && (
+                          <Badge
+                            variant="secondary"
+                            className="shrink-0 text-[10px] uppercase tracking-wide"
+                          >
+                            {formatNodeType(selectedNode.type)}
+                          </Badge>
+                        )}
+                      </span>
+                    ) : (
+                      "Select a node"
+                    )}
+                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent
+                  className="w-[--radix-popover-trigger-width] p-0"
+                  align="start"
+                >
+                  <Command
+                    filter={(value, search) => {
+                      if (!search) return 1;
+                      return value
+                        .toLowerCase()
+                        .includes(search.toLowerCase())
+                        ? 1
+                        : 0;
+                    }}
+                  >
+                    <CommandInput
+                      placeholder="Search by name, type, or region..."
+                    />
+                    <CommandList>
+                      <CommandEmpty>
+                        No destinations match your search.
+                      </CommandEmpty>
+                      <CommandGroup>
+                        {destinationNodes.map((n) => {
+                          const typeLabel = formatNodeType(n.type);
+                          const region = n.regionalHub ?? "";
+                          const country = n.countryCode ?? "";
+                          const searchValue = [
+                            n.name,
+                            typeLabel ?? "",
+                            n.type ?? "",
+                            region,
+                            country,
+                            n.id,
+                          ]
+                            .filter(Boolean)
+                            .join(" ");
+                          return (
+                            <CommandItem
+                              key={n.id}
+                              value={searchValue}
+                              onSelect={() => {
+                                setToNodeId(n.id);
+                                setDestinationPickerOpen(false);
+                              }}
+                            >
+                              <Check
+                                className={cn(
+                                  "mr-2 h-4 w-4",
+                                  toNodeId === n.id
+                                    ? "opacity-100"
+                                    : "opacity-0",
+                                )}
+                              />
+                              <div className="flex flex-col gap-0.5 min-w-0 flex-1">
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <span className="truncate font-medium">
+                                    {n.name}
+                                  </span>
+                                  {typeLabel && (
+                                    <Badge
+                                      variant="secondary"
+                                      className="shrink-0 text-[10px] uppercase tracking-wide"
+                                    >
+                                      {typeLabel}
+                                    </Badge>
+                                  )}
+                                </div>
+                                {(region || country) && (
+                                  <div className="text-xs text-muted-foreground truncate">
+                                    {region && <span>{region}</span>}
+                                    {region && country && <span> · </span>}
+                                    {country && <span>{country}</span>}
+                                  </div>
+                                )}
+                              </div>
+                            </CommandItem>
+                          );
+                        })}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
             </div>
             <div className="space-y-2">
               <div className="flex items-center justify-between gap-2">
@@ -441,38 +568,140 @@ export function NewOrderDialog({ open, onOpenChange }: NewOrderDialogProps) {
                   </button>
                 )}
               </div>
-              <Select
-                value={supplierId}
-                onValueChange={setSupplierId}
-                disabled={!itemId || supplierOptions.length === 0}
+              <Popover
+                open={supplierPickerOpen}
+                onOpenChange={(next) => {
+                  if (!itemId || supplierOptions.length === 0) return;
+                  setSupplierPickerOpen(next);
+                }}
               >
-                <SelectTrigger id="new-order-supplier">
-                  <SelectValue placeholder={supplierPlaceholder} />
-                </SelectTrigger>
-                <SelectContent className="max-h-72">
-                  {supplierOptions.map((s) => {
-                    const carries =
-                      Array.isArray(s.items) && s.items.includes(itemId);
-                    return (
-                      <SelectItem key={s.id} value={s.id}>
-                        <div className="flex flex-col leading-tight py-0.5">
-                          <span className="text-sm">
-                            {s.name}
-                            {!carries && (
-                              <span className="ml-2 text-[10px] uppercase tracking-wide text-amber-600 dark:text-amber-400">
-                                no coverage
-                              </span>
-                            )}
-                          </span>
-                          <span className="text-[11px] text-muted-foreground">
-                            {formatSupplierMeta(s)}
-                          </span>
-                        </div>
-                      </SelectItem>
-                    );
-                  })}
-                </SelectContent>
-              </Select>
+                <PopoverTrigger asChild>
+                  <Button
+                    id="new-order-supplier"
+                    type="button"
+                    variant="outline"
+                    role="combobox"
+                    aria-expanded={supplierPickerOpen}
+                    aria-haspopup="listbox"
+                    disabled={!itemId || supplierOptions.length === 0}
+                    className={cn(
+                      "w-full justify-between font-normal",
+                      !selectedSupplier && "text-muted-foreground",
+                    )}
+                  >
+                    {selectedSupplier ? (
+                      <span className="flex items-center gap-2 min-w-0">
+                        <span className="truncate">
+                          {selectedSupplier.name}
+                        </span>
+                        {!(
+                          Array.isArray(selectedSupplier.items) &&
+                          selectedSupplier.items.includes(itemId)
+                        ) && (
+                          <Badge
+                            variant="outline"
+                            className="shrink-0 text-[10px] uppercase tracking-wide border-amber-500/60 text-amber-600 dark:text-amber-400"
+                          >
+                            no coverage
+                          </Badge>
+                        )}
+                      </span>
+                    ) : (
+                      supplierPlaceholder
+                    )}
+                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent
+                  className="w-[--radix-popover-trigger-width] p-0"
+                  align="start"
+                >
+                  <Command
+                    filter={(value, search) => {
+                      if (!search) return 1;
+                      return value
+                        .toLowerCase()
+                        .includes(search.toLowerCase())
+                        ? 1
+                        : 0;
+                    }}
+                  >
+                    <CommandInput
+                      placeholder="Search by name, region, or channel..."
+                    />
+                    <CommandList>
+                      <CommandEmpty>
+                        No suppliers match your search.
+                      </CommandEmpty>
+                      <CommandGroup>
+                        {supplierOptions.map((s) => {
+                          const carries =
+                            Array.isArray(s.items) && s.items.includes(itemId);
+                          const region = s.region ?? "";
+                          const channel = s.channel ?? "";
+                          const country = s.countryCode ?? "";
+                          const searchValue = [
+                            s.name,
+                            region,
+                            channel,
+                            country,
+                            s.id,
+                          ]
+                            .filter(Boolean)
+                            .join(" ");
+                          return (
+                            <CommandItem
+                              key={s.id}
+                              value={searchValue}
+                              onSelect={() => {
+                                setSupplierId(s.id);
+                                setSupplierPickerOpen(false);
+                              }}
+                            >
+                              <Check
+                                className={cn(
+                                  "mr-2 h-4 w-4",
+                                  supplierId === s.id
+                                    ? "opacity-100"
+                                    : "opacity-0",
+                                )}
+                              />
+                              <div className="flex flex-col gap-0.5 min-w-0 flex-1">
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <span className="truncate font-medium">
+                                    {s.name}
+                                  </span>
+                                  {channel && (
+                                    <Badge
+                                      variant="secondary"
+                                      className="shrink-0 text-[10px] uppercase tracking-wide"
+                                    >
+                                      {channel}
+                                    </Badge>
+                                  )}
+                                  {!carries && (
+                                    <Badge
+                                      variant="outline"
+                                      className="shrink-0 text-[10px] uppercase tracking-wide border-amber-500/60 text-amber-600 dark:text-amber-400"
+                                    >
+                                      no coverage
+                                    </Badge>
+                                  )}
+                                </div>
+                                <div className="text-xs text-muted-foreground truncate">
+                                  {region && <span>{region}</span>}
+                                  {region && <span> · </span>}
+                                  <span>{formatSupplierMeta(s)}</span>
+                                </div>
+                              </div>
+                            </CommandItem>
+                          );
+                        })}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
               {noMatches && (
                 <div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
                   <span>No supplier in the catalog carries this item.</span>
