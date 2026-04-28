@@ -37,6 +37,33 @@ export const ReseedDatabaseResponse = zod.object({
   completedAt: zod.coerce.date().nullish(),
 });
 
+/**
+ * @summary List configured data stores with sanitized endpoints and live health.
+ */
+export const GetDatabaseHealthResponse = zod.object({
+  databases: zod.array(
+    zod.object({
+      name: zod.string().describe("Friendly display name for the data store."),
+      kind: zod
+        .string()
+        .describe("Underlying technology (e.g. postgres, object-storage)."),
+      endpoint: zod
+        .string()
+        .describe("Sanitized endpoint with credentials masked."),
+      status: zod.enum(["healthy", "degraded", "offline"]),
+      latencyMs: zod
+        .number()
+        .nullish()
+        .describe("Round-trip latency of the probe in milliseconds."),
+      detail: zod
+        .string()
+        .nullish()
+        .describe("Human-readable status detail or error message."),
+    }),
+  ),
+  checkedAt: zod.coerce.date(),
+});
+
 export const listCatalogItemsQueryLimitDefault = 50;
 
 export const ListCatalogItemsQueryParams = zod.object({

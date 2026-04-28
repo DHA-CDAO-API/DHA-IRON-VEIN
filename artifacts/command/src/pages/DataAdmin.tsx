@@ -1,19 +1,83 @@
 import React from 'react';
-import { useGetSeedStatus, useReseedDatabase, useListCatalogItems, getGetSeedStatusQueryKey } from '@workspace/api-client-react';
+import {
+  useGetSeedStatus,
+  useReseedDatabase,
+  useListCatalogItems,
+  useGetDatabaseHealth,
+  getGetDatabaseHealthQueryKey,
+  getGetSeedStatusQueryKey,
+  type DatabaseHealth,
+} from '@workspace/api-client-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Database, RefreshCw, Download, FileSpreadsheet, FileText, Box } from 'lucide-react';
+import {
+  Database,
+  RefreshCw,
+  FileSpreadsheet,
+  FileText,
+  Box,
+  HardDrive,
+} from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+
+const DB_REFRESH_INTERVAL_MS = 15_000;
+
+function StatusBadge({ status }: { status: DatabaseHealth['status'] }) {
+  if (status === 'healthy') {
+    return (
+      <Badge
+        variant="outline"
+        className="text-emerald-500 border-emerald-500/30 bg-emerald-500/10 uppercase tracking-wider"
+        data-testid={`db-status-healthy`}
+      >
+        Healthy
+      </Badge>
+    );
+  }
+  if (status === 'degraded') {
+    return (
+      <Badge
+        variant="outline"
+        className="text-amber-500 border-amber-500/30 bg-amber-500/10 uppercase tracking-wider"
+        data-testid={`db-status-degraded`}
+      >
+        Degraded
+      </Badge>
+    );
+  }
+  return (
+    <Badge
+      variant="outline"
+      className="text-destructive border-destructive/30 bg-destructive/10 uppercase tracking-wider"
+      data-testid={`db-status-offline`}
+    >
+      Offline
+    </Badge>
+  );
+}
 
 export default function DataAdmin() {
   const { data: status, isLoading: statusLoading } = useGetSeedStatus({
     query: { queryKey: getGetSeedStatusQueryKey() },
   });
-  
+
   const { data: catalog, isLoading: catalogLoading } = useListCatalogItems({ limit: 10 });
   const reseed = useReseedDatabase();
   const { toast } = useToast();
+
+  const {
+    data: dbHealth,
+    isLoading: dbLoading,
+    isFetching: dbFetching,
+    refetch: refetchDbHealth,
+  } = useGetDatabaseHealth({
+    query: {
+      queryKey: getGetDatabaseHealthQueryKey(),
+      refetchInterval: DB_REFRESH_INTERVAL_MS,
+      refetchIntervalInBackground: false,
+    },
+  });
 
   const handleReseed = () => {
     reseed.mutate(undefined, {
@@ -25,6 +89,10 @@ export default function DataAdmin() {
       }
     });
   };
+
+  const lastChecked = dbHealth?.checkedAt
+    ? new Date(dbHealth.checkedAt).toLocaleTimeString()
+    : null;
 
   return (
     <div className="h-full flex flex-col p-6 gap-6 bg-background overflow-y-auto">
@@ -113,7 +181,89 @@ export default function DataAdmin() {
           </CardContent>
         </Card>
       </div>
+
+      <Card className="bg-card/50 border-border" data-testid="card-databases">
+        <CardHeader className="pb-2">
+          <div className="flex items-center justify-between gap-4">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <HardDrive className="h-4 w-4 text-primary" />
+              Databases
+              {lastChecked && (
+                <span className="text-xs font-normal text-muted-foreground tracking-normal normal-case ml-2">
+                  Last checked {lastChecked}
+                </span>
+              )}
+            </CardTitle>
+            <Button
+              variant="outline"
+              size="sm"
+              className="border-border hover:bg-secondary"
+              onClick={() => refetchDbHealth()}
+              disabled={dbFetching}
+              data-testid="button-refresh-databases"
+            >
+              <RefreshCw
+                className={`h-4 w-4 mr-2 ${dbFetching ? 'animate-spin' : ''}`}
+              />
+              Refresh
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent className="p-0">
+          {dbLoading ? (
+            <div className="p-4 text-sm">Loading...</div>
+          ) : !dbHealth || dbHealth.databases.length === 0 ? (
+            <div className="p-4 text-sm text-muted-foreground">
+              No databases reported.
+            </div>
+          ) : (
+            <table className="w-full text-sm text-left">
+              <thead className="bg-muted/30">
+                <tr>
+                  <th className="p-3 font-medium text-muted-foreground">Name</th>
+                  <th className="p-3 font-medium text-muted-foreground">Endpoint</th>
+                  <th className="p-3 font-medium text-muted-foreground">Status</th>
+                  <th className="p-3 font-medium text-muted-foreground">Detail</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border/50">
+                {dbHealth.databases.map((dbInfo) => (
+                  <tr
+                    key={`${dbInfo.kind}-${dbInfo.name}`}
+                    className="hover:bg-muted/10"
+                    data-testid={`row-db-${dbInfo.kind}`}
+                  >
+                    <td className="p-3">
+                      <div className="font-medium">{dbInfo.name}</div>
+                      <div className="text-xs text-muted-foreground uppercase tracking-wider">
+                        {dbInfo.kind}
+                      </div>
+                    </td>
+                    <td className="p-3">
+                      <code className="text-xs font-mono text-muted-foreground break-all">
+                        {dbInfo.endpoint}
+                      </code>
+                    </td>
+                    <td className="p-3">
+                      <StatusBadge status={dbInfo.status} />
+                    </td>
+                    <td className="p-3 text-xs text-muted-foreground">
+                      {dbInfo.detail ?? '—'}
+                      {dbInfo.status !== 'offline' &&
+                        typeof dbInfo.latencyMs === 'number' &&
+                        !dbInfo.detail?.includes(`${dbInfo.latencyMs}`) && (
+                          <span className="ml-2 font-mono">
+                            {dbInfo.latencyMs} ms
+                          </span>
+                        )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
-

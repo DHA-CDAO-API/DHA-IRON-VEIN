@@ -58,6 +58,17 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/SeedStatus" }
+  /admin/databases:
+    get:
+      operationId: getDatabaseHealth
+      tags: [admin]
+      summary: List configured data stores with sanitized endpoints and live health.
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DatabaseHealthList" }
 
   /catalog/items:
     get:
@@ -796,6 +807,26 @@ components:
       required: [status]
       properties:
         status: { type: string, enum: [ok] }
+
+    DatabaseHealth:
+      type: object
+      required: [name, kind, endpoint, status]
+      properties:
+        name: { type: string, description: "Friendly display name for the data store." }
+        kind: { type: string, description: "Underlying technology (e.g. postgres, object-storage)." }
+        endpoint: { type: string, description: "Sanitized endpoint with credentials masked." }
+        status: { type: string, enum: [healthy, degraded, offline] }
+        latencyMs: { type: ["number", "null"], description: "Round-trip latency of the probe in milliseconds." }
+        detail: { type: ["string", "null"], description: "Human-readable status detail or error message." }
+
+    DatabaseHealthList:
+      type: object
+      required: [databases, checkedAt]
+      properties:
+        databases:
+          type: array
+          items: { $ref: "#/components/schemas/DatabaseHealth" }
+        checkedAt: { type: string, format: date-time }
 
     SeedStatus:
       type: object

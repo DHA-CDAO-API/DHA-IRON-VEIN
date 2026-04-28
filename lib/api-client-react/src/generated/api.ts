@@ -31,6 +31,7 @@ import type {
   CreateOrderInput,
   CreateTheaterZoneInput,
   DashboardOverview,
+  DatabaseHealthList,
   ForecastInput,
   ForecastResult,
   GetOverviewActivityStreamParams,
@@ -289,6 +290,81 @@ export const useReseedDatabase = <
 > => {
   return useMutation(getReseedDatabaseMutationOptions(options));
 };
+
+/**
+ * @summary List configured data stores with sanitized endpoints and live health.
+ */
+export const getGetDatabaseHealthUrl = () => {
+  return `/api/admin/databases`;
+};
+
+export const getDatabaseHealth = async (
+  options?: RequestInit,
+): Promise<DatabaseHealthList> => {
+  return customFetch<DatabaseHealthList>(getGetDatabaseHealthUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetDatabaseHealthQueryKey = () => {
+  return [`/api/admin/databases`] as const;
+};
+
+export const getGetDatabaseHealthQueryOptions = <
+  TData = Awaited<ReturnType<typeof getDatabaseHealth>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getDatabaseHealth>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetDatabaseHealthQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getDatabaseHealth>>
+  > = ({ signal }) => getDatabaseHealth({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getDatabaseHealth>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetDatabaseHealthQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getDatabaseHealth>>
+>;
+export type GetDatabaseHealthQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List configured data stores with sanitized endpoints and live health.
+ */
+
+export function useGetDatabaseHealth<
+  TData = Awaited<ReturnType<typeof getDatabaseHealth>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getDatabaseHealth>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetDatabaseHealthQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
 
 export const getListCatalogItemsUrl = (params?: ListCatalogItemsParams) => {
   const normalizedParams = new URLSearchParams();

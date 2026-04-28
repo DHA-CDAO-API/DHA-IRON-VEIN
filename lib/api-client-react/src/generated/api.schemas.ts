@@ -16,6 +16,40 @@ export interface HealthCheckResponse {
   status: HealthCheckResponseStatus;
 }
 
+export type DatabaseHealthStatus =
+  (typeof DatabaseHealthStatus)[keyof typeof DatabaseHealthStatus];
+
+export const DatabaseHealthStatus = {
+  healthy: "healthy",
+  degraded: "degraded",
+  offline: "offline",
+} as const;
+
+export interface DatabaseHealth {
+  /** Friendly display name for the data store. */
+  name: string;
+  /** Underlying technology (e.g. postgres, object-storage). */
+  kind: string;
+  /** Sanitized endpoint with credentials masked. */
+  endpoint: string;
+  status: DatabaseHealthStatus;
+  /**
+   * Round-trip latency of the probe in milliseconds.
+   * @nullable
+   */
+  latencyMs?: number | null;
+  /**
+   * Human-readable status detail or error message.
+   * @nullable
+   */
+  detail?: string | null;
+}
+
+export interface DatabaseHealthList {
+  databases: DatabaseHealth[];
+  checkedAt: string;
+}
+
 export interface SeedStatus {
   seeded: boolean;
   items: number;
