@@ -269,12 +269,6 @@ export function NewOrderDialog({ open, onOpenChange }: NewOrderDialogProps) {
     }
   }, [itemId, matchingSuppliers]);
 
-
-  const selectedSupplier = useMemo(
-    () => allSuppliers.find((s) => s.id === supplierId) ?? null,
-    [allSuppliers, supplierId],
-  );
-
   const supplierCarriesItem = useMemo(() => {
     if (!itemId || !selectedSupplier) return true;
     return (
