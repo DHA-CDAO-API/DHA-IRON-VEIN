@@ -993,9 +993,21 @@ export default function NetworkMapPage() {
                 </div>
               </div>
 
+              {selectedShipment.orderId && (
+                <Link href={`/orders/${selectedShipment.orderId}`}>
+                  <Button size="sm" variant="default" className="w-full justify-start">
+                    <Package className="h-3.5 w-3.5 mr-2" />
+                    Open order
+                  </Button>
+                </Link>
+              )}
               {shipmentToNode && (
                 <Link href={`/sites/${shipmentToNode.id}`}>
-                  <Button size="sm" variant="default" className="w-full justify-start">
+                  <Button
+                    size="sm"
+                    variant={selectedShipment.orderId ? "outline" : "default"}
+                    className="w-full justify-start"
+                  >
                     <ExternalLink className="h-3.5 w-3.5 mr-2" />
                     Open destination site
                   </Button>
