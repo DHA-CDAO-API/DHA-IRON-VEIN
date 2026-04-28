@@ -61,31 +61,26 @@ export default function Copilot() {
   const handleSend = async () => {
     if (!input.trim() || isStreaming) return;
     const userMsg = input.trim();
+    setLastError(null);
     setInput('');
 
-    // Auto-create a conversation on first send so the user doesn't
-    // have to click "New Chat" before they can ask anything. We do
-    // this BEFORE seeding optimistic state so we have a real convId
-    // to scope the bubble to — that way the optimistic UI is bound
-    // to the correct chat from the start and won't leak into another
-    // chat the operator might switch to mid-flight.
+    // Auto-create a conversation on first send so the user doesn't have
+    // to click "New Chat" before they can ask anything. This was the
+    // single biggest UX trap on this page — users would type, hit Enter,
+    // and see nothing happen because the send button silently disabled
+    // itself when there was no active conversation yet.
     let convId = activeConvId;
     if (!convId) {
       convId = await handleCreate();
       if (!convId) {
-        setLastError({
-          convId: '',
-          message: 'Could not start a new conversation. Please try again.',
-        });
+        setLastError({ convId: '', message: 'Could not start a new conversation. Please try again.' });
         return;
       }
     }
 
-    // All optimistic state is keyed by convId. The render path checks
-    // `pending.convId === activeConvId` (etc.) so switching chats
-    // hides — but does not destroy — the in-flight bubbles for the
-    // originating conversation.
-    setLastError(null);
+    // Pin the user message and start the streaming bubble, scoped to
+    // the originating convId so switching sidebar chats mid-stream does
+    // not bleed the pending bubble into a different conversation.
     setPending({ convId, content: userMsg });
     setStreaming({ convId, text: '' });
 
@@ -115,11 +110,7 @@ export default function Copilot() {
               try {
                 const data = JSON.parse(line.slice(6));
                 if (data.type === 'token') {
-                  setStreaming((prev) =>
-                    prev && prev.convId === convId
-                      ? { convId, text: prev.text + data.value }
-                      : prev,
-                  );
+                  setStreaming(prev => (prev ? { ...prev, text: prev.text + data.value } : prev));
                 } else if (data.type === 'error') {
                   setLastError({
                     convId,
@@ -133,10 +124,7 @@ export default function Copilot() {
       }
     } catch (e) {
       console.error(e);
-      setLastError({
-        convId,
-        message: (e as Error)?.message ?? 'Copilot request failed',
-      });
+      setLastError({ convId, message: (e as Error)?.message ?? 'Copilot request failed' });
     } finally {
       // Invalidate using the local `convId` (not `activeConvId`) — when
       // we just auto-created the conversation in this same tick, the
@@ -153,11 +141,8 @@ export default function Copilot() {
       } catch {
         /* invalidation failures are non-fatal */
       }
-      // Only clear the optimistic state we own. If a second send for
-      // a different conversation has already replaced our state, leave
-      // it alone.
-      setStreaming((prev) => (prev && prev.convId === convId ? null : prev));
-      setPending((prev) => (prev && prev.convId === convId ? null : prev));
+      setStreaming(null);
+      setPending(null);
     }
   };
 
@@ -213,96 +198,86 @@ export default function Copilot() {
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-6" ref={scrollRef}>
-          {(() => {
-            // All optimistic state is scoped per conversation id, so
-            // the pinned user bubble + Thinking bubble + inline error
-            // only render in the originating chat. If the operator
-            // switches to a different chat mid-stream, the bubbles
-            // disappear from view (they stay in state, keyed by the
-            // original convId, and reappear on switch back).
-            const showPending =
-              pending &&
-              activeConvId &&
-              pending.convId === activeConvId &&
-              !(
+          {/* Show the empty placeholder ONLY when there's no active
+              chat AND nothing in flight. The instant the user hits
+              Send (which queues both `pendingUserMsg` and
+              `isStreaming` synchronously, before any await), the
+              placeholder yields to the live conversation view —
+              that's the difference between "I think it took my
+              question" and what we had before, where the page
+              looked frozen until the SSE stream completed. */}
+          {!activeConvId && !pending && !isStreaming ? (
+            <div className="h-full flex flex-col items-center justify-center text-muted-foreground gap-3">
+              <Bot className="h-12 w-12 text-primary/30" />
+              <p className="text-sm">Ask Copilot anything about the theater.</p>
+              <p className="text-xs opacity-70">Type a question below — a new chat starts automatically.</p>
+            </div>
+          ) : (
+            <>
+              {activeDetail?.messages.map((m, i) => (
+                <div key={i} className={`flex gap-4 max-w-4xl mx-auto ${m.role === 'user' ? 'flex-row-reverse' : ''}`}>
+                  <div className={`h-8 w-8 rounded-full shrink-0 flex items-center justify-center ${m.role === 'user' ? 'bg-secondary' : 'bg-primary/20 text-primary'}`}>
+                    {m.role === 'user' ? <User className="h-5 w-5" /> : <Bot className="h-5 w-5" />}
+                  </div>
+                  <div className={`flex flex-col gap-1 ${m.role === 'user' ? 'items-end' : 'items-start'}`}>
+                    <div className="text-xs text-muted-foreground uppercase tracking-wider">{m.role}</div>
+                    <div className={`p-4 rounded-lg text-sm whitespace-pre-wrap ${m.role === 'user' ? 'bg-secondary text-foreground' : 'bg-card border border-border/50'}`}>
+                      {m.content}
+                    </div>
+                  </div>
+                </div>
+              ))}
+
+              {/* Pinned in-flight user message. Suppressed once the
+                  server-side copy of the same text shows up at the
+                  tail of the conversation — without this guard we
+                  briefly render two identical user bubbles whenever
+                  the conversation refetch lands before the POST's
+                  invalidate-and-clear cycle finishes (which happens
+                  routinely because the POST inserts the user row
+                  before it starts streaming the assistant tokens). */}
+              {pending && pending.convId === activeConvId && !(
                 activeDetail?.messages?.length &&
                 activeDetail.messages[activeDetail.messages.length - 1]?.role === 'user' &&
                 activeDetail.messages[activeDetail.messages.length - 1]?.content?.trim() === pending.content
-              );
-            const showStreaming =
-              streaming && activeConvId && streaming.convId === activeConvId;
-            const showError =
-              lastError &&
-              activeConvId &&
-              lastError.convId === activeConvId &&
-              !showStreaming;
-            // Show the empty placeholder ONLY when there's no active
-            // chat AND nothing optimistic in flight for it.
-            const showEmpty = !activeConvId && !showPending && !showStreaming;
-            if (showEmpty) {
-              return (
-                <div className="h-full flex flex-col items-center justify-center text-muted-foreground gap-3">
-                  <Bot className="h-12 w-12 text-primary/30" />
-                  <p className="text-sm">Ask Copilot anything about the theater.</p>
-                  <p className="text-xs opacity-70">Type a question below — a new chat starts automatically.</p>
+              ) && (
+                <div className="flex gap-4 max-w-4xl mx-auto flex-row-reverse">
+                  <div className="h-8 w-8 rounded-full shrink-0 flex items-center justify-center bg-secondary">
+                    <User className="h-5 w-5" />
+                  </div>
+                  <div className="flex flex-col gap-1 items-end">
+                    <div className="text-xs text-muted-foreground uppercase tracking-wider">user</div>
+                    <div className="p-4 rounded-lg text-sm whitespace-pre-wrap bg-secondary text-foreground">
+                      {pending.content}
+                    </div>
+                  </div>
                 </div>
-              );
-            }
-            return (
-              <>
-                {activeDetail?.messages.map((m, i) => (
-                  <div key={i} className={`flex gap-4 max-w-4xl mx-auto ${m.role === 'user' ? 'flex-row-reverse' : ''}`}>
-                    <div className={`h-8 w-8 rounded-full shrink-0 flex items-center justify-center ${m.role === 'user' ? 'bg-secondary' : 'bg-primary/20 text-primary'}`}>
-                      {m.role === 'user' ? <User className="h-5 w-5" /> : <Bot className="h-5 w-5" />}
-                    </div>
-                    <div className={`flex flex-col gap-1 ${m.role === 'user' ? 'items-end' : 'items-start'}`}>
-                      <div className="text-xs text-muted-foreground uppercase tracking-wider">{m.role}</div>
-                      <div className={`p-4 rounded-lg text-sm whitespace-pre-wrap ${m.role === 'user' ? 'bg-secondary text-foreground' : 'bg-card border border-border/50'}`}>
-                        {m.content}
-                      </div>
-                    </div>
-                  </div>
-                ))}
+              )}
 
-                {showPending && (
-                  <div className="flex gap-4 max-w-4xl mx-auto flex-row-reverse">
-                    <div className="h-8 w-8 rounded-full shrink-0 flex items-center justify-center bg-secondary">
-                      <User className="h-5 w-5" />
-                    </div>
-                    <div className="flex flex-col gap-1 items-end">
-                      <div className="text-xs text-muted-foreground uppercase tracking-wider">user</div>
-                      <div className="p-4 rounded-lg text-sm whitespace-pre-wrap bg-secondary text-foreground">
-                        {pending!.content}
-                      </div>
+              {streaming && streaming.convId === activeConvId && (
+                <div className="flex gap-4 max-w-4xl mx-auto">
+                  <div className="h-8 w-8 rounded-full shrink-0 flex items-center justify-center bg-primary/20 text-primary">
+                    <Bot className="h-5 w-5" />
+                  </div>
+                  <div className="flex flex-col gap-1 items-start">
+                    <div className="text-xs text-muted-foreground uppercase tracking-wider">assistant</div>
+                    <div className="p-4 rounded-lg text-sm whitespace-pre-wrap bg-card border border-border/50 min-w-[60px]">
+                      {streaming.text || (
+                        <span className="text-muted-foreground italic">Thinking…</span>
+                      )}
+                      <span className="inline-block w-2 h-4 ml-1 bg-primary animate-pulse align-middle"></span>
                     </div>
                   </div>
-                )}
+                </div>
+              )}
 
-                {showStreaming && (
-                  <div className="flex gap-4 max-w-4xl mx-auto">
-                    <div className="h-8 w-8 rounded-full shrink-0 flex items-center justify-center bg-primary/20 text-primary">
-                      <Bot className="h-5 w-5" />
-                    </div>
-                    <div className="flex flex-col gap-1 items-start">
-                      <div className="text-xs text-muted-foreground uppercase tracking-wider">assistant</div>
-                      <div className="p-4 rounded-lg text-sm whitespace-pre-wrap bg-card border border-border/50 min-w-[60px]">
-                        {streaming!.text || (
-                          <span className="text-muted-foreground italic">Thinking…</span>
-                        )}
-                        <span className="inline-block w-2 h-4 ml-1 bg-primary animate-pulse align-middle"></span>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {showError && (
-                  <div className="max-w-4xl mx-auto p-3 rounded-lg border border-destructive/40 bg-destructive/10 text-xs text-destructive">
-                    {lastError!.message}
-                  </div>
-                )}
-              </>
-            );
-          })()}
+              {lastError && lastError.convId === activeConvId && !isStreaming && (
+                <div className="max-w-4xl mx-auto p-3 rounded-lg border border-destructive/40 bg-destructive/10 text-xs text-destructive">
+                  {lastError.message}
+                </div>
+              )}
+            </>
+          )}
         </div>
 
         <div className="p-4 bg-background border-t border-border shrink-0">

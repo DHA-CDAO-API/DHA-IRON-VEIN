@@ -35,11 +35,64 @@ function priorityChipClass(priority: string) {
   return "border-muted-foreground/40 bg-muted/30 text-muted-foreground";
 }
 
-const COLUMNS: Array<{ status: string; label: string }> = [
-  { status: "SUBMITTED", label: "Submitted" },
-  { status: "ACKNOWLEDGED", label: "Acknowledged" },
-  { status: "IN_TRANSIT", label: "In Transit" },
-  { status: "RECEIVED", label: "Received" },
+type ColumnTheme = {
+  outer: string;
+  body: string;
+  header: string;
+  headerText: string;
+  badge: string;
+  empty: string;
+};
+
+const COLUMNS: Array<{ status: string; label: string; theme: ColumnTheme }> = [
+  {
+    status: "SUBMITTED",
+    label: "Submitted",
+    theme: {
+      outer: "border-sky-500/30",
+      body: "bg-sky-500/[0.04]",
+      header: "bg-sky-500/15 border-b border-sky-500/40",
+      headerText: "text-sky-300",
+      badge: "bg-sky-500/20 text-sky-200 border-sky-500/40",
+      empty: "text-sky-300/60",
+    },
+  },
+  {
+    status: "ACKNOWLEDGED",
+    label: "Acknowledged",
+    theme: {
+      outer: "border-amber-500/30",
+      body: "bg-amber-500/[0.04]",
+      header: "bg-amber-500/15 border-b border-amber-500/40",
+      headerText: "text-amber-300",
+      badge: "bg-amber-500/20 text-amber-200 border-amber-500/40",
+      empty: "text-amber-300/60",
+    },
+  },
+  {
+    status: "IN_TRANSIT",
+    label: "In Transit",
+    theme: {
+      outer: "border-indigo-500/30",
+      body: "bg-indigo-500/[0.04]",
+      header: "bg-indigo-500/15 border-b border-indigo-500/40",
+      headerText: "text-indigo-300",
+      badge: "bg-indigo-500/20 text-indigo-200 border-indigo-500/40",
+      empty: "text-indigo-300/60",
+    },
+  },
+  {
+    status: "RECEIVED",
+    label: "Received",
+    theme: {
+      outer: "border-emerald-500/30",
+      body: "bg-emerald-500/[0.04]",
+      header: "bg-emerald-500/15 border-b border-emerald-500/40",
+      headerText: "text-emerald-300",
+      badge: "bg-emerald-500/20 text-emerald-200 border-emerald-500/40",
+      empty: "text-emerald-300/60",
+    },
+  },
 ];
 
 function OrderCard({ order }: { order: EnrichedOrder }) {
@@ -209,20 +262,27 @@ export default function OrdersBoard() {
       <NewOrderDialog open={newOrderOpen} onOpenChange={setNewOrderOpen} />
 
       <div className="flex-1 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 overflow-y-auto pb-4 min-h-0 auto-rows-min content-start">
-        {COLUMNS.map(({ status, label }) => {
+        {COLUMNS.map(({ status, label, theme }) => {
           const colOrders = (orders as EnrichedOrder[]).filter(
             (o) => o.status === status,
           );
           return (
             <div
               key={status}
-              className="flex flex-col bg-muted/10 rounded-lg border border-border/50 overflow-hidden min-w-0 max-h-full"
+              className={`flex flex-col rounded-lg border overflow-hidden min-w-0 max-h-full ${theme.outer} ${theme.body}`}
             >
-              <div className="p-3 border-b border-border/50 bg-muted/30 font-medium text-sm flex justify-between items-center shrink-0">
-                <span className="uppercase tracking-wider text-xs">
+              <div
+                className={`p-3 font-medium text-sm flex justify-between items-center shrink-0 ${theme.header}`}
+              >
+                <span
+                  className={`uppercase tracking-wider text-xs ${theme.headerText}`}
+                >
                   {label}
                 </span>
-                <Badge variant="secondary" className="bg-background">
+                <Badge
+                  variant="outline"
+                  className={`font-mono ${theme.badge}`}
+                >
                   {colOrders.length}
                 </Badge>
               </div>
@@ -231,7 +291,9 @@ export default function OrdersBoard() {
                   <OrderCard key={order.id} order={order} />
                 ))}
                 {colOrders.length === 0 && (
-                  <div className="text-center p-4 text-xs text-muted-foreground italic">
+                  <div
+                    className={`text-center p-4 text-xs italic ${theme.empty}`}
+                  >
                     No orders
                   </div>
                 )}
