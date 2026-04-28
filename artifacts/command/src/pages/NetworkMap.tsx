@@ -305,8 +305,10 @@ export default function NetworkMapPage() {
 
   return (
     <div className="h-full relative flex flex-col bg-background overflow-hidden">
-      {/* Left rail — Layers + Blood Readiness widget */}
-      <div className="absolute top-4 left-4 z-10 w-72 pointer-events-auto flex flex-col gap-4 max-h-[calc(100%-2rem-280px)] overflow-y-auto pr-1 -mr-1">
+      {/* Left rail — Layers + Blood Readiness + Theater Zones, all in a
+          single full-height scroll column so the cards share one scroll
+          context and use the available height naturally. */}
+      <div className="absolute top-4 bottom-4 left-4 z-10 w-72 pointer-events-auto flex flex-col gap-4 overflow-y-auto network-rail pr-1 -mr-1">
         <Card className="bg-card/85 backdrop-blur-md border-border shadow-2xl">
           <CardContent className="p-4 flex flex-col gap-3">
             <div className="flex items-center justify-between">
@@ -481,10 +483,8 @@ export default function NetworkMapPage() {
             </div>
           </CardContent>
         </Card>
-      </div>
 
-      {/* Theater Zones panel */}
-      <div className="absolute bottom-4 left-4 z-10 w-72 pointer-events-auto">
+        {/* Theater Zones panel — third card in the same left rail. */}
         <Card className="bg-card/85 backdrop-blur-md border-border shadow-2xl">
           <CardContent className="p-4 flex flex-col gap-3">
             <div className="flex items-center justify-between">
