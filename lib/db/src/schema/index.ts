@@ -14,3 +14,4 @@ export * from "./activity";
 export * from "./operational";
 export * from "./theater_zones";
 export * from "./blood";
+export * from "./snapshots";

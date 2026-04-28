@@ -6,6 +6,7 @@ import {
   appSettings,
   bloodLots,
   coldChainAssets,
+  dosSnapshots,
   inventoryBalances,
   items as itemsTable,
   nodes as nodesTable,
@@ -13,13 +14,13 @@ import {
   shipments as shipmentsTable,
   temperatureEvents,
 } from "@workspace/db";
-import { and, asc, desc, eq, gte, lt } from "drizzle-orm";
+import { and, asc, desc, eq, gte, lt, inArray } from "drizzle-orm";
 import {
   completeChat,
   resolveModel,
   type AIProvider,
 } from "@workspace/ai-orchestrator";
-import { computeDailyDemand, projectDaysOfSupply } from "@workspace/sim";
+import { computeDailyDemand, projectDaysOfSupply, runScenario } from "@workspace/sim";
 import { computeRiskByNode, computeInFlightShipments } from "../lib/snapshot";
 import { loadSimContext } from "../lib/ctx";
 import {
@@ -55,34 +56,79 @@ function severityToTier(severity: string): Tier {
   return "NOMINAL";
 }
 
-// Rolling per-node DOS history used to compute the leaderboard's
-// delta-vs-24h. Kept in-memory to avoid a schema migration; entries
-// older than ~26h are pruned on every recordSnapshot call.
-type DosSample = { ts: number; dos: number };
-const dosHistory = new Map<string, DosSample[]>();
-const DOS_HISTORY_MAX_AGE_MS = 26 * 60 * 60 * 1000;
-const DOS_HISTORY_TARGET_MS = 24 * 60 * 60 * 1000;
+// Per-node DOS snapshots are persisted to the `dos_snapshots` table so the
+// leaderboard's delta-vs-24h survives restarts and reflects a real time
+// series (rather than the in-memory placeholder we used to ship).
+//
+// On each leaderboard build we:
+//   1) load the most recent snapshot per node from the lookback window,
+//      preferring rows ~24h old (or as close as available),
+//   2) write a fresh snapshot with the current DOS,
+//   3) prune snapshots older than the retention window so the table
+//      doesn't grow without bound.
+const DOS_SNAPSHOT_LOOKBACK_MS = 30 * 60 * 60 * 1000; // 30h
+const DOS_SNAPSHOT_TARGET_MS = 24 * 60 * 60 * 1000; // 24h
+const DOS_SNAPSHOT_MIN_AGE_MS = 6 * 60 * 60 * 1000; // 6h
+const DOS_SNAPSHOT_RETENTION_MS = 7 * 24 * 60 * 60 * 1000; // 7d
 
-function recordDosSample(nodeId: string, dos: number): DosSample | null {
+type DosBaseline = { recordedAtMs: number; dos: number };
+
+async function loadDosBaselines(
+  nodeIds: string[],
+): Promise<Map<string, DosBaseline>> {
+  if (nodeIds.length === 0) return new Map();
+  const since = new Date(Date.now() - DOS_SNAPSHOT_LOOKBACK_MS);
+  const rows = await db
+    .select()
+    .from(dosSnapshots)
+    .where(
+      and(
+        inArray(dosSnapshots.nodeId, nodeIds),
+        gte(dosSnapshots.recordedAt, since),
+      ),
+    );
+  // Pick, per node, the snapshot whose age is closest to ~24h. Snapshots
+  // newer than the min-age window are skipped — a "vs 24h" delta computed
+  // against a row taken minutes ago would be misleading.
   const now = Date.now();
-  const samples = dosHistory.get(nodeId) ?? [];
-  // Prune anything older than the rolling window.
-  const fresh = samples.filter((s) => now - s.ts <= DOS_HISTORY_MAX_AGE_MS);
-  // Find the sample closest to 24h ago, if any.
-  let baseline: DosSample | null = null;
-  let bestDelta = Infinity;
-  for (const s of fresh) {
-    const d = Math.abs(now - s.ts - DOS_HISTORY_TARGET_MS);
-    // Only treat samples >= 6h old as a meaningful "yesterday" baseline.
-    if (now - s.ts < 6 * 60 * 60 * 1000) continue;
-    if (d < bestDelta) {
-      bestDelta = d;
-      baseline = s;
+  const best = new Map<string, { delta: number; baseline: DosBaseline }>();
+  for (const r of rows) {
+    const age = now - r.recordedAt.getTime();
+    if (age < DOS_SNAPSHOT_MIN_AGE_MS) continue;
+    const delta = Math.abs(age - DOS_SNAPSHOT_TARGET_MS);
+    const cur = best.get(r.nodeId);
+    if (!cur || delta < cur.delta) {
+      best.set(r.nodeId, {
+        delta,
+        baseline: { recordedAtMs: r.recordedAt.getTime(), dos: r.viableDaysOfSupply },
+      });
     }
   }
-  fresh.push({ ts: now, dos });
-  dosHistory.set(nodeId, fresh);
-  return baseline;
+  const out = new Map<string, DosBaseline>();
+  for (const [k, v] of best.entries()) out.set(k, v.baseline);
+  return out;
+}
+
+async function recordDosSnapshots(
+  samples: Array<{ nodeId: string; dos: number }>,
+): Promise<void> {
+  if (samples.length === 0) return;
+  await db.insert(dosSnapshots).values(
+    samples.map((s) => ({
+      nodeId: s.nodeId,
+      // Clamp the sentinel "≥999" supply to avoid storing meaningless extremes.
+      viableDaysOfSupply: Number.isFinite(s.dos)
+        ? Math.min(999, Math.max(0, s.dos))
+        : 0,
+    })),
+  );
+  // Best-effort retention prune. Failure here shouldn't break the request.
+  try {
+    const cutoff = new Date(Date.now() - DOS_SNAPSHOT_RETENTION_MS);
+    await db.delete(dosSnapshots).where(lt(dosSnapshots.recordedAt, cutoff));
+  } catch {
+    // ignore prune errors
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -139,53 +185,115 @@ router.get("/overview/cascade", async (_req, res, next) => {
     const scenarios: CascadeScenario[] = [];
 
     // (a) Hub-loss cascades — if a hub or theater goes dark, every spoke
-    // falls back to its viable on-hand stock only.
+    // falls back to its viable on-hand stock only.  We drive the projected
+    // DOS for each spoke through the shared scenario engine so the impact
+    // accounts for per-item burn rates, criticality thresholds, and the
+    // operational-state demand model rather than a flat
+    // (current_dos − route_days) heuristic.
     for (const [hubId, spokes] of spokesByHub.entries()) {
       if (spokes.length < 2) continue;
       const hub = nodeRows.find((n) => n.id === hubId);
       if (!hub) continue;
-      let dosSum = 0;
-      let worst: Tier = "NOMINAL";
-      const affectedSpokes: AffectedSpoke[] = [];
-      // Project DOS impact: roughly the hub-side resupply lead-time we lose.
       const downstreamRoutes = routeRows.filter(
         (r) => r.fromNode === hubId && spokes.includes(r.toNode),
       );
       const avgRouteDays = downstreamRoutes.length > 0
         ? downstreamRoutes.reduce((s, r) => s + r.days, 0) / downstreamRoutes.length
         : 2;
+
+      // Run the scenario engine against the spoke set: hub loss models as a
+      // lost upstream (route delay equal to the lost transit + reliability
+      // collapse). We give the simulation enough horizon to actually exhaust
+      // organic stock so the projected DOS is meaningful.
+      const horizon = Math.max(
+        7,
+        Math.min(30, Math.round(avgRouteDays * 2 + ctx.watchDays)),
+      );
+      const outcome = runScenario(ctx, {
+        horizonDays: horizon,
+        perturbation: {
+          affectedNodes: spokes,
+          routeDelayDays: avgRouteDays,
+          routeReliabilityDelta: -0.5,
+          // Operational tempo typically rises during a hub outage as the
+          // theater redistributes load — model a mild encounter uplift.
+          encounterMultiplier: 1.1,
+        },
+      });
+      // Walk the scenario time-series directly so EVERY spoke gets an
+      // engine-projected min DOS, not just the top-12 / high-delta nodes
+      // surfaced via `outcome.impactedNodes`. This avoids any silent
+      // fallback to heuristics for spokes the engine considered
+      // less-impacted.
+      const minDosBySpoke = new Map<string, number>();
+      for (const step of outcome.steps) {
+        for (const [nodeId, dos] of Object.entries(step.dosByNode)) {
+          if (!Number.isFinite(dos)) continue;
+          const cur = minDosBySpoke.get(nodeId);
+          if (cur === undefined || dos < cur) minDosBySpoke.set(nodeId, dos);
+        }
+      }
+
+      let dosSum = 0;
+      let baselineDosSum = 0;
+      let worst: Tier = "NOMINAL";
+      const affectedSpokes: AffectedSpoke[] = [];
       let scoredSpokes = 0;
+      let heuristicFallbacks = 0;
       for (const spokeId of spokes) {
         const spokeNode = nodeRows.find((n) => n.id === spokeId);
         const r = riskByNode.get(spokeId);
         if (!r || !Number.isFinite(r.daysOfSupply) || r.daysOfSupply >= 999) continue;
         scoredSpokes++;
-        // Post-cascade DOS at this spoke = its current organic supply minus
-        // the resupply gap it now has to cover (clamped at zero).
-        const projected = Math.max(0, r.daysOfSupply - avgRouteDays);
+        // Engine-projected min DOS over the horizon. Only fall back to the
+        // (currentDOS − avgRouteDays) heuristic for spokes the engine has
+        // no profile for (and therefore no time-series for either) — track
+        // those so confidence is downgraded accordingly.
+        const engineMin = minDosBySpoke.get(spokeId);
+        let projected: number;
+        if (engineMin !== undefined && Number.isFinite(engineMin) && engineMin < 999) {
+          projected = Math.max(0, engineMin);
+        } else {
+          projected = Math.max(0, r.daysOfSupply - avgRouteDays);
+          heuristicFallbacks++;
+        }
+        const tier = tierFromDOS(projected, ctx.watchDays, ctx.criticalDays);
         affectedSpokes.push({
           nodeId: spokeId,
           nodeName: spokeNode?.name ?? spokeId,
           currentDaysOfSupply: Number(r.daysOfSupply.toFixed(1)),
           projectedDaysOfSupply: Number(projected.toFixed(1)),
-          tier: tierFromDOS(projected, ctx.watchDays, ctx.criticalDays),
+          tier,
         });
-        dosSum += r.daysOfSupply;
-        worst = maxTier(worst, tierFromDOS(projected, ctx.watchDays, ctx.criticalDays));
+        dosSum += projected;
+        baselineDosSum += r.daysOfSupply;
+        worst = maxTier(worst, tier);
       }
       if (affectedSpokes.length === 0) continue;
-      const avgDos = scoredSpokes > 0 ? dosSum / scoredSpokes : 0;
+      const avgBaselineDos = scoredSpokes > 0 ? baselineDosSum / scoredSpokes : 0;
+      const avgProjectedDos = scoredSpokes > 0 ? dosSum / scoredSpokes : 0;
       // Confidence reflects how complete our risk picture for the spokes is.
       const coverage = scoredSpokes / spokes.length;
-      const confidence: Confidence =
+      // Coverage of the spoke set, plus penalty for any spokes that had
+      // to fall back to the lead-time heuristic (no engine profile).
+      const engineCoverage =
+        scoredSpokes > 0 ? (scoredSpokes - heuristicFallbacks) / scoredSpokes : 0;
+      const baseConfidence: Confidence =
         coverage >= 0.9 && downstreamRoutes.length > 0
           ? "HIGH"
           : coverage >= 0.6
             ? "MEDIUM"
             : "LOW";
-      // Impact = how many days of buffer the spokes lose.
+      const confidence: Confidence =
+        engineCoverage < 0.5
+          ? "LOW"
+          : engineCoverage < 0.9 && baseConfidence === "HIGH"
+            ? "MEDIUM"
+            : baseConfidence;
+      // Real impact: how many days of buffer the spokes lose under the
+      // engine's projection.
       const projectedDosImpact = Number(
-        (Math.max(0, ctx.watchDays - avgDos) + avgRouteDays).toFixed(1),
+        Math.max(0, avgBaselineDos - avgProjectedDos).toFixed(1),
       );
       scenarios.push({
         id: `cascade-hub-${hubId}`,
@@ -202,8 +310,9 @@ router.get("/overview/cascade", async (_req, res, next) => {
         leadTimeImpactHours: Math.round(avgRouteDays * 24),
         narrative:
           `If ${hub.name} loses operational capacity, ${affectedSpokes.length} downstream ` +
-          `${affectedSpokes.length === 1 ? "site" : "sites"} fall back to organic stock ` +
-          `(avg ${avgDos.toFixed(1)} DOS) and absorb a ${avgRouteDays.toFixed(1)}-day ` +
+          `${affectedSpokes.length === 1 ? "site" : "sites"} fall from an avg ` +
+          `${avgBaselineDos.toFixed(1)}d to ${avgProjectedDos.toFixed(1)}d of supply ` +
+          `over a ${horizon}-day horizon, absorbing a ${avgRouteDays.toFixed(1)}-day ` +
           `resupply gap until alternate routing is established.`,
       });
     }
@@ -322,7 +431,13 @@ router.get("/overview/leaderboard", async (req, res, next) => {
       deeplink: string;
     };
 
+    // Pull baselines for every blood-storing candidate up front so we can
+    // assemble per-entry deltas without one query per row.
+    const candidateIds = candidates.map((c) => c.id);
+    const baselineMap = await loadDosBaselines(candidateIds);
+
     const entries: Entry[] = [];
+    const samplesToRecord: Array<{ nodeId: string; dos: number }> = [];
     for (const node of candidates) {
       const readiness = await computeNodeBloodReadiness(node.id);
       if (!readiness) continue;
@@ -379,13 +494,18 @@ router.get("/overview/leaderboard", async (req, res, next) => {
       else if (readiness.viableDaysOfSupply <= ctx.criticalDays) constraintCategory = "blood";
       else if (readiness.donors.effectiveCollectionCapacity === 0) constraintCategory = "donors";
 
-      // Compare today's DOS against the rolling per-node history to derive
-      // a real "delta vs ~24h ago". When no baseline exists yet (cold start),
-      // delta is 0 and hasBaseline=false so the UI can render an em-dash.
-      const baseline = recordDosSample(node.id, readiness.viableDaysOfSupply);
+      // Compare today's DOS against the persisted snapshot history to derive
+      // a real "delta vs ~24h ago". When no baseline exists yet (cold start
+      // or fresh DB), delta is 0 and hasBaseline=false so the UI can render
+      // an em-dash. Today's value is queued for write below in one batch.
+      const baseline = baselineMap.get(node.id) ?? null;
       const deltaDosVs24h = baseline
         ? Number((readiness.viableDaysOfSupply - baseline.dos).toFixed(1))
         : 0;
+      samplesToRecord.push({
+        nodeId: node.id,
+        dos: readiness.viableDaysOfSupply,
+      });
 
       entries.push({
         nodeId: node.id,
@@ -407,6 +527,14 @@ router.get("/overview/leaderboard", async (req, res, next) => {
     }
 
     entries.sort((a, b) => a.viableDaysOfSupply - b.viableDaysOfSupply);
+    // Persist a fresh batch of snapshots so subsequent calls have a real
+    // baseline to compare against. Errors are non-fatal — the leaderboard
+    // payload still ships if the write fails.
+    try {
+      await recordDosSnapshots(samplesToRecord);
+    } catch {
+      // ignore snapshot persistence failures
+    }
     res.json({ generatedAt, entries: entries.slice(0, limit) });
   } catch (err) {
     next(err);
