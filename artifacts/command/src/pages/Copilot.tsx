@@ -192,7 +192,6 @@ export default function Copilot() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="openai">OpenAI (gpt-5.4)</SelectItem>
-              <SelectItem value="anthropic">Anthropic (claude-sonnet)</SelectItem>
             </SelectContent>
           </Select>
         </div>

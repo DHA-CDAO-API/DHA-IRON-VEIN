@@ -35,7 +35,7 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 
 type FormState = {
-  aiProvider: "openai" | "anthropic";
+  aiProvider: "openai";
   aiModel: string;
   autoFlyMap: boolean;
   demandPaddingDays: number;
@@ -65,7 +65,7 @@ const API_GROUPS: Array<{ name: string; basePath: string; description: string }>
 
 function defaultsFromSettings(s: AppSettings | undefined): FormState {
   return {
-    aiProvider: (s?.aiProvider ?? "openai") as "openai" | "anthropic",
+    aiProvider: "openai",
     aiModel: s?.aiModel ?? "",
     autoFlyMap: s?.autoFlyMap ?? true,
     demandPaddingDays: s?.demandPaddingDays ?? 7,
@@ -344,16 +344,12 @@ export default function Settings() {
               <Label>Provider</Label>
               <RadioGroup
                 value={form.aiProvider}
-                onValueChange={(v) => update("aiProvider", v as "openai" | "anthropic")}
+                onValueChange={(v) => update("aiProvider", v as "openai")}
                 className="flex gap-4"
               >
                 <div className="flex items-center space-x-2 border border-border rounded-md p-3 flex-1 bg-background/50">
                   <RadioGroupItem value="openai" id="ai-openai" data-testid="radio-openai" />
                   <Label htmlFor="ai-openai" className="cursor-pointer">OpenAI</Label>
-                </div>
-                <div className="flex items-center space-x-2 border border-border rounded-md p-3 flex-1 bg-background/50">
-                  <RadioGroupItem value="anthropic" id="ai-anthropic" data-testid="radio-anthropic" />
-                  <Label htmlFor="ai-anthropic" className="cursor-pointer">Anthropic</Label>
                 </div>
               </RadioGroup>
             </div>
@@ -363,7 +359,7 @@ export default function Settings() {
                 id="ai-model"
                 value={form.aiModel}
                 onChange={(e) => update("aiModel", e.target.value)}
-                placeholder="e.g. gpt-4o or claude-3-5-sonnet"
+                placeholder="e.g. gpt-4o"
                 className="bg-background/50 font-mono"
                 data-testid="input-ai-model"
               />
