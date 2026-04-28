@@ -11,10 +11,14 @@ export interface RunScenarioInput {
   name: string;
   /** @nullable */
   description?: string | null;
-  eventId: string;
-  focusNodeIds: string[];
-  horizonDays: number;
+  kind?: string;
+  presetEventId?: string;
+  eventId?: string;
+  focusNodeIds?: string[];
+  horizonDays?: number;
+  summary?: string;
   /** @nullable */
   operationalState?: string | null;
-  eventParameters?: EventParameters;
+  perturbation?: EventParameters;
+  generateBrief?: boolean;
 }

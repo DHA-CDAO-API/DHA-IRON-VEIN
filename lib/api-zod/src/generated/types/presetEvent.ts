@@ -12,5 +12,8 @@ export interface PresetEvent {
   label: string;
   description: string;
   severity: string;
+  kind: string;
+  durationDays?: number;
+  displayOrder?: number;
   parameters: EventParameters;
 }

@@ -677,21 +677,27 @@ export const ListScenariosResponse = zod.array(ListScenariosResponseItem);
 export const RunScenarioBody = zod.object({
   name: zod.string(),
   description: zod.string().nullish(),
-  eventId: zod.string(),
-  focusNodeIds: zod.array(zod.string()),
-  horizonDays: zod.number(),
+  kind: zod.string().optional(),
+  presetEventId: zod.string().optional(),
+  eventId: zod.string().optional(),
+  focusNodeIds: zod.array(zod.string()).optional(),
+  horizonDays: zod.number().optional(),
+  summary: zod.string().optional(),
   operationalState: zod.string().nullish(),
-  eventParameters: zod
+  perturbation: zod
     .object({
-      mascalPeak: zod.number(),
-      mascalSustain: zod.number(),
-      fpconDemand: zod.number(),
-      fpconLatency: zod.number(),
-      latencyMultiplier: zod.number(),
-      reliabilityPenalty: zod.number(),
-      inventoryRetained: zod.number(),
+      affectedNodes: zod.array(zod.string()).optional(),
+      encounterMultiplier: zod.number().optional(),
+      populationMultiplier: zod.number().optional(),
+      wasteMultiplier: zod.number().optional(),
+      routeReliabilityDelta: zod.number().optional(),
+      routeDelayDays: zod.number().optional(),
+      specimensMultiplier: zod.number().optional(),
+      itemSkew: zod.record(zod.string(), zod.number()).optional(),
     })
-    .optional(),
+    .optional()
+    .describe("Perturbation parameters applied by the simulation engine."),
+  generateBrief: zod.boolean().optional(),
 });
 
 export const RunScenarioResponse = zod.object({
@@ -765,6 +771,7 @@ export const RunScenarioResponse = zod.object({
     }),
   ),
   narrative: zod.string().nullish(),
+  kind: zod.string().optional(),
 });
 
 export const GetScenarioParams = zod.object({
@@ -842,6 +849,7 @@ export const GetScenarioResponse = zod.object({
     }),
   ),
   narrative: zod.string().nullish(),
+  kind: zod.string().optional(),
 });
 
 export const ListPresetEventsResponseItem = zod.object({
@@ -849,15 +857,21 @@ export const ListPresetEventsResponseItem = zod.object({
   label: zod.string(),
   description: zod.string(),
   severity: zod.string(),
-  parameters: zod.object({
-    mascalPeak: zod.number(),
-    mascalSustain: zod.number(),
-    fpconDemand: zod.number(),
-    fpconLatency: zod.number(),
-    latencyMultiplier: zod.number(),
-    reliabilityPenalty: zod.number(),
-    inventoryRetained: zod.number(),
-  }),
+  kind: zod.string(),
+  durationDays: zod.number().optional(),
+  displayOrder: zod.number().optional(),
+  parameters: zod
+    .object({
+      affectedNodes: zod.array(zod.string()).optional(),
+      encounterMultiplier: zod.number().optional(),
+      populationMultiplier: zod.number().optional(),
+      wasteMultiplier: zod.number().optional(),
+      routeReliabilityDelta: zod.number().optional(),
+      routeDelayDays: zod.number().optional(),
+      specimensMultiplier: zod.number().optional(),
+      itemSkew: zod.record(zod.string(), zod.number()).optional(),
+    })
+    .describe("Perturbation parameters applied by the simulation engine."),
 });
 export const ListPresetEventsResponse = zod.array(ListPresetEventsResponseItem);
 

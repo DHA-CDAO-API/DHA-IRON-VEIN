@@ -5,13 +5,18 @@
  * Predictive Sustainment Platform API for INDOPACOM medical logistics decision support.
  * OpenAPI spec version: 1.0.0
  */
+import type { EventParametersItemSkew } from "./eventParametersItemSkew";
 
+/**
+ * Perturbation parameters applied by the simulation engine.
+ */
 export interface EventParameters {
-  mascalPeak: number;
-  mascalSustain: number;
-  fpconDemand: number;
-  fpconLatency: number;
-  latencyMultiplier: number;
-  reliabilityPenalty: number;
-  inventoryRetained: number;
+  affectedNodes?: string[];
+  encounterMultiplier?: number;
+  populationMultiplier?: number;
+  wasteMultiplier?: number;
+  routeReliabilityDelta?: number;
+  routeDelayDays?: number;
+  specimensMultiplier?: number;
+  itemSkew?: EventParametersItemSkew;
 }

@@ -84,41 +84,107 @@ const SUPPLIER_DEFS: Array<Omit<SimSupplier, "id"> & { id: string; country: stri
   { id: "hostnation-ph", name: "Host Nation — Philippines (AFP Med)", channel: "HostNation", country: "PH", leadTimeDaysMean: 4, reliabilityScore: 0.81, notes: "Allied basing support — EDCA sites" },
 ];
 
+// Preset events ordered with kinetic / contested scenarios first (lowest displayOrder),
+// degraded comms / cyber / blockade in the middle, logistics disruptions next,
+// and weather / natural disasters last.
 const PRESET_EVENTS = [
+  // ---- Tier 1: Kinetic / war / contested-fires (displayOrder 10-49) ----
   {
-    id: "ev-typhoon-southhub",
-    name: "Typhoon Yagi-class — Southern Spoke",
-    kind: "natural_disaster",
-    summary: "Cat-4 typhoon saturates the southern spoke; civilian-assist demand and waste both rise sharply for 14 days.",
-    durationDays: 14,
+    id: "ev-prc-taiwan-blockade",
+    name: "PRC Taiwan Blockade — Joint Sword Surge",
+    kind: "war_conflict",
+    summary:
+      "PLA-led joint blockade of Taiwan closes the Taiwan Strait, suspends commercial air, and forces all theater resupply onto Luzon Strait and Bashi Channel reroutes for 21 days.",
+    durationDays: 21,
+    displayOrder: 10,
     parameters: {
-      affectedNodes: ["southHub", "mtfRomeo", "mtfUniform", "basCopper"],
-      encounterMultiplier: 1.6,
-      populationMultiplier: 1.1,
-      wasteMultiplier: 1.3,
-      routeReliabilityDelta: -0.25,
-      routeDelayDays: 3,
+      affectedNodes: ["theater", "centralHub", "southHub", "mtfDelta", "mtfGolf", "mtfHotel", "mtfKilo", "basCopper", "basIron"],
+      encounterMultiplier: 2.4,
+      populationMultiplier: 1.2,
+      wasteMultiplier: 1.35,
+      routeReliabilityDelta: -0.55,
+      routeDelayDays: 9,
+      specimensMultiplier: 1.6,
+      itemSkew: { ltow_pos: 2.2, ltow_neg: 2.0, prbc_o: 2.0, ffp_ab: 1.8, fdp: 2.4, iv_set: 1.6, crossmatch: 1.7 },
     },
   },
   {
-    id: "ev-port-closure-central",
-    name: "Port Closure — Central Hub",
-    kind: "infra_disruption",
-    summary: "Naha-class port closure blocks the primary surface route into the central regional hub for 5 days.",
-    durationDays: 5,
+    id: "ev-senkaku-kinetic",
+    name: "Senkaku / Diaoyu Kinetic Incident",
+    kind: "war_conflict",
+    summary:
+      "Limited PLA-N kinetic exchange in the East China Sea drives a MASCAL spike at Okinawa-aligned MTFs and a 14-day air-corridor degradation north of 25°N.",
+    durationDays: 14,
+    displayOrder: 15,
     parameters: {
-      affectedNodes: ["centralHub", "mtfEcho", "mtfHotel", "mtfKilo"],
+      affectedNodes: ["theater", "centralHub", "mtfEcho", "mtfHotel", "mtfKilo"],
+      encounterMultiplier: 2.8,
+      populationMultiplier: 1.05,
+      wasteMultiplier: 1.4,
       routeReliabilityDelta: -0.4,
-      routeDelayDays: 4,
-      encounterMultiplier: 1.05,
+      routeDelayDays: 5,
+      specimensMultiplier: 1.9,
+      itemSkew: { ltow_pos: 2.5, prbc_o: 2.2, ffp_ab: 2.0, platelets: 1.6, tubes: 1.5, gloves: 1.4 },
+    },
+  },
+  {
+    id: "ev-a2ad-conus",
+    name: "A2/AD Denial — CONUS Strategic Lift",
+    kind: "contested_logistics",
+    summary:
+      "Anti-access / area-denial posture in the Western Pacific halts CONUS-origin strategic airlift for 10 days; theater must subsist on host-nation and intra-theater stocks.",
+    durationDays: 10,
+    displayOrder: 20,
+    parameters: {
+      affectedNodes: ["theater", "centralHub", "southHub", "mtfDelta", "mtfEcho", "mtfGolf", "mtfHotel", "mtfKilo", "mtfRomeo", "mtfUniform", "basCopper", "basIron", "basZinc", "basSteel"],
+      encounterMultiplier: 1.15,
+      wasteMultiplier: 1.1,
+      routeReliabilityDelta: -0.5,
+      routeDelayDays: 8,
+    },
+  },
+  {
+    id: "ev-luzon-strait",
+    name: "Luzon Strait Sea-Lane Interdiction",
+    kind: "contested_logistics",
+    summary:
+      "PLA-N submarine and missile activity interdicts the Luzon Strait sea-lane for 7 days; surface lift between Subic and Okinawa drops to 35% reliability.",
+    durationDays: 7,
+    displayOrder: 25,
+    parameters: {
+      affectedNodes: ["southHub", "centralHub", "basCopper", "basIron", "basZinc", "basSteel", "mtfDelta"],
+      routeReliabilityDelta: -0.45,
+      routeDelayDays: 6,
+      encounterMultiplier: 1.2,
+    },
+  },
+  {
+    id: "ev-yokosuka-strike",
+    name: "Yokosuka Strike Package — Forward Strike Risk",
+    kind: "war_conflict",
+    summary:
+      "Coordinated long-range fires threaten Yokosuka-area infrastructure; northern theater MTFs absorb a 96-hour MASCAL surge and a 12-day medical-waste spike.",
+    durationDays: 12,
+    displayOrder: 30,
+    parameters: {
+      affectedNodes: ["theater", "mtfDelta", "mtfGolf"],
+      encounterMultiplier: 3.0,
+      populationMultiplier: 1.15,
+      wasteMultiplier: 1.5,
+      specimensMultiplier: 2.0,
+      routeReliabilityDelta: -0.25,
+      routeDelayDays: 3,
+      itemSkew: { ltow_pos: 2.8, prbc_o: 2.4, ffp_ab: 2.2, fdp: 2.5, iv_set: 1.8, warmer: 1.6, abo_kit: 1.7 },
     },
   },
   {
     id: "ev-mascal-theater",
     name: "MASCAL — Theater Medical Hub",
     kind: "mass_casualty",
-    summary: "Multi-vehicle incident drives a 72-hour MASCAL surge at the theater hub; phlebotomy and trauma kits spike.",
+    summary:
+      "Multi-vehicle incident drives a 72-hour MASCAL surge at the theater hub; phlebotomy and trauma kits spike.",
     durationDays: 4,
+    displayOrder: 35,
     parameters: {
       affectedNodes: ["theater", "mtfDelta", "mtfGolf"],
       encounterMultiplier: 2.5,
@@ -131,12 +197,99 @@ const PRESET_EVENTS = [
     id: "ev-contested-scs",
     name: "Contested Logistics — South China Sea",
     kind: "contested_logistics",
-    summary: "Adversary maritime activity in the SCS corridor forces reroutes; 7-day reliability hit across forward sites.",
+    summary:
+      "Adversary maritime activity in the SCS corridor forces reroutes; 7-day reliability hit across forward sites.",
     durationDays: 7,
+    displayOrder: 40,
     parameters: {
       affectedNodes: ["southHub", "centralHub", "basCopper", "basIron", "basZinc", "basSteel"],
       routeReliabilityDelta: -0.35,
       routeDelayDays: 5,
+    },
+  },
+
+  // ---- Tier 2: Degraded comms / cyber / undersea blockade (50-79) ----
+  {
+    id: "ev-cable-cut-comms",
+    name: "Undersea Cable Cut + Comms Denial",
+    kind: "cyber_comms",
+    summary:
+      "Pacific submarine cable is severed and coincident SATCOM jamming degrades inventory visibility and ordering for 9 days; manual workarounds drive waste up.",
+    durationDays: 9,
+    displayOrder: 50,
+    parameters: {
+      affectedNodes: ["theater", "centralHub", "southHub", "mtfDelta", "mtfEcho", "mtfGolf", "mtfHotel", "mtfKilo", "mtfRomeo", "mtfUniform"],
+      wasteMultiplier: 1.25,
+      routeReliabilityDelta: -0.3,
+      routeDelayDays: 4,
+      encounterMultiplier: 1.05,
+    },
+  },
+  {
+    id: "ev-cyber-mhs",
+    name: "Cyber Disruption — MHS Genesis",
+    kind: "cyber_comms",
+    summary:
+      "Ransomware-class incident degrades the medical health system of record; ordering and EHR access drop for 6 days, forcing higher waste and over-ordering.",
+    durationDays: 6,
+    displayOrder: 55,
+    parameters: {
+      affectedNodes: ["theater", "centralHub", "southHub", "mtfDelta", "mtfEcho", "mtfGolf", "mtfHotel", "mtfKilo"],
+      wasteMultiplier: 1.3,
+      routeReliabilityDelta: -0.2,
+      routeDelayDays: 2,
+    },
+  },
+
+  // ---- Tier 3: Logistics / infrastructure disruptions (80-99) ----
+  {
+    id: "ev-port-closure-central",
+    name: "Port Closure — Central Hub",
+    kind: "infra_disruption",
+    summary:
+      "Naha-class port closure blocks the primary surface route into the central regional hub for 5 days.",
+    durationDays: 5,
+    displayOrder: 80,
+    parameters: {
+      affectedNodes: ["centralHub", "mtfEcho", "mtfHotel", "mtfKilo"],
+      routeReliabilityDelta: -0.4,
+      routeDelayDays: 4,
+      encounterMultiplier: 1.05,
+    },
+  },
+  {
+    id: "ev-coldchain-failure",
+    name: "Cold-Chain Failure — Forward Hub",
+    kind: "infra_disruption",
+    summary:
+      "Forward-hub refrigeration outage condemns 30% of liquid blood components; depleted stock must be replaced via airlift before the next transfusion event.",
+    durationDays: 3,
+    displayOrder: 85,
+    parameters: {
+      affectedNodes: ["southHub", "mtfRomeo", "mtfUniform"],
+      wasteMultiplier: 2.2,
+      routeReliabilityDelta: -0.1,
+      routeDelayDays: 1,
+      itemSkew: { ltow_pos: 1.8, ltow_neg: 1.8, prbc_o: 1.6, plasma_a: 1.6, platelets: 2.0 },
+    },
+  },
+
+  // ---- Tier 4: Weather / natural disasters (100+) ----
+  {
+    id: "ev-typhoon-southhub",
+    name: "Typhoon Yagi-class — Southern Spoke",
+    kind: "natural_disaster",
+    summary:
+      "Cat-4 typhoon saturates the southern spoke; civilian-assist demand and waste both rise sharply for 14 days.",
+    durationDays: 14,
+    displayOrder: 110,
+    parameters: {
+      affectedNodes: ["southHub", "mtfRomeo", "mtfUniform", "basCopper"],
+      encounterMultiplier: 1.6,
+      populationMultiplier: 1.1,
+      wasteMultiplier: 1.3,
+      routeReliabilityDelta: -0.25,
+      routeDelayDays: 3,
     },
   },
 ];

@@ -399,14 +399,20 @@ export interface AcknowledgeAlertInput {
   note?: string | null;
 }
 
+export type EventParametersItemSkew = { [key: string]: number };
+
+/**
+ * Perturbation parameters applied by the simulation engine.
+ */
 export interface EventParameters {
-  mascalPeak: number;
-  mascalSustain: number;
-  fpconDemand: number;
-  fpconLatency: number;
-  latencyMultiplier: number;
-  reliabilityPenalty: number;
-  inventoryRetained: number;
+  affectedNodes?: string[];
+  encounterMultiplier?: number;
+  populationMultiplier?: number;
+  wasteMultiplier?: number;
+  routeReliabilityDelta?: number;
+  routeDelayDays?: number;
+  specimensMultiplier?: number;
+  itemSkew?: EventParametersItemSkew;
 }
 
 export interface PresetEvent {
@@ -414,6 +420,9 @@ export interface PresetEvent {
   label: string;
   description: string;
   severity: string;
+  kind: string;
+  durationDays?: number;
+  displayOrder?: number;
   parameters: EventParameters;
 }
 
@@ -434,12 +443,16 @@ export interface RunScenarioInput {
   name: string;
   /** @nullable */
   description?: string | null;
-  eventId: string;
-  focusNodeIds: string[];
-  horizonDays: number;
+  kind?: string;
+  presetEventId?: string;
+  eventId?: string;
+  focusNodeIds?: string[];
+  horizonDays?: number;
+  summary?: string;
   /** @nullable */
   operationalState?: string | null;
-  eventParameters?: EventParameters;
+  perturbation?: EventParameters;
+  generateBrief?: boolean;
 }
 
 export interface ScenarioSummary {
@@ -490,6 +503,7 @@ export interface ScenarioResult {
   timeline: ScenarioTimelinePoint[];
   /** @nullable */
   narrative?: string | null;
+  kind?: string;
 }
 
 export interface ForecastInput {

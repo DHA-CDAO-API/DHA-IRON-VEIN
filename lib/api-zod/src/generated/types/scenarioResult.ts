@@ -21,4 +21,5 @@ export interface ScenarioResult {
   timeline: ScenarioTimelinePoint[];
   /** @nullable */
   narrative?: string | null;
+  kind?: string;
 }

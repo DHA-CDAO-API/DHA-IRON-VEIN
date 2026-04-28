@@ -24,6 +24,7 @@ export const presetEvents = pgTable("preset_events", {
   kind: text("kind").notNull(),
   summary: text("summary").notNull(),
   durationDays: integer("duration_days").notNull().default(14),
+  displayOrder: integer("display_order").notNull().default(100),
   parameters: jsonb("parameters").notNull(),
 });
 

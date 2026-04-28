@@ -29,6 +29,7 @@ export * from "./daysOfSupplyEntry";
 export * from "./daysOfSupplyEntryStatus";
 export * from "./demandProfile";
 export * from "./eventParameters";
+export * from "./eventParametersItemSkew";
 export * from "./forecastInput";
 export * from "./forecastResult";
 export * from "./forecastResultSeriesItem";

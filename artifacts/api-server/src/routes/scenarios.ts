@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db, scenarios as scenariosTable, presetEvents, appSettings, activityEntries } from "@workspace/db";
-import { desc, eq } from "drizzle-orm";
+import { asc, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { loadSimContext } from "../lib/ctx";
 import { runScenario, type ScenarioRunInput } from "@workspace/sim";
@@ -10,9 +10,25 @@ const router: IRouter = Router();
 
 function severityFromKind(kind: string): string {
   const k = kind.toUpperCase();
-  if (k.includes("CONFLICT") || k.includes("WAR") || k.includes("PRC") || k.includes("MASCAS")) return "CRITICAL";
-  if (k.includes("TYPHOON") || k.includes("WEATHER") || k.includes("STORM")) return "HIGH";
-  if (k.includes("COLD_CHAIN") || k.includes("OUTAGE")) return "HIGH";
+  if (
+    k.includes("WAR") ||
+    k.includes("CONFLICT") ||
+    k.includes("KINETIC") ||
+    k.includes("PRC") ||
+    k.includes("MASCAL") ||
+    k.includes("MASS_CASUALTY")
+  )
+    return "CRITICAL";
+  if (
+    k.includes("CONTESTED") ||
+    k.includes("DENIAL") ||
+    k.includes("INTERDICTION") ||
+    k.includes("BLOCKADE")
+  )
+    return "CRITICAL";
+  if (k.includes("CYBER") || k.includes("COMMS") || k.includes("CABLE")) return "HIGH";
+  if (k.includes("TYPHOON") || k.includes("WEATHER") || k.includes("STORM") || k.includes("NATURAL")) return "HIGH";
+  if (k.includes("COLD_CHAIN") || k.includes("OUTAGE") || k.includes("INFRA")) return "HIGH";
   return "MEDIUM";
 }
 
@@ -42,7 +58,10 @@ router.get("/scenarios", async (_req, res, next) => {
 
 router.get("/scenarios/preset-events", async (_req, res, next) => {
   try {
-    const rows = await db.select().from(presetEvents);
+    const rows = await db
+      .select()
+      .from(presetEvents)
+      .orderBy(asc(presetEvents.displayOrder), asc(presetEvents.name));
     res.json(
       rows.map((p) => ({
         id: p.id,
@@ -50,12 +69,13 @@ router.get("/scenarios/preset-events", async (_req, res, next) => {
         label: p.name,
         description: p.summary,
         severity: severityFromKind(p.kind),
+        kind: p.kind,
+        durationDays: p.durationDays,
+        displayOrder: p.displayOrder,
         parameters: p.parameters,
         // Legacy fields
         name: p.name,
-        kind: p.kind,
         summary: p.summary,
-        durationDays: p.durationDays,
       })),
     );
   } catch (err) {
