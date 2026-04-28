@@ -1053,6 +1053,7 @@ async function generateSampleOrders(): Promise<void> {
   const ordersToInsert: Array<typeof orders.$inferInsert> = [];
   const linesToInsert: Array<typeof orderLines.$inferInsert> = [];
   const shipmentsToInsert: Array<typeof shipments.$inferInsert> = [];
+  const activityToInsert: Array<typeof activityEntries.$inferInsert> = [];
   const now = Date.now();
   for (let i = 0; i < sample.length; i++) {
     const rec = sample[i]!;
@@ -1060,6 +1061,7 @@ async function generateSampleOrders(): Promise<void> {
     const orderNo = `PO-2026-${10000 + i}`;
     const supplierId = rec.sourceSupplierId ?? "dla-prime";
     const status = i < 2 ? "ACKNOWLEDGED" : i < 4 ? "IN_TRANSIT" : "SUBMITTED";
+    const createdAt = new Date(now - (i + 1) * 4 * 3600_000);
     const requested = new Date(now + (rec.etaDays + 1) * 86400_000);
     ordersToInsert.push({
       id: orderId,
@@ -1068,7 +1070,7 @@ async function generateSampleOrders(): Promise<void> {
       supplierId,
       status,
       priority: rec.kind === "ESCALATE" ? "FLASH" : rec.kind === "REROUTE" ? "URGENT" : "ROUTINE",
-      createdAt: new Date(now - (i + 1) * 4 * 3600_000),
+      createdAt,
       requestedDeliveryAt: requested,
       totalUsd: rec.suggestedQty * 1.5,
       notes: rec.reason,
@@ -1093,8 +1095,42 @@ async function generateSampleOrders(): Promise<void> {
         priority: rec.kind === "ESCALATE" ? "FLASH" : rec.kind === "REROUTE" ? "URGENT" : "ROUTINE",
       });
     }
+
+    // Backfill activity history so the OrderDetail panel has a real audit trail.
+    activityToInsert.push({
+      ts: createdAt,
+      kind: "ORDER_CREATED",
+      actor: "operator",
+      message: `Order ${orderNo} created for ${rec.nodeId}`,
+      refType: "order",
+      refId: orderId,
+      meta: { totalUsd: rec.suggestedQty * 1.5, lines: 1 },
+    });
+    if (status === "ACKNOWLEDGED" || status === "IN_TRANSIT") {
+      activityToInsert.push({
+        ts: new Date(createdAt.getTime() + 45 * 60_000),
+        kind: "ORDER_STATUS_CHANGE",
+        actor: "operator",
+        message: `Order ${orderNo} -> ACKNOWLEDGED`,
+        refType: "order",
+        refId: orderId,
+        meta: { status: "ACKNOWLEDGED", supplierId },
+      });
+    }
+    if (status === "IN_TRANSIT") {
+      activityToInsert.push({
+        ts: new Date(createdAt.getTime() + 6 * 3600_000),
+        kind: "ORDER_STATUS_CHANGE",
+        actor: "operator",
+        message: `Order ${orderNo} -> IN_TRANSIT`,
+        refType: "order",
+        refId: orderId,
+        meta: { status: "IN_TRANSIT" },
+      });
+    }
   }
   if (ordersToInsert.length > 0) await db.insert(orders).values(ordersToInsert);
   if (linesToInsert.length > 0) await db.insert(orderLines).values(linesToInsert);
   if (shipmentsToInsert.length > 0) await db.insert(shipments).values(shipmentsToInsert);
+  if (activityToInsert.length > 0) await db.insert(activityEntries).values(activityToInsert);
 }

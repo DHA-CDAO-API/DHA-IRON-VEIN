@@ -174,14 +174,32 @@ router.post(
           set: { status: "PROMOTED", promotedOrderId: orderId },
         });
 
-      await db.insert(activityEntries).values({
-        kind: "RECOMMENDATION_PROMOTED",
-        actor: "operator",
-        message: `Recommendation ${rec.id} promoted to ${orderNo}`,
-        refType: "order",
-        refId: orderId,
-        meta: { recommendationId: rec.id, suggestedQty: rec.suggestedQty },
-      });
+      await db.insert(activityEntries).values([
+        {
+          kind: "ORDER_CREATED",
+          actor: "operator",
+          message: `Order ${orderNo} created for ${rec.nodeId}`,
+          refType: "order",
+          refId: orderId,
+          meta: {
+            totalUsd: rec.suggestedQty * 1.5,
+            lines: 1,
+            promotedFromRecommendationId: rec.id,
+          },
+        },
+        {
+          kind: "RECOMMENDATION_PROMOTED",
+          actor: "operator",
+          message: `AI recommendation promoted to order ${orderNo}`,
+          refType: "order",
+          refId: orderId,
+          meta: {
+            recommendationId: rec.id,
+            recommendationKind: rec.kind,
+            suggestedQty: rec.suggestedQty,
+          },
+        },
+      ]);
 
       invalidateSimCache();
       res.status(201).json({
