@@ -1,4 +1,5 @@
-import { pgTable, text, doublePrecision, integer } from "drizzle-orm/pg-core";
+import { pgTable, text, doublePrecision, integer, primaryKey } from "drizzle-orm/pg-core";
+import { items } from "./items";
 
 export const suppliers = pgTable("suppliers", {
   id: text("id").primaryKey(),
@@ -12,3 +13,20 @@ export const suppliers = pgTable("suppliers", {
 });
 
 export type Supplier = typeof suppliers.$inferSelect;
+
+export const supplierItems = pgTable(
+  "supplier_items",
+  {
+    supplierId: text("supplier_id")
+      .notNull()
+      .references(() => suppliers.id, { onDelete: "cascade" }),
+    itemId: text("item_id")
+      .notNull()
+      .references(() => items.id, { onDelete: "cascade" }),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.supplierId, t.itemId] }),
+  }),
+);
+
+export type SupplierItem = typeof supplierItems.$inferSelect;

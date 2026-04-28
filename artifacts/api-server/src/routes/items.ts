@@ -1,9 +1,9 @@
 import { Router, type IRouter } from "express";
-import { db, items, inventoryBalances, suppliers, orders, orderLines, alerts } from "@workspace/db";
+import { db, items, inventoryBalances, suppliers, supplierItems, orders, orderLines, alerts } from "@workspace/db";
 import { eq, sql, and } from "drizzle-orm";
 import { loadSimContext } from "../lib/ctx";
 import { computeDailyDemand, projectDaysOfSupply, statusFromDOS } from "@workspace/sim";
-import { itemsCoveredBySupplier, mapSupplierToApi } from "../lib/mappers";
+import { mapSupplierToApi } from "../lib/mappers";
 
 const router: IRouter = Router();
 
@@ -54,6 +54,11 @@ router.get("/items/:itemId", async (req, res, next) => {
     });
 
     const supplierRows = await db.select().from(suppliers);
+    const coverageRows = await db
+      .select({ supplierId: supplierItems.supplierId })
+      .from(supplierItems)
+      .where(eq(supplierItems.itemId, itemId));
+    const carryingSupplierIds = new Set(coverageRows.map((r) => r.supplierId));
 
     const recentOrderRows = await db
       .select({
@@ -112,12 +117,7 @@ router.get("/items/:itemId", async (req, res, next) => {
       perNode,
       dosByNode,
       suppliers: supplierRows.map((s) =>
-        mapSupplierToApi(
-          s,
-          itemsCoveredBySupplier(s, [
-            { id: item.id, category: item.category },
-          ]),
-        ),
+        mapSupplierToApi(s, carryingSupplierIds.has(s.id) ? [item.id] : []),
       ),
       alerts: itemAlerts,
       recommendations: [],

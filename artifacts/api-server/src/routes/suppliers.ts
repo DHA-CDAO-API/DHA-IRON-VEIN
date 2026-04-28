@@ -1,18 +1,24 @@
 import { Router, type IRouter } from "express";
-import { db, suppliers, items } from "@workspace/db";
-import { itemsCoveredBySupplier, mapSupplierToApi } from "../lib/mappers";
+import { db, suppliers, supplierItems } from "@workspace/db";
+import { mapSupplierToApi } from "../lib/mappers";
 
 const router: IRouter = Router();
 
 router.get("/suppliers", async (_req, res, next) => {
   try {
-    const [supplierRows, itemRows] = await Promise.all([
+    const [supplierRows, coverageRows] = await Promise.all([
       db.select().from(suppliers),
-      db.select({ id: items.id, category: items.category }).from(items),
+      db.select().from(supplierItems),
     ]);
+    const coverageBySupplier = new Map<string, string[]>();
+    for (const row of coverageRows) {
+      const list = coverageBySupplier.get(row.supplierId);
+      if (list) list.push(row.itemId);
+      else coverageBySupplier.set(row.supplierId, [row.itemId]);
+    }
     res.json(
       supplierRows.map((s) =>
-        mapSupplierToApi(s, itemsCoveredBySupplier(s, itemRows)),
+        mapSupplierToApi(s, coverageBySupplier.get(s.id) ?? []),
       ),
     );
   } catch (err) {

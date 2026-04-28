@@ -10,6 +10,7 @@ import {
   items,
   inventoryBalances,
   suppliers,
+  supplierItems,
   alerts,
   orders,
   orderLines,
@@ -73,6 +74,114 @@ function asString(v: unknown, def = ""): string {
   if (v === null || v === undefined) return def;
   return String(v);
 }
+
+// ---- Supplier-item coverage groups (data, not channel rules) ----
+// These describe which catalog items each supplier actually carries.
+// Stored to the `supplier_items` table at seed time so coverage can be
+// queried directly from the DB rather than derived from channel names.
+const BLOOD_PRODUCT_ITEM_IDS = [
+  "ltow_pos",
+  "ltow_neg",
+  "prbc_o",
+  "ffp_ab",
+  "plasma_a",
+  "platelets",
+  "cryo",
+  "fdp",
+] as const;
+
+const PHLEBOTOMY_LAB_ITEM_IDS = [
+  "tubes",
+  "butterfly",
+  "alcohol",
+  "gauze",
+  "tourniquet",
+  "bags",
+  "labels",
+  "antiseptic",
+  "abo_kit",
+  "crossmatch",
+  "id_screen",
+  "sharps",
+  "centrifuge_tube",
+  "biohazard_bag",
+] as const;
+
+const TRANSFUSION_SUPPLY_ITEM_IDS = [
+  "iv_set",
+  "pressure_inf",
+  "warmer",
+  "transfusion_band",
+  "collection_bag",
+] as const;
+
+const COLD_CHAIN_ITEM_IDS = ["cooler", "coolant", "chain_log"] as const;
+
+const PPE_STYLE_ITEM_IDS = ["gloves", "mask", "shield", "gown", "n95"] as const;
+
+// Per-supplier coverage. Keyed by supplier id (NOT channel) so multiple
+// suppliers on the same channel (e.g. host-nation AU/JP/PH) can carry
+// different sets of items as their contracts evolve.
+const SUPPLIER_ITEM_COVERAGE: Record<string, ReadonlyArray<string>> = {
+  // Broad government channels — full Class VIII coverage.
+  "dla-prime": [
+    ...BLOOD_PRODUCT_ITEM_IDS,
+    ...PHLEBOTOMY_LAB_ITEM_IDS,
+    ...TRANSFUSION_SUPPLY_ITEM_IDS,
+    ...COLD_CHAIN_ITEM_IDS,
+  ],
+  ecat: [
+    ...BLOOD_PRODUCT_ITEM_IDS,
+    ...PHLEBOTOMY_LAB_ITEM_IDS,
+    ...TRANSFUSION_SUPPLY_ITEM_IDS,
+    ...COLD_CHAIN_ITEM_IDS,
+  ],
+  gsa: [
+    ...BLOOD_PRODUCT_ITEM_IDS,
+    ...PHLEBOTOMY_LAB_ITEM_IDS,
+    ...TRANSFUSION_SUPPLY_ITEM_IDS,
+    ...COLD_CHAIN_ITEM_IDS,
+  ],
+  // FedMall covers supplies but not blood products.
+  fedmall: [
+    ...PHLEBOTOMY_LAB_ITEM_IDS,
+    ...TRANSFUSION_SUPPLY_ITEM_IDS,
+    ...COLD_CHAIN_ITEM_IDS,
+  ],
+
+  // Commercial backstops — narrower coverage.
+  mckesson: [
+    ...BLOOD_PRODUCT_ITEM_IDS,
+    ...TRANSFUSION_SUPPLY_ITEM_IDS,
+    ...COLD_CHAIN_ITEM_IDS,
+  ],
+  cardinal: [...PPE_STYLE_ITEM_IDS, "gauze", "alcohol"],
+  henryschein: [...PHLEBOTOMY_LAB_ITEM_IDS],
+  owensminor: [...TRANSFUSION_SUPPLY_ITEM_IDS, ...PPE_STYLE_ITEM_IDS, "gauze"],
+
+  // Allied host-nation support — local blood programs + collection.
+  "hostnation-au": [
+    ...BLOOD_PRODUCT_ITEM_IDS,
+    ...TRANSFUSION_SUPPLY_ITEM_IDS,
+    "tubes",
+    "alcohol",
+    "gauze",
+  ],
+  "hostnation-jp": [
+    ...BLOOD_PRODUCT_ITEM_IDS,
+    ...TRANSFUSION_SUPPLY_ITEM_IDS,
+    "tubes",
+    "alcohol",
+    "gauze",
+  ],
+  "hostnation-ph": [
+    ...BLOOD_PRODUCT_ITEM_IDS,
+    ...TRANSFUSION_SUPPLY_ITEM_IDS,
+    "tubes",
+    "alcohol",
+    "gauze",
+  ],
+};
 
 const SUPPLIER_DEFS: Array<Omit<SimSupplier, "id"> & { id: string; country: string; notes: string }> = [
   { id: "dla-prime", name: "DLA Prime Vendor (Class VIII)", channel: "DLA", country: "US", leadTimeDaysMean: 5, reliabilityScore: 0.94, notes: "Defense Logistics Agency primary medical supply channel" },
@@ -346,7 +455,7 @@ export async function runSeed(opts: SeedOptions = {}): Promise<void> {
     await db.execute(sql`TRUNCATE TABLE
       activity_entries, conversation_messages, conversations, scenarios, recommendations,
       shipments, order_lines, orders, alerts, inventory_balances, demand_profiles,
-      item_skew_factors, preset_events, operational_states, suppliers, items,
+      item_skew_factors, preset_events, operational_states, supplier_items, suppliers, items,
       routes, nodes, catalog_entries, app_settings, profiles,
       blood_lots, cold_chain_assets, donor_pools, temperature_events
       RESTART IDENTITY`);
@@ -705,6 +814,26 @@ export async function runSeed(opts: SeedOptions = {}): Promise<void> {
   }
   await db.insert(inventoryBalances).values([...sheetBalances, ...newBalances]);
 
+  // ---- Supplier-item coverage rows ----
+  // Stored as data so the API can populate `Supplier.items` from the
+  // catalog instead of channel-based rules. Filtered against the seeded
+  // item ids so an unknown id in the coverage map can't break the seed.
+  // Built up first so the inserted row count drives `suppliers.itemsCovered`.
+  const seededItemIds = new Set(ITEM_CATALOG.map((it) => it.id));
+  const supplierItemRows: Array<{ supplierId: string; itemId: string }> = [];
+  const coveredCountBySupplier = new Map<string, number>();
+  for (const s of SUPPLIER_DEFS) {
+    const coverage = SUPPLIER_ITEM_COVERAGE[s.id] ?? [];
+    const seen = new Set<string>();
+    for (const itemId of coverage) {
+      if (!seededItemIds.has(itemId)) continue;
+      if (seen.has(itemId)) continue;
+      seen.add(itemId);
+      supplierItemRows.push({ supplierId: s.id, itemId });
+    }
+    coveredCountBySupplier.set(s.id, seen.size);
+  }
+
   // ---- Suppliers ----
   await db.insert(suppliers).values(
     SUPPLIER_DEFS.map((s) => ({
@@ -715,9 +844,13 @@ export async function runSeed(opts: SeedOptions = {}): Promise<void> {
       leadTimeDaysMean: s.leadTimeDaysMean,
       reliabilityScore: s.reliabilityScore,
       notes: s.notes,
-      itemsCovered: 8,
+      itemsCovered: coveredCountBySupplier.get(s.id) ?? 0,
     })),
   );
+
+  if (supplierItemRows.length > 0) {
+    await db.insert(supplierItems).values(supplierItemRows);
+  }
 
   // ---- Catalog entries ----
   const catalogRows = readSheetAsObjects(wb, "Catalog", [
