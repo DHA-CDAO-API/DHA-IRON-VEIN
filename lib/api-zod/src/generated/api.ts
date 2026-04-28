@@ -137,6 +137,12 @@ export const GetNetworkSnapshotResponse = zod.object({
   shipments: zod.array(
     zod.object({
       id: zod.string(),
+      orderId: zod
+        .string()
+        .nullish()
+        .describe(
+          "ID of the originating order, when this shipment was generated from one (used for click-through navigation from the live map).",
+        ),
       fromNode: zod.string(),
       toNode: zod.string(),
       itemId: zod.string(),

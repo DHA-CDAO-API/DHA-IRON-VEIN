@@ -3,8 +3,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { useGetNetworkSnapshot, useGetDashboardOverview, useListActivity, getGetNetworkSnapshotQueryKey, getGetDashboardOverviewQueryKey, getListActivityQueryKey } from '@workspace/api-client-react';
 import NetworkGLMap from '@/components/Map';
-import { AlertTriangle, TrendingDown, TrendingUp, Activity, Box, Truck } from 'lucide-react';
-import { Link } from 'wouter';
+import { AlertTriangle, TrendingDown, TrendingUp, Activity, Box, Truck, MousePointerClick } from 'lucide-react';
+import { Link, useLocation } from 'wouter';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAutoRefresh } from '@/hooks/use-auto-refresh';
 import RefreshControls, {
@@ -16,6 +16,7 @@ import RefreshControls, {
 const REFRESH_STORAGE_KEY = 'command:overview:refresh-interval-ms';
 
 export default function CommandOverview() {
+  const [, setLocation] = useLocation();
   const [intervalMs, setIntervalMs] = useState<number>(() =>
     readPersistedInterval(REFRESH_STORAGE_KEY, DEFAULT_REFRESH_INTERVAL_MS),
   );
@@ -82,11 +83,60 @@ export default function CommandOverview() {
       <div className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-4 min-h-[500px]">
         {/* Map Section */}
         <div className="lg:col-span-2 rounded-xl overflow-hidden border border-border relative bg-card">
-          <div className="absolute top-4 left-4 z-10">
+          <div className="absolute top-4 left-4 z-10 flex items-center gap-2">
             <Badge variant="outline" className="bg-background/80 backdrop-blur-sm border-primary text-primary shadow-lg">
               Live Theater Map
             </Badge>
+            <Badge
+              variant="outline"
+              className="bg-background/80 backdrop-blur-sm border-border text-muted-foreground shadow-lg gap-1.5 font-normal"
+            >
+              <MousePointerClick className="h-3 w-3" />
+              Click any node or shipment to inspect
+            </Badge>
           </div>
+
+          {/* Legend overlay (bottom-left) */}
+          <div className="absolute bottom-3 left-3 z-10 pointer-events-none">
+            <div className="bg-background/85 backdrop-blur-md border border-border rounded-md shadow-lg px-3 py-2 text-[11px] font-mono">
+              <div className="text-muted-foreground/80 uppercase tracking-wider text-[10px] mb-1.5">
+                Legend
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-5 gap-y-1">
+                <div className="flex flex-col gap-1">
+                  <div className="text-muted-foreground text-[10px] uppercase tracking-wider">
+                    Node tier
+                  </div>
+                  <LegendDot color="rgb(88,196,158)" label="Nominal" />
+                  <LegendDot color="rgb(232,168,76)" label="Watch" />
+                  <LegendDot color="rgb(220,64,76)" label="Critical" />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <div className="text-muted-foreground text-[10px] uppercase tracking-wider">
+                    In-flight cargo
+                  </div>
+                  <LegendDot color="rgb(220,64,76)" label="Blood products" />
+                  <LegendDot color="rgb(76,196,196)" label="Supplies" />
+                  <LegendDot color="rgb(180,130,230)" label="PPE" />
+                  <LegendDot color="rgb(148,163,184)" label="Other" />
+                </div>
+              </div>
+              <div className="mt-1.5 pt-1.5 border-t border-border/60 text-muted-foreground text-[10px] flex items-center gap-2 flex-wrap">
+                <span
+                  className="inline-block w-6 h-[2px] rounded"
+                  style={{
+                    background:
+                      'linear-gradient(90deg, rgb(76,196,196) 0%, rgb(180,130,230) 100%)',
+                  }}
+                />
+                Active route arc
+                <span className="mx-1 text-muted-foreground/40">·</span>
+                <span className="inline-block w-6 h-[1px] bg-slate-400/50 rounded" />
+                Network link
+              </div>
+            </div>
+          </div>
+
           {snapLoading ? (
             <div className="w-full h-full flex items-center justify-center bg-muted/20">
               <Skeleton className="w-full h-full" />
@@ -98,6 +148,14 @@ export default function CommandOverview() {
               shipments={snapshot?.shipments}
               riskByNode={snapshot?.riskByNode}
               threats={snapshot?.threats}
+              onNodeClick={(node) => {
+                if (node?.id) setLocation(`/sites/${node.id}`);
+              }}
+              onShipmentClick={(shipment) => {
+                const orderId = (shipment as { orderId?: string | null })?.orderId;
+                if (orderId) setLocation(`/orders/${orderId}`);
+                else setLocation('/orders');
+              }}
             />
           )}
         </div>
@@ -160,6 +218,19 @@ export default function CommandOverview() {
           </Card>
         </div>
       </div>
+    </div>
+  );
+}
+
+function LegendDot({ color, label }: { color: string; label: string }) {
+  return (
+    <div className="flex items-center gap-1.5 text-foreground/85">
+      <span
+        className="inline-block w-2 h-2 rounded-full ring-1 ring-foreground/15"
+        style={{ backgroundColor: color }}
+        aria-hidden
+      />
+      <span>{label}</span>
     </div>
   );
 }

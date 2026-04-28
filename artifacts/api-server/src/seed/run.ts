@@ -1068,6 +1068,7 @@ async function generateSampleOrders(): Promise<void> {
   const linesToInsert: Array<typeof orderLines.$inferInsert> = [];
   const shipmentsToInsert: Array<typeof shipments.$inferInsert> = [];
   const activityToInsert: Array<typeof activityEntries.$inferInsert> = [];
+  const recsToInsert: Array<typeof recommendations.$inferInsert> = [];
   const now = Date.now();
   for (let i = 0; i < sample.length; i++) {
     const rec = sample[i]!;
@@ -1077,6 +1078,24 @@ async function generateSampleOrders(): Promise<void> {
     const status = i < 2 ? "ACKNOWLEDGED" : i < 4 ? "IN_TRANSIT" : "SUBMITTED";
     const createdAt = new Date(now - (i + 1) * 4 * 3600_000);
     const requested = new Date(now + (rec.etaDays + 1) * 86400_000);
+    // Persist the AI recommendation row that this seeded order was promoted
+    // from, and link both directions. The OrdersBoard / OrderDetail UI keys
+    // its "Powered by AI" highlight off promotedFromRecommendationId.
+    const recId = `rec-seed-${i}`;
+    recsToInsert.push({
+      id: recId,
+      nodeId: rec.nodeId,
+      itemId: rec.itemId,
+      kind: rec.kind,
+      suggestedQty: rec.suggestedQty,
+      reason: rec.reason,
+      expectedRiskReduction: rec.expectedRiskReduction,
+      sourceSupplierId: supplierId,
+      etaDays: rec.etaDays,
+      status: "PROMOTED",
+      createdAt: new Date(createdAt.getTime() - 30 * 60_000),
+      promotedOrderId: orderId,
+    });
     ordersToInsert.push({
       id: orderId,
       orderNo,
@@ -1088,6 +1107,7 @@ async function generateSampleOrders(): Promise<void> {
       requestedDeliveryAt: requested,
       totalUsd: rec.suggestedQty * 1.5,
       notes: rec.reason,
+      promotedFromRecommendationId: recId,
     });
     linesToInsert.push({
       orderId,
@@ -1130,6 +1150,32 @@ async function generateSampleOrders(): Promise<void> {
     }
 
     // Backfill activity history so the OrderDetail panel has a real audit trail.
+    // The promotion entry comes first (chronologically), mirroring what the
+    // /predictive/recommendations/:id/promote handler writes at runtime so the
+    // "Triggered by AI" provenance is surfaced consistently.
+    activityToInsert.push({
+      ts: new Date(createdAt.getTime() - 30 * 60_000),
+      kind: "RECOMMENDATION_PROMOTED",
+      actor: "operator",
+      message: `AI recommendation promoted to order ${orderNo}`,
+      refType: "order",
+      refId: orderId,
+      meta: {
+        recommendationId: recId,
+        recommendationKind: rec.kind,
+        suggestedQty: rec.suggestedQty,
+        promotedQty: rec.suggestedQty,
+        promotedSupplierId: supplierId,
+        promotedEtaDays: rec.etaDays,
+        promotedPriority:
+          rec.kind === "ESCALATE"
+            ? "FLASH"
+            : rec.kind === "REROUTE"
+              ? "URGENT"
+              : "ROUTINE",
+        overridden: false,
+      },
+    });
     activityToInsert.push({
       ts: createdAt,
       kind: "ORDER_CREATED",
@@ -1137,7 +1183,11 @@ async function generateSampleOrders(): Promise<void> {
       message: `Order ${orderNo} created for ${rec.nodeId}`,
       refType: "order",
       refId: orderId,
-      meta: { totalUsd: rec.suggestedQty * 1.5, lines: 1 },
+      meta: {
+        totalUsd: rec.suggestedQty * 1.5,
+        lines: 1,
+        promotedFromRecommendationId: recId,
+      },
     });
     if (status === "ACKNOWLEDGED" || status === "IN_TRANSIT") {
       activityToInsert.push({
@@ -1162,6 +1212,7 @@ async function generateSampleOrders(): Promise<void> {
       });
     }
   }
+  if (recsToInsert.length > 0) await db.insert(recommendations).values(recsToInsert);
   if (ordersToInsert.length > 0) await db.insert(orders).values(ordersToInsert);
   if (linesToInsert.length > 0) await db.insert(orderLines).values(linesToInsert);
   if (shipmentsToInsert.length > 0) await db.insert(shipments).values(shipmentsToInsert);

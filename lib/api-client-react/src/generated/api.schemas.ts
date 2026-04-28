@@ -119,6 +119,11 @@ export const InFlightShipmentCategory = {
 
 export interface InFlightShipment {
   id: string;
+  /**
+   * ID of the originating order, when this shipment was generated from one (used for click-through navigation from the live map).
+   * @nullable
+   */
+  orderId?: string | null;
   fromNode: string;
   toNode: string;
   itemId: string;

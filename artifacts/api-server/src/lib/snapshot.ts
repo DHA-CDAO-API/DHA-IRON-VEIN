@@ -194,6 +194,7 @@ export async function computeInFlightShipments() {
     const item = itemById.get(s.itemId);
     return {
       id: s.id,
+      orderId: s.orderId ?? null,
       fromNode: s.fromNode,
       toNode: s.toNode,
       itemId: s.itemId,

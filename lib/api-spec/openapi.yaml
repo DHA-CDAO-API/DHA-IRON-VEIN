@@ -757,6 +757,9 @@ components:
       required: [id, fromNode, toNode, itemId, quantity, etaDays, progress]
       properties:
         id: { type: string }
+        orderId:
+          type: ["string", "null"]
+          description: ID of the originating order, when this shipment was generated from one (used for click-through navigation from the live map).
         fromNode: { type: string }
         toNode: { type: string }
         itemId: { type: string }
