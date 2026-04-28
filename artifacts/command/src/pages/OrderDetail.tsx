@@ -430,23 +430,32 @@ export default function OrderDetail() {
               </div>
             ) : (
               <div className="divide-y divide-border/50">
-                {activity.map((a) => (
-                  <div key={a.id} className="p-3 text-sm">
-                    <div className="flex items-start gap-2">
-                      <AlertTriangle className="h-3.5 w-3.5 mt-1 text-muted-foreground shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <div className="font-medium text-xs uppercase tracking-wider text-muted-foreground">
-                          {a.kind.replace(/_/g, " ")}
-                        </div>
-                        <div className="mt-0.5">{a.summary}</div>
-                        <div className="text-xs text-muted-foreground mt-1">
-                          {formatShortDateTime(a.createdAt)} ·{" "}
-                          {a.actorRole || "system"}
+                {activity.map((a) => {
+                  const isShipment = a.kind.startsWith("SHIPMENT_");
+                  const Icon = isShipment ? Truck : AlertTriangle;
+                  const iconClass = isShipment
+                    ? a.kind === "SHIPMENT_DELIVERED"
+                      ? "text-emerald-500"
+                      : "text-primary"
+                    : "text-muted-foreground";
+                  return (
+                    <div key={a.id} className="p-3 text-sm">
+                      <div className="flex items-start gap-2">
+                        <Icon className={`h-3.5 w-3.5 mt-1 shrink-0 ${iconClass}`} />
+                        <div className="flex-1 min-w-0">
+                          <div className="font-medium text-xs uppercase tracking-wider text-muted-foreground">
+                            {a.kind.replace(/_/g, " ")}
+                          </div>
+                          <div className="mt-0.5">{a.summary}</div>
+                          <div className="text-xs text-muted-foreground mt-1">
+                            {formatShortDateTime(a.createdAt)} ·{" "}
+                            {a.actorRole || "system"}
+                          </div>
                         </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>

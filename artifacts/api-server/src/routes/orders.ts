@@ -445,12 +445,23 @@ router.patch("/orders/:orderId", async (req, res, next) => {
 
     if (patch.status === "IN_TRANSIT") {
       const lines = await db.select().from(orderLines).where(eq(orderLines.orderId, id));
+      const itemNameRows = lines.length
+        ? await db.select({ id: items.id, name: items.name }).from(items)
+        : [];
+      const itemNamesById = new Map(itemNameRows.map((i) => [i.id, i.name]));
+      const [toNodeRow] = await db.select({ name: nodes.name }).from(nodes).where(eq(nodes.id, order.nodeId));
+      const [fromNodeRow] = order.supplierId
+        ? await db.select({ name: nodes.name }).from(nodes).where(eq(nodes.id, order.supplierId))
+        : [undefined];
+      const fromLabel = fromNodeRow?.name ?? order.supplierId ?? "supplier";
+      const toLabel = toNodeRow?.name ?? order.nodeId;
       for (const ln of lines) {
         const eta = new Date(Date.now() + 5 * 86400_000);
+        const shipmentId = `sh-${id}-${ln.itemId}`;
         await db
           .insert(shipments)
           .values({
-            id: `sh-${id}-${ln.itemId}`,
+            id: shipmentId,
             orderId: id,
             fromNode: order.supplierId,
             toNode: order.nodeId,
@@ -460,6 +471,77 @@ router.patch("/orders/:orderId", async (req, res, next) => {
             priority: order.priority,
           })
           .onConflictDoNothing();
+        const itemLabel = itemNamesById.get(ln.itemId) ?? ln.itemId;
+        await db.insert(activityEntries).values({
+          kind: "SHIPMENT_DEPARTED",
+          actor: "system",
+          message: `Shipment departed ${fromLabel} → ${toLabel} carrying ${ln.quantity} ${itemLabel} (ETA ${eta.toISOString().slice(0, 10)})`,
+          refType: "order",
+          refId: id,
+          meta: {
+            shipmentId,
+            itemId: ln.itemId,
+            quantity: ln.quantity,
+            fromNode: order.supplierId,
+            toNode: order.nodeId,
+            etaAt: eta.toISOString(),
+          },
+        });
+      }
+    }
+
+    if (patch.status === "RECEIVED") {
+      const orderShipments = await db
+        .select()
+        .from(shipments)
+        .where(eq(shipments.orderId, id));
+      // Skip shipments that already have a SHIPMENT_DELIVERED entry so a
+      // RECEIVED → DELIVERED (or repeated) transition does not duplicate.
+      const existingDelivered = await db
+        .select()
+        .from(activityEntries)
+        .where(
+          and(
+            eq(activityEntries.refType, "order"),
+            eq(activityEntries.refId, id),
+            eq(activityEntries.kind, "SHIPMENT_DELIVERED"),
+          ),
+        );
+      const alreadyDeliveredShipmentIds = new Set(
+        existingDelivered
+          .map((row) => (row.meta as { shipmentId?: string } | null)?.shipmentId)
+          .filter((v): v is string => typeof v === "string"),
+      );
+      const newlyDelivered = orderShipments.filter(
+        (sh) => !alreadyDeliveredShipmentIds.has(sh.id),
+      );
+      if (newlyDelivered.length > 0) {
+        const itemNameRows = await db
+          .select({ id: items.id, name: items.name })
+          .from(items);
+        const itemNamesById = new Map(itemNameRows.map((i) => [i.id, i.name]));
+        const [toNodeRow] = await db
+          .select({ name: nodes.name })
+          .from(nodes)
+          .where(eq(nodes.id, order.nodeId));
+        const toLabel = toNodeRow?.name ?? order.nodeId;
+        for (const sh of newlyDelivered) {
+          const itemLabel = itemNamesById.get(sh.itemId) ?? sh.itemId;
+          await db.insert(activityEntries).values({
+            kind: "SHIPMENT_DELIVERED",
+            actor: "system",
+            message: `Shipment delivered to ${toLabel}: ${sh.quantity} ${itemLabel}`,
+            refType: "order",
+            refId: id,
+            meta: {
+              shipmentId: sh.id,
+              itemId: sh.itemId,
+              quantity: sh.quantity,
+              toNode: sh.toNode,
+              deliveredAt: new Date().toISOString(),
+            },
+          });
+        }
       }
     }
 
@@ -488,6 +570,120 @@ router.patch("/orders/:orderId", async (req, res, next) => {
     const lines = await db.select().from(orderLines).where(eq(orderLines.orderId, id));
     const ctx = await loadEnvelopeContext();
     res.json(buildOrderEnvelope(order, lines, ctx));
+  } catch (err) {
+    next(err);
+  }
+});
+
+const UpdateShipmentInput = z.object({
+  etaAt: z.string().datetime().optional(),
+  delivered: z.boolean().optional(),
+});
+
+router.patch("/shipments/:shipmentId", async (req, res, next) => {
+  try {
+    const parsed = UpdateShipmentInput.safeParse(req.body);
+    if (!parsed.success) {
+      return res
+        .status(400)
+        .json({ error: "invalid shipment payload", details: parsed.error.flatten() });
+    }
+    const { etaAt, delivered } = parsed.data;
+    if (!etaAt && !delivered) {
+      return res
+        .status(400)
+        .json({ error: "etaAt or delivered must be provided" });
+    }
+
+    const shipmentId = req.params.shipmentId;
+    const [shipment] = await db
+      .select()
+      .from(shipments)
+      .where(eq(shipments.id, shipmentId));
+    if (!shipment) return res.status(404).json({ error: "shipment not found" });
+    if (!shipment.orderId)
+      return res
+        .status(400)
+        .json({ error: "shipment is not linked to an order" });
+
+    const [order] = await db
+      .select()
+      .from(orders)
+      .where(eq(orders.id, shipment.orderId));
+    if (!order) return res.status(404).json({ error: "parent order not found" });
+
+    const [itemRow] = await db
+      .select({ name: items.name })
+      .from(items)
+      .where(eq(items.id, shipment.itemId));
+    const itemLabel = itemRow?.name ?? shipment.itemId;
+    const [toNodeRow] = await db
+      .select({ name: nodes.name })
+      .from(nodes)
+      .where(eq(nodes.id, shipment.toNode));
+    const toLabel = toNodeRow?.name ?? shipment.toNode;
+
+    if (etaAt) {
+      const previousEta = shipment.etaAt;
+      const newEta = new Date(etaAt);
+      await db
+        .update(shipments)
+        .set({ etaAt: newEta })
+        .where(eq(shipments.id, shipmentId));
+      await db.insert(activityEntries).values({
+        kind: "SHIPMENT_ETA_UPDATED",
+        actor: "operator",
+        message: `Shipment ETA to ${toLabel} updated from ${previousEta.toISOString().slice(0, 10)} to ${newEta.toISOString().slice(0, 10)} (${shipment.quantity} ${itemLabel})`,
+        refType: "order",
+        refId: shipment.orderId,
+        meta: {
+          shipmentId,
+          itemId: shipment.itemId,
+          quantity: shipment.quantity,
+          previousEtaAt: previousEta.toISOString(),
+          newEtaAt: newEta.toISOString(),
+        },
+      });
+    }
+
+    if (delivered) {
+      const existingDelivered = await db
+        .select()
+        .from(activityEntries)
+        .where(
+          and(
+            eq(activityEntries.refType, "order"),
+            eq(activityEntries.refId, shipment.orderId),
+            eq(activityEntries.kind, "SHIPMENT_DELIVERED"),
+          ),
+        );
+      const alreadyLogged = existingDelivered.some(
+        (row) => (row.meta as { shipmentId?: string } | null)?.shipmentId === shipmentId,
+      );
+      if (!alreadyLogged) {
+        await db.insert(activityEntries).values({
+          kind: "SHIPMENT_DELIVERED",
+          actor: "operator",
+          message: `Shipment delivered to ${toLabel}: ${shipment.quantity} ${itemLabel}`,
+          refType: "order",
+          refId: shipment.orderId,
+          meta: {
+            shipmentId,
+            itemId: shipment.itemId,
+            quantity: shipment.quantity,
+            toNode: shipment.toNode,
+            deliveredAt: new Date().toISOString(),
+          },
+        });
+      }
+    }
+
+    invalidateSimCache();
+    const [updated] = await db
+      .select()
+      .from(shipments)
+      .where(eq(shipments.id, shipmentId));
+    res.json(updated);
   } catch (err) {
     next(err);
   }

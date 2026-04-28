@@ -1089,16 +1089,35 @@ async function generateSampleOrders(): Promise<void> {
       lineTotalUsd: rec.suggestedQty * 1.5,
     });
     if (status === "IN_TRANSIT") {
+      const shipmentId = `sh-seed-${i}`;
+      const departedAt = new Date(now - 2 * 86400_000);
+      const etaAt = new Date(now + (rec.etaDays - 2) * 86400_000);
       shipmentsToInsert.push({
-        id: `sh-seed-${i}`,
+        id: shipmentId,
         orderId,
         fromNode: supplierId,
         toNode: rec.nodeId,
         itemId: rec.itemId,
         quantity: rec.suggestedQty,
-        departedAt: new Date(now - 2 * 86400_000),
-        etaAt: new Date(now + (rec.etaDays - 2) * 86400_000),
+        departedAt,
+        etaAt,
         priority: rec.kind === "ESCALATE" ? "FLASH" : rec.kind === "REROUTE" ? "URGENT" : "ROUTINE",
+      });
+      activityToInsert.push({
+        ts: departedAt,
+        kind: "SHIPMENT_DEPARTED",
+        actor: "system",
+        message: `Shipment departed ${supplierId} → ${rec.nodeId} carrying ${rec.suggestedQty} ${rec.itemId} (ETA ${etaAt.toISOString().slice(0, 10)})`,
+        refType: "order",
+        refId: orderId,
+        meta: {
+          shipmentId,
+          itemId: rec.itemId,
+          quantity: rec.suggestedQty,
+          fromNode: supplierId,
+          toNode: rec.nodeId,
+          etaAt: etaAt.toISOString(),
+        },
       });
     }
 
