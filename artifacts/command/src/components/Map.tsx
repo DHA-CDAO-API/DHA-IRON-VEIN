@@ -801,26 +801,41 @@ export default function NetworkGLMap(props: NetworkMapProps) {
       }),
     );
 
-    // 4. Threat overlays (subtle filled boxes)
-    if (showThreats) {
-      for (const t of threats) {
-        const sev = (t.severity || '').toUpperCase();
-        const col: [number, number, number, number] =
-          sev === 'CRITICAL' ? [220, 64, 76, 50]
-          : sev === 'WARNING' ? [220, 64, 76, 35]
-          : [232, 168, 76, 30];
-        out.push(
-          new PathLayer({
-            id: `threat-${t.id}`,
-            data: [{ path: t.polygon }],
-            getPath: (d: any) => d.path,
-            getColor: col,
-            getWidth: 2,
-            widthUnits: 'pixels',
-            widthMinPixels: 1,
-          }),
-        );
-      }
+    // 4. Threat overlays (filled polygons + outline). Rendered as a
+    //    PolygonLayer so the entire box is hover-targetable — without a
+    //    fill the cursor would only pick the 1-2px outline and the
+    //    operator could never reliably surface the tooltip explaining
+    //    what the box is.
+    if (showThreats && threats.length > 0) {
+      out.push(
+        new PolygonLayer({
+          id: 'threats',
+          data: threats,
+          getPolygon: (d: any) => d.polygon,
+          getFillColor: (d: any): [number, number, number, number] => {
+            const sev = (d.severity || '').toUpperCase();
+            // Subtle fills — same hue as the outline but dimmer so the
+            // box still reads as ambient context, not chrome.
+            if (sev === 'CRITICAL') return [220, 64, 76, 28];
+            if (sev === 'WARNING') return [220, 64, 76, 20];
+            return [232, 168, 76, 18];
+          },
+          getLineColor: (d: any): [number, number, number, number] => {
+            const sev = (d.severity || '').toUpperCase();
+            if (sev === 'CRITICAL') return [220, 64, 76, 180];
+            if (sev === 'WARNING') return [220, 64, 76, 150];
+            return [232, 168, 76, 140];
+          },
+          getLineWidth: 2,
+          lineWidthUnits: 'pixels',
+          lineWidthMinPixels: 1,
+          stroked: true,
+          filled: true,
+          // Pickable so getDeckTooltip receives hover events and can
+          // surface the threat label / severity card.
+          pickable: drawMode === null,
+        }),
+      );
     }
 
     // 4b. Operator-drawn theater zones — filled polygons, with an outline that
@@ -1438,10 +1453,49 @@ export default function NetworkGLMap(props: NetworkMapProps) {
   // every render anyway, so memoization gains nothing.
   const getDeckTooltip = (info: any) => {
     const obj = info?.object;
-    if (!obj || obj.layer === undefined && info.layer?.id !== 'nodes-columns') {
-      // Only show tooltip for nodes (the columns layer); skip routes/threats.
+    if (!obj || !info.layer) return null;
+
+    // Threat overlay tooltip — explains *why* the box is on the map.
+    // Without this, the threat polygons read as anonymous rectangles
+    // and operators can't tell a typhoon track from a missile-threat
+    // envelope.
+    if (info.layer.id === 'threats') {
+      const sev = (obj.severity || 'WATCH').toString().toUpperCase();
+      const sevColor =
+        sev === 'CRITICAL'
+          ? '#ef4444'
+          : sev === 'WARNING'
+            ? '#f59e0b'
+            : '#facc15';
+      const label = String(obj.label ?? obj.id ?? 'Threat overlay');
+      const escape = (s: string) =>
+        s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      return {
+        html: `
+          <div style="font-family: ui-sans-serif, system-ui; min-width: 220px; max-width: 320px;">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+              <span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${sevColor};"></span>
+              <span style="font-size:11px;letter-spacing:0.08em;color:${sevColor};font-weight:700;">${escape(sev)}</span>
+              <span style="font-size:10px;color:#a1a1aa;text-transform:uppercase;letter-spacing:0.06em;margin-left:auto;">Threat Overlay</span>
+            </div>
+            <div style="font-size:13px;font-weight:600;color:#f4f4f5;line-height:1.3;">${escape(label)}</div>
+          </div>
+        `,
+        style: {
+          background: 'rgba(12, 13, 16, 0.96)',
+          border: `1px solid ${sevColor}55`,
+          borderRadius: '8px',
+          padding: '10px 12px',
+          boxShadow: '0 8px 24px rgba(0,0,0,0.6)',
+          color: '#f4f4f5',
+          pointerEvents: 'none',
+          marginLeft: '18px',
+          marginTop: '14px',
+        },
+      };
     }
-    if (!info.layer || info.layer.id !== 'nodes-columns') return null;
+
+    if (info.layer.id !== 'nodes-columns') return null;
     const d = obj as DecoratedNode | undefined;
     if (!d) return null;
     // Suppress hover tooltips on dim non-matching nodes when a layer
