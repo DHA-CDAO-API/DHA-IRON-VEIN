@@ -56,6 +56,13 @@ interface EnvelopeContext {
   itemUnitsById?: Map<string, string>;
   nodeNamesById?: Map<string, string>;
   supplierNamesById?: Map<string, string>;
+  /**
+   * Optional map of recommendationId -> rec.reason. When the order's
+   * decrypted note is empty (e.g. legacy rows where notes_enc was never
+   * persisted), we fall back to the recommendation's rationale so the
+   * "Triggered by" surfaces still show meaningful context.
+   */
+  recReasonsById?: Map<string, string>;
 }
 
 function buildOrderEnvelope(
@@ -81,7 +88,15 @@ function buildOrderEnvelope(
 
   const fromAi = !!o.promotedFromRecommendationId;
   const triggerSource = fromAi ? "ai" : "manual";
-  const triggerNote = o.notes ?? null;
+  const recReasonFallback =
+    fromAi && o.promotedFromRecommendationId
+      ? ctx.recReasonsById?.get(o.promotedFromRecommendationId) ?? null
+      : null;
+  // Prefer the operator-authored / encrypted note (which may include
+  // operator-added context such as "bundled with N companion lines"). Fall
+  // back to the originating recommendation's reason so AI-promoted orders
+  // never collapse to the bland "Promoted from an AI recommendation." string.
+  const triggerNote = o.notes ?? recReasonFallback;
   const createdByRole = (o as { createdByRole?: string | null }).createdByRole ?? null;
 
   return {
@@ -154,6 +169,25 @@ router.get("/orders", async (req, res, next) => {
     }
 
     const ctx = await loadEnvelopeContext();
+
+    // Batch-fetch the originating recommendations for AI-promoted orders so
+    // each row's envelope can fall back to rec.reason when the encrypted note
+    // is missing (legacy / partially-seeded data).
+    const recIds = Array.from(
+      new Set(
+        rows
+          .map((o) => o.promotedFromRecommendationId)
+          .filter((id): id is string => !!id),
+      ),
+    );
+    if (recIds.length > 0) {
+      const recRows = await db
+        .select({ id: recsTable.id, reason: recsTable.reason })
+        .from(recsTable)
+        .where(inArray(recsTable.id, recIds));
+      ctx.recReasonsById = new Map(recRows.map((r) => [r.id, r.reason]));
+    }
+
     res.json(rows.map((o) => buildOrderEnvelope(o, linesByOrder.get(o.id) ?? [], ctx)));
   } catch (err) {
     next(err);
@@ -507,6 +541,22 @@ router.get("/orders/:orderId", async (req, res, next) => {
         .from(recsTable)
         .where(eq(recsTable.id, order.promotedFromRecommendationId));
       if (rec) {
+        // The order's supplier and the rec's suggested supplier may differ
+        // (the operator could have re-routed). The envelope context only
+        // carries the order's supplier name, so look up the rec's supplier
+        // explicitly when needed.
+        let suggestedSupplierName: string | null = null;
+        if (rec.sourceSupplierId) {
+          suggestedSupplierName =
+            ctx.supplierNamesById?.get(rec.sourceSupplierId) ?? null;
+          if (!suggestedSupplierName) {
+            const [supRow] = await db
+              .select({ name: suppliers.name })
+              .from(suppliers)
+              .where(eq(suppliers.id, rec.sourceSupplierId));
+            suggestedSupplierName = supRow?.name ?? null;
+          }
+        }
         recommendation = {
           id: rec.id,
           kind: rec.kind,
@@ -518,17 +568,20 @@ router.get("/orders/:orderId", async (req, res, next) => {
           priority: order.priority,
           rationale: rec.reason,
           suggestedSupplierId: rec.sourceSupplierId ?? null,
-          suggestedSupplierName: rec.sourceSupplierId
-            ? ctx.supplierNamesById?.get(rec.sourceSupplierId) ?? null
-            : null,
+          suggestedSupplierName,
           suggestedFromNodeId: rec.sourceSupplierId ?? null,
           etaDays: rec.etaDays,
+          expectedRiskReduction: rec.expectedRiskReduction ?? 0,
           estimatedCost: 0,
           generatedAt: rec.createdAt.toISOString(),
           confidenceScore: 0,
           scenarioId: null,
           promotedOrderId: rec.promotedOrderId ?? null,
         };
+        // Wire the rec's reason into the envelope context so the order
+        // envelope's `triggerNote` can fall back to it when the encrypted
+        // note is empty.
+        ctx.recReasonsById = new Map([[rec.id, rec.reason]]);
       }
     }
 

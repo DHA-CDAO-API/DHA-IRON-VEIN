@@ -205,6 +205,196 @@ function ShipmentProgress({ shipment }: { shipment: OrderShipmentProgress }) {
   );
 }
 
+/**
+ * Map the four canonical recommendation kinds emitted by the simulator into
+ * an operator-facing label. Anything we don't recognize is title-cased so the
+ * card still renders something sensible if a new kind is added later.
+ */
+const RECOMMENDATION_KIND_LABELS: Record<string, string> = {
+  REORDER: "Stock-out prevention",
+  REROUTE: "Network rebalance",
+  SUBSTITUTE: "Substitute supply line",
+  ESCALATE: "Escalate priority",
+};
+
+function recommendationKindLabel(kind: unknown): string {
+  if (typeof kind !== "string" || kind.length === 0) return "Recommendation";
+  if (RECOMMENDATION_KIND_LABELS[kind]) return RECOMMENDATION_KIND_LABELS[kind];
+  return kind.charAt(0) + kind.slice(1).toLowerCase().replace(/_/g, " ");
+}
+
+/**
+ * Translate the simulator's continuous expected risk-reduction signal
+ * (a 0..1 fraction) into a qualitative bucket so operators can scan the
+ * card without doing percentage math. Buckets:
+ *   < 10%  -> Low
+ *   10-30% -> Moderate
+ *   >= 30% -> High
+ * The exact percentage is still shown alongside the chip as supporting
+ * detail so the audit trail stays transparent.
+ */
+function riskReductionBucket(
+  fraction: number,
+): { label: string; tone: "low" | "moderate" | "high" } {
+  if (fraction >= 0.3) return { label: "High risk reduction", tone: "high" };
+  if (fraction >= 0.1)
+    return { label: "Moderate risk reduction", tone: "moderate" };
+  return { label: "Low risk reduction", tone: "low" };
+}
+
+const RISK_CHIP_CLASSES: Record<"low" | "moderate" | "high", string> = {
+  high: "border-emerald-500/50 bg-emerald-500/15 text-emerald-300",
+  moderate: "border-emerald-500/30 bg-emerald-500/10 text-emerald-300/90",
+  low: "border-amber-500/40 bg-amber-500/10 text-amber-400",
+};
+
+interface TriggeredByCardProps {
+  order: EnrichedOrder;
+  recommendation?: Record<string, unknown>;
+  aiTriggered: boolean;
+}
+
+function TriggeredByCard({
+  order,
+  recommendation,
+  aiTriggered,
+}: TriggeredByCardProps) {
+  const rationale =
+    order.triggerNote ||
+    (recommendation?.rationale as string | undefined) ||
+    (aiTriggered
+      ? "Promoted from an AI recommendation."
+      : "Manual order from operator.");
+
+  // Normalize a few rec fields up front so the JSX below stays readable.
+  const recKind = recommendation?.kind;
+  const recQty =
+    typeof recommendation?.quantity === "number"
+      ? (recommendation.quantity as number)
+      : null;
+  const suggestedSupplierName =
+    (recommendation?.suggestedSupplierName as string | null | undefined) ??
+    null;
+  const recEtaDays =
+    typeof recommendation?.etaDays === "number"
+      ? (recommendation.etaDays as number)
+      : null;
+  const expectedRiskReduction =
+    typeof recommendation?.expectedRiskReduction === "number"
+      ? (recommendation.expectedRiskReduction as number)
+      : null;
+
+  // The order's actual quantity comes from line totals server-side; if the
+  // operator promoted with a different quantity than the AI suggested we
+  // surface that so the audit trail stays honest.
+  const orderQty = typeof order.quantity === "number" ? order.quantity : null;
+  const operatorAdjusted =
+    recQty != null && orderQty != null && recQty !== orderQty;
+  const unitLabel = order.unit || "ea";
+
+  return (
+    <Card
+      data-testid="triggered-by-card"
+      className={`shrink-0 ${
+        aiTriggered
+          ? "bg-emerald-500/10 border-emerald-500/60 ring-1 ring-emerald-500/30 shadow-[0_0_20px_-8px_rgba(16,185,129,0.55)]"
+          : "bg-card/50 border-border"
+      }`}
+    >
+      <CardContent className="p-4 space-y-3">
+        <div className="flex items-center gap-2 flex-wrap">
+          <Sparkles
+            className={`h-4 w-4 ${
+              aiTriggered ? "text-emerald-400" : "text-muted-foreground"
+            }`}
+          />
+          <span className="text-xs uppercase tracking-wider text-muted-foreground font-medium">
+            Triggered by
+          </span>
+          {aiTriggered && <AiBadge />}
+          {recommendation && (
+            <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full border border-emerald-500/40 bg-emerald-500/15 text-emerald-300 font-semibold">
+              {recommendationKindLabel(recKind)}
+            </span>
+          )}
+        </div>
+
+        <p
+          className="text-sm leading-relaxed text-foreground"
+          data-testid="triggered-by-rationale"
+        >
+          {rationale}
+        </p>
+
+        {recommendation && (
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-border/50">
+            <div className="space-y-0.5 min-w-0">
+              <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">
+                Suggested quantity
+              </div>
+              <div className="text-sm font-mono text-foreground">
+                {recQty != null ? formatNumber(recQty) : "—"} {unitLabel}
+              </div>
+              {operatorAdjusted && orderQty != null && (
+                <div
+                  className="text-[11px] text-amber-400"
+                  data-testid="triggered-by-operator-adjusted"
+                >
+                  Operator adjusted to {formatNumber(orderQty)} {unitLabel}
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-0.5 min-w-0">
+              <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">
+                Suggested supplier
+              </div>
+              <div
+                className="text-sm font-medium text-foreground truncate"
+                title={suggestedSupplierName ?? undefined}
+              >
+                {suggestedSupplierName || "—"}
+              </div>
+              {recEtaDays != null && (
+                <div className="text-[11px] text-muted-foreground flex items-center gap-1">
+                  <Clock className="h-3 w-3" /> ETA {formatNumber(recEtaDays)} d
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-0.5 min-w-0">
+              <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">
+                Expected risk reduction
+              </div>
+              {expectedRiskReduction != null && expectedRiskReduction > 0
+                ? (() => {
+                    const bucket = riskReductionBucket(expectedRiskReduction);
+                    return (
+                      <>
+                        <div
+                          className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full border ${RISK_CHIP_CLASSES[bucket.tone]}`}
+                          data-testid="triggered-by-risk-chip"
+                          title={`Approximately ${Math.round(expectedRiskReduction * 100)}% reduction in projected stock-out risk`}
+                        >
+                          <Activity className="h-3 w-3" />
+                          {bucket.label}
+                        </div>
+                        <div className="text-[11px] text-muted-foreground mt-0.5">
+                          ~{Math.round(expectedRiskReduction * 100)}% lower
+                          stock-out risk
+                        </div>
+                      </>
+                    );
+                  })()
+                : <div className="text-sm text-muted-foreground">—</div>}
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function OrderDetail() {
   const { id } = useParams();
   const queryClient = useQueryClient();
@@ -512,40 +702,11 @@ export default function OrderDetail() {
       </Card>
 
       {(order.triggerNote || aiTriggered || recommendation) && (
-        <Card
-          className={`shrink-0 ${
-            aiTriggered
-              ? "bg-emerald-500/10 border-emerald-500/60 ring-1 ring-emerald-500/30 shadow-[0_0_20px_-8px_rgba(16,185,129,0.55)]"
-              : "bg-card/50 border-border"
-          }`}
-        >
-          <CardContent className="p-4 space-y-2">
-            <div className="flex items-center gap-2">
-              <Sparkles className={`h-4 w-4 ${aiTriggered ? "text-emerald-400" : "text-muted-foreground"}`} />
-              <span className="text-xs uppercase tracking-wider text-muted-foreground font-medium">
-                Triggered by
-              </span>
-              {aiTriggered && <AiBadge />}
-            </div>
-            <p className="text-sm leading-relaxed">
-              {order.triggerNote || (aiTriggered
-                ? "Promoted from an AI recommendation."
-                : "Manual order from operator.")}
-            </p>
-            {recommendation && (
-              <div className="text-xs text-muted-foreground pt-1 border-t border-border/50 mt-2">
-                Recommendation kind:{" "}
-                <span className="text-foreground font-medium">
-                  {String(recommendation.kind ?? "—")}
-                </span>{" "}
-                · suggested qty{" "}
-                <span className="font-mono text-foreground">
-                  {formatNumber(recommendation.quantity as number)}
-                </span>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+        <TriggeredByCard
+          order={order}
+          recommendation={recommendation}
+          aiTriggered={aiTriggered}
+        />
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 min-h-[420px]">

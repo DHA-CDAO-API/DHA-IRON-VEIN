@@ -416,6 +416,9 @@ router.post(
         0,
       );
       const totalUsd = Number((primaryTotal + companionTotal).toFixed(2));
+      const noteText = includeCompanions
+        ? `${rec.reason} (bundled with ${companionLines.length} companion supply line${companionLines.length === 1 ? "" : "s"})`
+        : rec.reason;
       await db.insert(orders).values({
         id: orderId,
         orderNo,
@@ -426,10 +429,8 @@ router.post(
         requestedDeliveryAt: requested,
         totalUsd,
         promotedFromRecommendationId: rec.id,
-        notes: includeCompanions
-          ? `${rec.reason} (bundled with ${companionLines.length} companion supply line${companionLines.length === 1 ? "" : "s"})`
-          : rec.reason,
-        notesEnc: encryptText(rec.reason) as unknown as Buffer | undefined,
+        notes: noteText,
+        notesEnc: encryptText(noteText) as unknown as Buffer | undefined,
         createdByUserId: req.user!.id,
         createdByRole: req.user!.role,
       });
