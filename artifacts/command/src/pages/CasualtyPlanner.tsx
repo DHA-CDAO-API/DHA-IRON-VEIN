@@ -44,6 +44,10 @@ import type {
   SufficiencyRowVerdict,
   PatientRerouteCandidatePosture,
 } from "@workspace/api-client-react";
+import {
+  BulkOrderConfirmDialog,
+  type BulkOrderGroup,
+} from "@/components/orders/BulkOrderConfirmDialog";
 
 type PatientCounts = Record<string, number>;
 
@@ -173,7 +177,22 @@ export default function CasualtyPlanner() {
 
   const createOrder = useCreateOrder();
 
-  const handleBulkOrder = async () => {
+  // Preview dialog state. We build the supplier-grouped POs up front so the
+  // operator can review (and trim) before anything is actually submitted.
+  // `bulkPreviewUnfillable` captures the human-readable names of shortfall
+  // items that had no supplier alternative — surfaced both in the dialog
+  // (count) and in the post-submit toast (names) so operators know what they
+  // still need to chase by hand.
+  const [bulkPreviewOpen, setBulkPreviewOpen] = React.useState(false);
+  const [bulkPreviewGroups, setBulkPreviewGroups] = React.useState<
+    BulkOrderGroup[]
+  >([]);
+  const [bulkPreviewUnfillable, setBulkPreviewUnfillable] = React.useState<
+    string[]
+  >([]);
+  const [bulkSubmitting, setBulkSubmitting] = React.useState(false);
+
+  const handleOpenBulkOrder = () => {
     if (!result?.sufficiency || !siteId) {
       toast({
         title: "Pick a treatment site first",
@@ -201,12 +220,7 @@ export default function CasualtyPlanner() {
     // alternatives list has no entry at that slot, or upstream filtering has
     // dropped it), fall back to the next-best alternative before giving up,
     // so operators don't have to chase those items by hand.
-    type Grouped = {
-      supplierId: string;
-      supplierName: string;
-      lines: { itemId: string; quantity: number; itemName: string }[];
-    };
-    const groups = new Map<string, Grouped>();
+    const groups = new Map<string, BulkOrderGroup>();
     const unfillableItems: string[] = [];
     for (const row of shortRows) {
       const supplier = row.supplierAlternatives?.find((alt) => alt != null);
@@ -219,6 +233,7 @@ export default function CasualtyPlanner() {
         itemId: row.itemId,
         quantity: row.shortfallQty,
         itemName: row.itemName,
+        unitOfIssue: row.unitOfIssue,
       };
       if (existing) {
         existing.lines.push(line);
@@ -231,55 +246,77 @@ export default function CasualtyPlanner() {
       }
     }
 
+    const groupList = Array.from(groups.values());
+    if (groupList.length === 0) {
+      toast({
+        title: "No supplier-backed shortfalls",
+        description:
+          "None of the remaining shortfalls have a recommended supplier. Pick a supplier manually.",
+      });
+      return;
+    }
+    setBulkPreviewGroups(groupList);
+    setBulkPreviewUnfillable(unfillableItems);
+    setBulkPreviewOpen(true);
+  };
+
+  const handleConfirmBulkOrder = async (selected: BulkOrderGroup[]) => {
+    if (!siteId || selected.length === 0) return;
     const requestedDeliveryAt = new Date(
       Date.now() + arrivalWindowHours * 3_600_000,
     ).toISOString();
+    setBulkSubmitting(true);
     let createdOrders = 0;
     let skippedOrders = 0;
-    for (const group of groups.values()) {
-      try {
-        await createOrder.mutateAsync({
-          data: {
-            toNodeId: siteId,
-            supplierId: group.supplierId,
-            priority: "URGENT",
-            rationale: `Casualty Planner — sufficiency shortfall (${group.lines
-              .map((l) => l.itemName)
-              .join(", ")})`,
-            requestedDeliveryAt,
-            lines: group.lines.map((l) => ({
-              itemId: l.itemId,
-              quantity: l.quantity,
-            })),
-          },
-        });
-        createdOrders += 1;
-      } catch {
-        skippedOrders += 1;
+    try {
+      for (const group of selected) {
+        try {
+          await createOrder.mutateAsync({
+            data: {
+              toNodeId: siteId,
+              supplierId: group.supplierId,
+              priority: "URGENT",
+              rationale: `Casualty Planner — sufficiency shortfall (${group.lines
+                .map((l) => l.itemName)
+                .join(", ")})`,
+              requestedDeliveryAt,
+              lines: group.lines.map((l) => ({
+                itemId: l.itemId,
+                quantity: l.quantity,
+              })),
+            },
+          });
+          createdOrders += 1;
+        } catch {
+          skippedOrders += 1;
+        }
       }
+      await queryClient.invalidateQueries({
+        queryKey: getListOrdersQueryKey(),
+      });
+      // Re-run evaluation so the table refreshes inbound counts.
+      evaluate.mutate({
+        data: {
+          siteId,
+          patientCounts: counts,
+          arrivalWindowHours,
+          resupplyEtaHours: resupplyEtaHours ? Number(resupplyEtaHours) : null,
+          restrictReroutesToHub: restrictReroutes,
+        },
+      });
+    } finally {
+      setBulkSubmitting(false);
     }
-    await queryClient.invalidateQueries({
-      queryKey: getListOrdersQueryKey(),
-    });
-    // Re-run evaluation so the table refreshes inbound counts.
-    evaluate.mutate({
-      data: {
-        siteId,
-        patientCounts: counts,
-        arrivalWindowHours,
-        resupplyEtaHours: resupplyEtaHours ? Number(resupplyEtaHours) : null,
-        restrictReroutesToHub: restrictReroutes,
-      },
-    });
-    const supplierCount = groups.size - skippedOrders;
+    const supplierCount = selected.length - skippedOrders;
     const descriptionParts: string[] = [];
-    if (unfillableItems.length > 0) {
-      const preview = unfillableItems.slice(0, 3).join(", ");
-      const more = unfillableItems.length > 3
-        ? ` +${unfillableItems.length - 3} more`
-        : "";
+    if (bulkPreviewUnfillable.length > 0) {
+      const preview = bulkPreviewUnfillable.slice(0, 3).join(", ");
+      const more =
+        bulkPreviewUnfillable.length > 3
+          ? ` +${bulkPreviewUnfillable.length - 3} more`
+          : "";
       descriptionParts.push(
-        `Couldn't fill ${unfillableItems.length} item${unfillableItems.length === 1 ? "" : "s"} (no supplier carries it): ${preview}${more}`,
+        `Couldn't fill ${bulkPreviewUnfillable.length} item${bulkPreviewUnfillable.length === 1 ? "" : "s"} (no supplier carries it): ${preview}${more}`,
       );
     }
     if (skippedOrders > 0) {
@@ -287,13 +324,16 @@ export default function CasualtyPlanner() {
         `${skippedOrders} supplier order${skippedOrders === 1 ? "" : "s"} failed to submit`,
       );
     }
+    // Fire the result toast BEFORE closing the dialog so the toast queue
+    // isn't competing with the dialog's exit animation for focus / DOM updates.
     toast({
       title: `Sent ${createdOrders} order${createdOrders === 1 ? "" : "s"} to ${supplierCount} supplier${supplierCount === 1 ? "" : "s"}`,
       description:
         descriptionParts.length > 0
           ? descriptionParts.join(" · ")
-          : "All shortfalls dispatched.",
+          : "All selected shortfalls dispatched.",
     });
+    setBulkPreviewOpen(false);
   };
 
   const isLoading = loadingPT || loadingEvt;
@@ -338,16 +378,17 @@ export default function CasualtyPlanner() {
             variant="default"
             size="sm"
             className="gap-2"
-            onClick={handleBulkOrder}
+            onClick={handleOpenBulkOrder}
             disabled={
               !result?.sufficiency ||
               !siteId ||
               createOrder.isPending ||
+              bulkSubmitting ||
               shortageCount === 0
             }
             data-testid="button-bulk-order"
           >
-            {createOrder.isPending ? (
+            {createOrder.isPending || bulkSubmitting ? (
               <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
               <ShoppingBag className="h-4 w-4" />
@@ -915,6 +956,15 @@ export default function CasualtyPlanner() {
           </div>
         </Card>
       )}
+
+      <BulkOrderConfirmDialog
+        open={bulkPreviewOpen}
+        onOpenChange={setBulkPreviewOpen}
+        groups={bulkPreviewGroups}
+        skippedItemsCount={bulkPreviewUnfillable.length}
+        isSubmitting={bulkSubmitting}
+        onConfirm={handleConfirmBulkOrder}
+      />
     </div>
   );
 }
