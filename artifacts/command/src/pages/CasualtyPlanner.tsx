@@ -146,18 +146,21 @@ export default function CasualtyPlanner() {
     }
     // Group shortfalls by their top-ranked supplier so each supplier gets
     // exactly one purchase order with one line per shortfall item, instead of
-    // one PO per item.
+    // one PO per item. If the top-ranked supplier isn't available (e.g. the
+    // alternatives list has no entry at that slot, or upstream filtering has
+    // dropped it), fall back to the next-best alternative before giving up,
+    // so operators don't have to chase those items by hand.
     type Grouped = {
       supplierId: string;
       supplierName: string;
       lines: { itemId: string; quantity: number; itemName: string }[];
     };
     const groups = new Map<string, Grouped>();
-    let skippedItems = 0;
+    const unfillableItems: string[] = [];
     for (const row of shortRows) {
-      const supplier = row.supplierAlternatives?.[0];
+      const supplier = row.supplierAlternatives?.find((alt) => alt != null);
       if (!supplier) {
-        skippedItems += 1;
+        unfillableItems.push(row.itemName);
         continue;
       }
       const existing = groups.get(supplier.supplierId);
@@ -219,9 +222,13 @@ export default function CasualtyPlanner() {
     });
     const supplierCount = groups.size - skippedOrders;
     const descriptionParts: string[] = [];
-    if (skippedItems > 0) {
+    if (unfillableItems.length > 0) {
+      const preview = unfillableItems.slice(0, 3).join(", ");
+      const more = unfillableItems.length > 3
+        ? ` +${unfillableItems.length - 3} more`
+        : "";
       descriptionParts.push(
-        `${skippedItems} item${skippedItems === 1 ? "" : "s"} skipped (no supplier alternative available)`,
+        `Couldn't fill ${unfillableItems.length} item${unfillableItems.length === 1 ? "" : "s"} (no supplier carries it): ${preview}${more}`,
       );
     }
     if (skippedOrders > 0) {
