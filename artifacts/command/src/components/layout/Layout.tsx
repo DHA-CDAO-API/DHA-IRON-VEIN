@@ -19,6 +19,123 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const palette = useSearchPalette();
   const { data: profile } = useGetProfile();
 
+  // Per-item accent colors. Each row owns a distinct hue so users can scan
+  // the rail at a glance and immediately know where they are. Class strings
+  // are written as full literals (no string interpolation) so Tailwind's JIT
+  // can see them at build time.
+  type NavColor = {
+    iconActive: string;
+    iconInactive: string;
+    iconHover: string;
+    activeBg: string;
+    activeText: string;
+    hoverBg: string;
+    hoverText: string;
+    ring: string;
+  };
+  const NAV_COLORS: Record<string, NavColor> = {
+    "/": {
+      iconActive: "text-teal-300",
+      iconInactive: "text-teal-400/60",
+      iconHover: "group-hover:text-teal-200",
+      activeBg: "bg-teal-400/15",
+      activeText: "text-teal-100",
+      hoverBg: "hover:bg-teal-400/10",
+      hoverText: "hover:text-teal-100",
+      ring: "focus-visible:ring-teal-400",
+    },
+    "/network": {
+      iconActive: "text-sky-300",
+      iconInactive: "text-sky-400/60",
+      iconHover: "group-hover:text-sky-200",
+      activeBg: "bg-sky-400/15",
+      activeText: "text-sky-100",
+      hoverBg: "hover:bg-sky-400/10",
+      hoverText: "hover:text-sky-100",
+      ring: "focus-visible:ring-sky-400",
+    },
+    "/locations": {
+      iconActive: "text-emerald-300",
+      iconInactive: "text-emerald-400/60",
+      iconHover: "group-hover:text-emerald-200",
+      activeBg: "bg-emerald-400/15",
+      activeText: "text-emerald-100",
+      hoverBg: "hover:bg-emerald-400/10",
+      hoverText: "hover:text-emerald-100",
+      ring: "focus-visible:ring-emerald-400",
+    },
+    "/suppliers": {
+      iconActive: "text-amber-300",
+      iconInactive: "text-amber-400/65",
+      iconHover: "group-hover:text-amber-200",
+      activeBg: "bg-amber-400/15",
+      activeText: "text-amber-100",
+      hoverBg: "hover:bg-amber-400/10",
+      hoverText: "hover:text-amber-100",
+      ring: "focus-visible:ring-amber-400",
+    },
+    "/orders": {
+      iconActive: "text-rose-300",
+      iconInactive: "text-rose-400/60",
+      iconHover: "group-hover:text-rose-200",
+      activeBg: "bg-rose-400/15",
+      activeText: "text-rose-100",
+      hoverBg: "hover:bg-rose-400/10",
+      hoverText: "hover:text-rose-100",
+      ring: "focus-visible:ring-rose-400",
+    },
+    "/scenarios": {
+      iconActive: "text-violet-300",
+      iconInactive: "text-violet-400/60",
+      iconHover: "group-hover:text-violet-200",
+      activeBg: "bg-violet-400/15",
+      activeText: "text-violet-100",
+      hoverBg: "hover:bg-violet-400/10",
+      hoverText: "hover:text-violet-100",
+      ring: "focus-visible:ring-violet-400",
+    },
+    "/copilot": {
+      iconActive: "text-blue-300",
+      iconInactive: "text-blue-400/60",
+      iconHover: "group-hover:text-blue-200",
+      activeBg: "bg-blue-400/15",
+      activeText: "text-blue-100",
+      hoverBg: "hover:bg-blue-400/10",
+      hoverText: "hover:text-blue-100",
+      ring: "focus-visible:ring-blue-400",
+    },
+    "/data": {
+      iconActive: "text-lime-300",
+      iconInactive: "text-lime-400/65",
+      iconHover: "group-hover:text-lime-200",
+      activeBg: "bg-lime-400/15",
+      activeText: "text-lime-100",
+      hoverBg: "hover:bg-lime-400/10",
+      hoverText: "hover:text-lime-100",
+      ring: "focus-visible:ring-lime-400",
+    },
+    "/settings": {
+      iconActive: "text-orange-300",
+      iconInactive: "text-orange-400/65",
+      iconHover: "group-hover:text-orange-200",
+      activeBg: "bg-orange-400/15",
+      activeText: "text-orange-100",
+      hoverBg: "hover:bg-orange-400/10",
+      hoverText: "hover:text-orange-100",
+      ring: "focus-visible:ring-orange-400",
+    },
+    "/profile": {
+      iconActive: "text-indigo-300",
+      iconInactive: "text-indigo-400/65",
+      iconHover: "group-hover:text-indigo-200",
+      activeBg: "bg-indigo-400/15",
+      activeText: "text-indigo-100",
+      hoverBg: "hover:bg-indigo-400/10",
+      hoverText: "hover:text-indigo-100",
+      ring: "focus-visible:ring-indigo-400",
+    },
+  };
+
   const navItems: Array<{
     href: string;
     label: string;
@@ -90,9 +207,23 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               const active = item.matches
                 ? item.matches(location)
                 : location === item.href || (item.href !== "/" && location.startsWith(item.href));
+              const c = NAV_COLORS[item.href];
               return (
-                <Link key={item.href} href={item.href} className={`flex items-center gap-3 px-3 py-2 rounded-md transition-colors ${active ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-secondary hover:text-foreground"}`}>
-                  <item.icon className="h-5 w-5 shrink-0" />
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  aria-current={active ? "page" : undefined}
+                  className={`group flex items-center gap-3 px-3 py-2 rounded-md transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-inset ${c.ring} ${
+                    active
+                      ? `${c.activeBg} ${c.activeText}`
+                      : `text-muted-foreground ${c.hoverBg} ${c.hoverText}`
+                  }`}
+                >
+                  <item.icon
+                    className={`h-5 w-5 shrink-0 transition-colors ${
+                      active ? c.iconActive : `${c.iconInactive} ${c.iconHover}`
+                    }`}
+                  />
                   <span className="hidden md:inline text-sm font-medium">{item.label}</span>
                 </Link>
               );
@@ -102,9 +233,23 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         <div className="p-2 border-t border-border flex flex-col gap-1 shrink-0">
           {bottomItems.map((item) => {
             const active = location === item.href;
+            const c = NAV_COLORS[item.href];
             return (
-              <Link key={item.href} href={item.href} className={`flex items-center gap-3 px-3 py-2 rounded-md transition-colors ${active ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-secondary hover:text-foreground"}`}>
-                <item.icon className="h-5 w-5 shrink-0" />
+              <Link
+                key={item.href}
+                href={item.href}
+                aria-current={active ? "page" : undefined}
+                className={`group flex items-center gap-3 px-3 py-2 rounded-md transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-inset ${c.ring} ${
+                  active
+                    ? `${c.activeBg} ${c.activeText}`
+                    : `text-muted-foreground ${c.hoverBg} ${c.hoverText}`
+                }`}
+              >
+                <item.icon
+                  className={`h-5 w-5 shrink-0 transition-colors ${
+                    active ? c.iconActive : `${c.iconInactive} ${c.iconHover}`
+                  }`}
+                />
                 <span className="hidden md:inline text-sm font-medium">{item.label}</span>
               </Link>
             );
