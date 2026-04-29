@@ -1,0 +1,31 @@
+kind = "slides"
+previewPath = "/marines-opener/"
+title = "DHA Iron Vein — Leadership Opener"
+version = "1.0.0"
+id = "artifacts/marines-opener"
+router = "path"
+
+[[integratedSkills]]
+name = "slides"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/marines-opener/" ]
+localPort = 26017
+
+[services.development]
+run = "pnpm --filter @workspace/marines-opener run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/marines-opener", "run", "build" ]
+publicDir = "artifacts/marines-opener/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "26017"
+BASE_PATH = "/marines-opener/"

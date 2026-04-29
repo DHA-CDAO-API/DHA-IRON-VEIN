@@ -1,0 +1,50 @@
+{
+  "generatedAt": "2026-04-29T02:09:15.754Z",
+  "source": "http://localhost:8080",
+  "classVIII": {
+    "itemsTotal": 35,
+    "blood": 8,
+    "supplies": 19,
+    "ppe": 5,
+    "other": 3
+  },
+  "network": {
+    "operationalNodeCount": 33,
+    "theaterHubs": 2,
+    "regionalHubs": 3,
+    "largeMTFs": 6,
+    "standardMTFs": 14,
+    "mtfTotal": 20,
+    "bas": 4,
+    "clinics": 2,
+    "forwardNodes": 2,
+    "basNames": [
+      "Copper",
+      "Iron",
+      "Steel",
+      "Zinc"
+    ]
+  },
+  "supplierMix": {
+    "total": 19,
+    "dla": 1,
+    "ecat": 1,
+    "gsa": 1,
+    "fedmall": 1,
+    "asbp": 1,
+    "commercial": 7,
+    "hostNation": 4,
+    "allied": 3,
+    "hostNationCountries": [
+      "AU",
+      "JP",
+      "KR",
+      "PH"
+    ],
+    "alliedCountries": [
+      "NZ",
+      "SG",
+      "TW"
+    ]
+  }
+}

@@ -1,0 +1,26 @@
+[
+  {
+    "id": "a8f3b1c0-1a40-4b11-9c01-000000000001",
+    "position": 1,
+    "filepath": "src/pages/slides/Title.tsx",
+    "title": "DHA Iron Vein",
+    "description": "90-second leadership opener title slide — product name, Marines + INDOPACOM framing, and the single-sentence value proposition the live demo will prove",
+    "speakerNotes": ""
+  },
+  {
+    "id": "a8f3b1c0-1a40-4b11-9c01-000000000002",
+    "position": 2,
+    "filepath": "src/pages/slides/Stakes.tsx",
+    "title": "The Stakes",
+    "description": "Scenario spectrum from HADR through PRC contingency paired with the Class VIII shortfalls each scenario produces",
+    "speakerNotes": ""
+  },
+  {
+    "id": "a8f3b1c0-1a40-4b11-9c01-000000000003",
+    "position": 3,
+    "filepath": "src/pages/slides/Deliver.tsx",
+    "title": "What We Deliver",
+    "description": "Class VIII coverage breadth and INDOPACOM network footprint paired with the Predict / Simulate / Recommend / Act capability claim and handoff to the live demo",
+    "speakerNotes": ""
+  }
+]
