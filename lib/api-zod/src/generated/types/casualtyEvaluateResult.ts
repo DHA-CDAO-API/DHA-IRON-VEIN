@@ -5,10 +5,12 @@
  * Predictive Sustainment Platform API for INDOPACOM medical logistics decision support.
  * OpenAPI spec version: 1.0.0
  */
+import type { CasualtyEvaluateResultMultiSiteMode } from "./casualtyEvaluateResultMultiSiteMode";
 import type { CasualtyEvaluateResultPatientCounts } from "./casualtyEvaluateResultPatientCounts";
 import type { CasualtyEvaluateResultSufficiency } from "./casualtyEvaluateResultSufficiency";
 import type { CasualtyRequirementRow } from "./casualtyRequirementRow";
 import type { PatientRerouteCandidate } from "./patientRerouteCandidate";
+import type { SiteSufficiencyEntry } from "./siteSufficiencyEntry";
 
 export interface CasualtyEvaluateResult {
   arrivalWindowHours: number;
@@ -17,4 +19,15 @@ export interface CasualtyEvaluateResult {
   requiredItems: CasualtyRequirementRow[];
   sufficiency?: CasualtyEvaluateResultSufficiency;
   reroutes: PatientRerouteCandidate[];
+  /** How the response was evaluated. `single` is the legacy single-site or single-entry-`siteIds` case. */
+  multiSiteMode?: CasualtyEvaluateResultMultiSiteMode;
+  /** Echo of the site ids the result was scoped to. */
+  selectedSiteIds?: string[];
+  /**
+   * Echoed for `primary` mode.
+   * @nullable
+   */
+  primarySiteId?: string | null;
+  /** Populated only for `compare` mode — one entry per selected site. */
+  comparison?: SiteSufficiencyEntry[];
 }

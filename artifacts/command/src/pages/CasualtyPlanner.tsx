@@ -22,20 +22,42 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  ToggleGroup,
+  ToggleGroupItem,
+} from "@/components/ui/toggle-group";
 import { CategoryFilterToggle } from "@/components/CategoryFilterToggle";
 import { SortableTable } from "@/components/ui/sortable-table";
 import { categoryMatches, formatNumber, type CategoryFilter } from "@/lib/format";
 import { useToast } from "@/hooks/use-toast";
+import { cn } from "@/lib/utils";
 import {
   Activity,
   AlertTriangle,
   ArrowRight,
+  Check,
   CheckCircle2,
+  ChevronsUpDown,
   Loader2,
   ShoppingBag,
   Users,
   ShieldAlert,
   ExternalLink,
+  X,
 } from "lucide-react";
 import type {
   CasualtyRequirementRow,
@@ -43,11 +65,15 @@ import type {
   PatientRerouteCandidate,
   SufficiencyRowVerdict,
   PatientRerouteCandidatePosture,
+  CasualtyEvaluateInput,
+  SiteSufficiencyEntry,
 } from "@workspace/api-client-react";
 import {
   BulkOrderConfirmDialog,
   type BulkOrderGroup,
 } from "@/components/orders/BulkOrderConfirmDialog";
+
+type MultiSiteMode = NonNullable<CasualtyEvaluateInput["multiSiteMode"]>;
 
 type PatientCounts = Record<string, number>;
 
@@ -121,13 +147,51 @@ export default function CasualtyPlanner() {
     const sp = new URLSearchParams(window.location.search);
     return sp.get("siteId");
   }, []);
-  const [siteId, setSiteId] = React.useState<string | null>(initialSiteId);
+  // Multi-site selection. We keep the deep-link `?siteId=` behaviour by
+  // pre-selecting that one site, and the rest of the page derives the
+  // single-site shape (`siteId`) from the first entry when only one is
+  // selected.
+  const [siteIds, setSiteIds] = React.useState<string[]>(
+    initialSiteId ? [initialSiteId] : [],
+  );
+  const [multiSiteMode, setMultiSiteMode] =
+    React.useState<MultiSiteMode>("combined");
+  const [primarySiteId, setPrimarySiteId] = React.useState<string | null>(null);
+  const [sitePickerOpen, setSitePickerOpen] = React.useState<boolean>(false);
   const [arrivalWindowHours, setArrivalWindowHours] = React.useState<number>(48);
   const [resupplyEtaHours, setResupplyEtaHours] = React.useState<string>("");
   const [totalCasualties, setTotalCasualties] = React.useState<number>(40);
   const [counts, setCounts] = React.useState<PatientCounts>({});
   const [filter, setFilter] = React.useState<CategoryFilter>("both");
   const [restrictReroutes, setRestrictReroutes] = React.useState<boolean>(false);
+
+  const siteId = siteIds.length === 1 ? siteIds[0] : null;
+  const isMultiSite = siteIds.length >= 2;
+
+  // Keep `primarySiteId` in sync with the current selection: clear it when
+  // the user drops below 2 sites; reset to the first selected site when
+  // the previously-chosen primary is no longer in the selection.
+  React.useEffect(() => {
+    if (!isMultiSite) {
+      if (primarySiteId !== null) setPrimarySiteId(null);
+      return;
+    }
+    if (!primarySiteId || !siteIds.includes(primarySiteId)) {
+      setPrimarySiteId(siteIds[0]);
+    }
+  }, [siteIds, isMultiSite, primarySiteId]);
+
+  // Default the Event Template to the first available option on first load
+  // so the page is immediately useful — operators can still clear/change
+  // the selection. We only do this if the operator hasn't already picked
+  // something themselves.
+  React.useEffect(() => {
+    if (eventTypeId) return;
+    if (eventTypes.length === 0) return;
+    setEventTypeId(eventTypes[0].id);
+    // We intentionally only auto-select once.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [eventTypes.length]);
 
   // When the operator picks an event template, derive a default patient
   // mix from the seeded shares × total-casualty count.
@@ -157,23 +221,48 @@ export default function CasualtyPlanner() {
   const evaluate = useEvaluateCasualtyDemand();
   const result = evaluate.data;
 
+  // Build the request payload from current state. Centralised so the
+  // auto-evaluate effect and the post-bulk-order refresh stay in sync.
+  const buildEvaluatePayload = React.useCallback((): CasualtyEvaluateInput => {
+    return {
+      siteId: siteIds.length === 1 ? siteIds[0] : null,
+      siteIds: siteIds.length > 0 ? siteIds : undefined,
+      multiSiteMode: isMultiSite ? multiSiteMode : undefined,
+      primarySiteId:
+        isMultiSite && multiSiteMode === "primary"
+          ? primarySiteId ?? siteIds[0]
+          : null,
+      patientCounts: counts,
+      arrivalWindowHours,
+      resupplyEtaHours: resupplyEtaHours ? Number(resupplyEtaHours) : null,
+      restrictReroutesToHub: restrictReroutes,
+    };
+  }, [
+    siteIds,
+    isMultiSite,
+    multiSiteMode,
+    primarySiteId,
+    counts,
+    arrivalWindowHours,
+    resupplyEtaHours,
+    restrictReroutes,
+  ]);
+
   React.useEffect(() => {
     // Auto-evaluate when inputs change.
     const sumCounts = Object.values(counts).reduce((a, b) => a + b, 0);
     if (sumCounts <= 0) return;
-    evaluate.mutate({
-      data: {
-        siteId: siteId ?? null,
-        patientCounts: counts,
-        arrivalWindowHours,
-        resupplyEtaHours: resupplyEtaHours
-          ? Number(resupplyEtaHours)
-          : null,
-        restrictReroutesToHub: restrictReroutes,
-      },
-    });
+    evaluate.mutate({ data: buildEvaluatePayload() });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [counts, arrivalWindowHours, siteId, resupplyEtaHours, restrictReroutes]);
+  }, [
+    counts,
+    arrivalWindowHours,
+    siteIds,
+    multiSiteMode,
+    primarySiteId,
+    resupplyEtaHours,
+    restrictReroutes,
+  ]);
 
   const createOrder = useCreateOrder();
 
@@ -192,12 +281,28 @@ export default function CasualtyPlanner() {
   >([]);
   const [bulkSubmitting, setBulkSubmitting] = React.useState(false);
 
+  // The destination node bulk-ordered shortfalls should be routed to.
+  // - single & primary: the (primary) selected site
+  // - combined: route to the first selected site (the network "anchor")
+  // - compare: there is no single destination, so bulk-order is disabled.
+  const bulkOrderDestinationSiteId: string | null = (() => {
+    if (!isMultiSite) return siteId;
+    if (multiSiteMode === "primary") return primarySiteId ?? siteIds[0] ?? null;
+    if (multiSiteMode === "combined") return siteIds[0] ?? null;
+    return null;
+  })();
+
   const handleOpenBulkOrder = () => {
-    if (!result?.sufficiency || !siteId) {
+    if (!result?.sufficiency || !bulkOrderDestinationSiteId) {
       toast({
-        title: "Pick a treatment site first",
+        title:
+          isMultiSite && multiSiteMode === "compare"
+            ? "Bulk ordering is disabled in compare mode"
+            : "Pick a treatment site first",
         description:
-          "Bulk ordering needs a destination site so the orders can be routed.",
+          isMultiSite && multiSiteMode === "compare"
+            ? "Switch to Combined or Primary mode to bulk-order shortfalls — compare mode evaluates each site independently and has no single destination."
+            : "Bulk ordering needs a destination site so the orders can be routed.",
       });
       return;
     }
@@ -261,7 +366,8 @@ export default function CasualtyPlanner() {
   };
 
   const handleConfirmBulkOrder = async (selected: BulkOrderGroup[]) => {
-    if (!siteId || selected.length === 0) return;
+    const destinationSiteId = bulkOrderDestinationSiteId;
+    if (!destinationSiteId || selected.length === 0) return;
     const requestedDeliveryAt = new Date(
       Date.now() + arrivalWindowHours * 3_600_000,
     ).toISOString();
@@ -273,7 +379,7 @@ export default function CasualtyPlanner() {
         try {
           await createOrder.mutateAsync({
             data: {
-              toNodeId: siteId,
+              toNodeId: destinationSiteId,
               supplierId: group.supplierId,
               priority: "URGENT",
               rationale: `Casualty Planner — sufficiency shortfall (${group.lines
@@ -295,15 +401,7 @@ export default function CasualtyPlanner() {
         queryKey: getListOrdersQueryKey(),
       });
       // Re-run evaluation so the table refreshes inbound counts.
-      evaluate.mutate({
-        data: {
-          siteId,
-          patientCounts: counts,
-          arrivalWindowHours,
-          resupplyEtaHours: resupplyEtaHours ? Number(resupplyEtaHours) : null,
-          restrictReroutesToHub: restrictReroutes,
-        },
-      });
+      evaluate.mutate({ data: buildEvaluatePayload() });
     } finally {
       setBulkSubmitting(false);
     }
@@ -354,6 +452,12 @@ export default function CasualtyPlanner() {
   ).length;
   const reroutes = result?.reroutes ?? [];
 
+  const isCompareMode =
+    isMultiSite && multiSiteMode === "compare" && (result?.comparison?.length ?? 0) > 0;
+  const compareEntries: SiteSufficiencyEntry[] = isCompareMode
+    ? (result?.comparison ?? [])
+    : [];
+
   return (
     <div
       className="h-full flex flex-col p-4 gap-4 overflow-y-auto bg-background text-foreground"
@@ -381,7 +485,7 @@ export default function CasualtyPlanner() {
             onClick={handleOpenBulkOrder}
             disabled={
               !result?.sufficiency ||
-              !siteId ||
+              !bulkOrderDestinationSiteId ||
               createOrder.isPending ||
               bulkSubmitting ||
               shortageCount === 0
@@ -429,26 +533,113 @@ export default function CasualtyPlanner() {
                   ))}
                 </SelectContent>
               </Select>
+              <p className="text-[10px] leading-snug text-muted-foreground">
+                Picking a template auto-fills the patient mix and arrival
+                window from the seeded shares — adjust the counts below to
+                refine.
+              </p>
             </div>
             <div className="space-y-1.5 min-w-0">
               <Label className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">
-                Treatment site
+                Treatment site{siteIds.length > 0 && (
+                  <span className="ml-1 text-muted-foreground/70 normal-case font-normal">
+                    · {siteIds.length} selected
+                  </span>
+                )}
               </Label>
-              <Select
-                value={siteId ?? ""}
-                onValueChange={(v) => setSiteId(v)}
-              >
-                <SelectTrigger data-testid="select-site" className="w-full">
-                  <SelectValue placeholder="Optional — pick a site…" />
-                </SelectTrigger>
-                <SelectContent>
-                  {sites.map((s) => (
-                    <SelectItem key={s.nodeId} value={s.nodeId}>
-                      {s.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Popover open={sitePickerOpen} onOpenChange={setSitePickerOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    role="combobox"
+                    aria-expanded={sitePickerOpen}
+                    aria-haspopup="listbox"
+                    className={cn(
+                      "w-full justify-between font-normal h-auto min-h-9 py-1.5",
+                      siteIds.length === 0 && "text-muted-foreground",
+                    )}
+                    data-testid="select-site"
+                  >
+                    {siteIds.length === 0 ? (
+                      <span>Optional — pick one or more sites…</span>
+                    ) : (
+                      <span className="flex flex-wrap gap-1 items-center min-w-0 text-left">
+                        {siteIds.map((id) => {
+                          const s = sites.find((x) => x.nodeId === id);
+                          return (
+                            <span
+                              key={id}
+                              className="inline-flex items-center gap-1 rounded-sm bg-muted px-1.5 py-0.5 text-xs max-w-[14rem]"
+                              data-testid={`site-chip-${id}`}
+                            >
+                              <span className="truncate">
+                                {s?.name ?? id}
+                              </span>
+                              <button
+                                type="button"
+                                aria-label={`Remove ${s?.name ?? id}`}
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  setSiteIds((prev) =>
+                                    prev.filter((x) => x !== id),
+                                  );
+                                }}
+                                className="opacity-60 hover:opacity-100"
+                              >
+                                <X className="h-3 w-3" />
+                              </button>
+                            </span>
+                          );
+                        })}
+                      </span>
+                    )}
+                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent
+                  className="w-[--radix-popover-trigger-width] p-0"
+                  align="start"
+                  collisionPadding={16}
+                >
+                  <Command>
+                    <CommandInput placeholder="Search sites…" />
+                    <CommandList className="max-h-[min(50vh,18rem)]">
+                      <CommandEmpty>No sites match your search.</CommandEmpty>
+                      <CommandGroup>
+                        {sites.map((s) => {
+                          const checked = siteIds.includes(s.nodeId);
+                          return (
+                            <CommandItem
+                              key={s.nodeId}
+                              value={`${s.name} ${s.nodeId}`}
+                              onSelect={() => {
+                                setSiteIds((prev) =>
+                                  prev.includes(s.nodeId)
+                                    ? prev.filter((x) => x !== s.nodeId)
+                                    : [...prev, s.nodeId],
+                                );
+                              }}
+                              data-testid={`site-option-${s.nodeId}`}
+                            >
+                              <Checkbox
+                                checked={checked}
+                                className="mr-2 pointer-events-none"
+                                tabIndex={-1}
+                              />
+                              <span className="truncate">{s.name}</span>
+                              {checked && (
+                                <Check className="ml-auto h-4 w-4 opacity-70" />
+                              )}
+                            </CommandItem>
+                          );
+                        })}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
             </div>
             <div className="space-y-1.5 min-w-0">
               <Label
@@ -474,20 +665,114 @@ export default function CasualtyPlanner() {
                 htmlFor="input-resupply-eta"
                 className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium"
               >
-                Resupply ETA (h)
+                Resupply ETA (hours)
               </Label>
-              <Input
-                id="input-resupply-eta"
-                type="number"
-                placeholder="Optional · e.g. 36"
-                value={resupplyEtaHours}
-                min={0}
-                onChange={(e) => setResupplyEtaHours(e.target.value)}
-                className="font-mono"
-                data-testid="input-resupply-eta"
-              />
+              <div className="relative">
+                <Input
+                  id="input-resupply-eta"
+                  type="number"
+                  placeholder="Optional · e.g. 36"
+                  value={resupplyEtaHours}
+                  min={0}
+                  onChange={(e) => setResupplyEtaHours(e.target.value)}
+                  className="font-mono pr-12"
+                  data-testid="input-resupply-eta"
+                />
+                <span
+                  className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs text-muted-foreground font-mono"
+                  aria-hidden="true"
+                >
+                  hrs
+                </span>
+              </div>
+              <p className="text-[10px] leading-snug text-muted-foreground">
+                Hours until the next major resupply arrives — leave blank to
+                use the full arrival window.
+              </p>
             </div>
           </div>
+
+          {isMultiSite && (
+            <div
+              className="rounded-md border border-border/40 bg-muted/10 p-3 space-y-2"
+              data-testid="multi-site-mode-row"
+            >
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <Label className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">
+                    Multi-site evaluation
+                  </Label>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">
+                    {multiSiteMode === "combined" &&
+                      "Pool on-hand and inbound across all selected sites; reroute candidates come from sites outside the selection."}
+                    {multiSiteMode === "compare" &&
+                      "Evaluate each selected site independently and compare side-by-side."}
+                    {multiSiteMode === "primary" &&
+                      "Score sufficiency for the primary site; reroute candidates are constrained to the other selected sites."}
+                  </p>
+                </div>
+                <ToggleGroup
+                  type="single"
+                  value={multiSiteMode}
+                  onValueChange={(v) => {
+                    if (v) setMultiSiteMode(v as MultiSiteMode);
+                  }}
+                  className="shrink-0"
+                  data-testid="multi-site-mode-toggle"
+                >
+                  <ToggleGroupItem
+                    value="combined"
+                    className="text-xs h-8"
+                    data-testid="multi-site-mode-combined"
+                  >
+                    Combined network
+                  </ToggleGroupItem>
+                  <ToggleGroupItem
+                    value="compare"
+                    className="text-xs h-8"
+                    data-testid="multi-site-mode-compare"
+                  >
+                    Compare side-by-side
+                  </ToggleGroupItem>
+                  <ToggleGroupItem
+                    value="primary"
+                    className="text-xs h-8"
+                    data-testid="multi-site-mode-primary"
+                  >
+                    Primary + reroute
+                  </ToggleGroupItem>
+                </ToggleGroup>
+              </div>
+              {multiSiteMode === "primary" && (
+                <div className="flex items-center gap-2 pt-1">
+                  <Label className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium shrink-0">
+                    Primary site
+                  </Label>
+                  <Select
+                    value={primarySiteId ?? ""}
+                    onValueChange={(v) => setPrimarySiteId(v)}
+                  >
+                    <SelectTrigger
+                      className="h-8 text-xs max-w-xs"
+                      data-testid="select-primary-site"
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {siteIds.map((id) => {
+                        const s = sites.find((x) => x.nodeId === id);
+                        return (
+                          <SelectItem key={id} value={id}>
+                            {s?.name ?? id}
+                          </SelectItem>
+                        );
+                      })}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-stretch">
             <div className="lg:col-span-2 space-y-2 rounded-md border border-border/40 bg-muted/10 p-3 min-w-0">
@@ -590,6 +875,113 @@ export default function CasualtyPlanner() {
           )}
         </CardContent>
       </Card>
+
+      {isCompareMode && (
+        <Card className="bg-card/50 border-border shrink-0">
+          <SectionHeader
+            title="Sufficiency by Site (Compare)"
+            meta={`${compareEntries.length} sites`}
+          />
+          <CardContent className="p-4">
+            <div
+              className="grid gap-3"
+              style={{
+                gridTemplateColumns: `repeat(auto-fit, minmax(min(20rem, 100%), 1fr))`,
+              }}
+              data-testid="compare-grid"
+            >
+              {compareEntries.map((entry) => {
+                const sum = entry.sufficiency.summary;
+                const tone =
+                  sum.redCount > 0
+                    ? "border-destructive/40 bg-destructive/5"
+                    : sum.amberCount > 0
+                      ? "border-amber-500/40 bg-amber-500/5"
+                      : "border-emerald-500/40 bg-emerald-500/5";
+                const reds = entry.sufficiency.rows
+                  .filter(
+                    (r) =>
+                      r.verdict === "red" && categoryMatches(filter, r.category),
+                  )
+                  .sort((a, b) => b.shortfallQty - a.shortfallQty)
+                  .slice(0, 6);
+                const ambers = entry.sufficiency.rows
+                  .filter(
+                    (r) =>
+                      r.verdict === "amber" &&
+                      categoryMatches(filter, r.category),
+                  )
+                  .sort((a, b) => b.shortfallQty - a.shortfallQty)
+                  .slice(0, 4);
+                return (
+                  <div
+                    key={entry.siteId}
+                    className={`rounded-md border p-3 space-y-3 ${tone}`}
+                    data-testid={`compare-card-${entry.siteId}`}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="text-sm font-semibold truncate">
+                          {entry.siteName}
+                        </div>
+                        <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">
+                          {sum.verdict}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 text-[11px] font-mono shrink-0">
+                        <span className="text-emerald-400">
+                          {sum.greenCount}
+                        </span>
+                        <span className="text-amber-400">{sum.amberCount}</span>
+                        <span className="text-destructive">{sum.redCount}</span>
+                      </div>
+                    </div>
+                    {reds.length === 0 && ambers.length === 0 ? (
+                      <p className="text-xs text-muted-foreground">
+                        No shortfalls in this category.
+                      </p>
+                    ) : (
+                      <ul className="space-y-1.5">
+                        {reds.map((r) => (
+                          <li
+                            key={`r-${r.itemId}`}
+                            className="flex items-center justify-between gap-2 text-xs"
+                          >
+                            <span className="truncate min-w-0">
+                              {r.itemName}
+                            </span>
+                            <span className="font-mono text-destructive shrink-0">
+                              -{formatNumber(r.shortfallQty)}
+                            </span>
+                          </li>
+                        ))}
+                        {ambers.map((r) => (
+                          <li
+                            key={`a-${r.itemId}`}
+                            className="flex items-center justify-between gap-2 text-xs"
+                          >
+                            <span className="truncate min-w-0 text-muted-foreground">
+                              {r.itemName}
+                            </span>
+                            <span className="font-mono text-amber-400 shrink-0">
+                              ~{formatNumber(r.shortfallQty)}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            <p className="mt-3 text-[11px] text-muted-foreground">
+              Each site is evaluated independently. Bulk Order Shortfalls is
+              disabled in this mode — switch to Combined or Primary to dispatch
+              orders.
+            </p>
+          </CardContent>
+        </Card>
+      )}
 
       {verdict && (
         <Card

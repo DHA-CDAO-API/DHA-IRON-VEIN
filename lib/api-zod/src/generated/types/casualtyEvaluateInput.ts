@@ -5,20 +5,34 @@
  * Predictive Sustainment Platform API for INDOPACOM medical logistics decision support.
  * OpenAPI spec version: 1.0.0
  */
+import type { CasualtyEvaluateInputMultiSiteMode } from "./casualtyEvaluateInputMultiSiteMode";
 import type { CasualtyEvaluateInputPatientCounts } from "./casualtyEvaluateInputPatientCounts";
 
 export interface CasualtyEvaluateInput {
   /**
-   * Optional. When set, scopes the response to a specific site (adds sufficiency rows + reroute suggestions).
+   * Optional. Legacy single-site selector. When set (and `siteIds` is empty/absent), behaves exactly as before — scopes the response to one site.
    * @nullable
    */
   siteId?: string | null;
+  /** Optional list of treatment site ids. When two or more are provided, `multiSiteMode` controls how they are evaluated. When exactly one is provided it behaves like `siteId`. */
+  siteIds?: string[];
+  /** How to evaluate `siteIds` when 2+ are provided.
+- `combined`: pool on-hand + inbound across the selected sites and check sufficiency once. Reroute candidates are drawn from sites *outside* the selection.
+- `compare`: evaluate each selected site independently and return one entry per site under `comparison`. The top-level `sufficiency` is null and reroutes are empty.
+- `primary`: scope sufficiency to a single designated `primarySiteId`, but constrain reroute candidates to the *other* selected sites only.
+ */
+  multiSiteMode?: CasualtyEvaluateInputMultiSiteMode;
+  /**
+   * Required when `multiSiteMode` is `primary`. Must be one of the entries in `siteIds`.
+   * @nullable
+   */
+  primarySiteId?: string | null;
   /** Patient counts keyed by patient_type id. */
   patientCounts: CasualtyEvaluateInputPatientCounts;
   /** Hours over which the casualty load arrives. */
   arrivalWindowHours: number;
   /**
-   * Optional operator-entered ETA for next resupply.
+   * Optional operator-entered ETA (in hours) for the next major resupply.
    * @nullable
    */
   resupplyEtaHours?: number | null;

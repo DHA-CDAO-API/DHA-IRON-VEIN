@@ -8,7 +8,7 @@ import {
   eventPatientMix,
   shipments,
 } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { inArray } from "drizzle-orm";
 import { loadSimContext } from "../lib/ctx";
 import {
   computeCasualtyDemand,
@@ -18,6 +18,7 @@ import {
   type ShipmentArrival,
   type PatientTypeMeta,
   type PatientRequirementRow,
+  type SimNode,
 } from "@workspace/sim";
 
 const router: IRouter = Router();
@@ -94,7 +95,15 @@ router.get("/event-types", async (_req, res, next) => {
 // ----- Casualty evaluation -----
 
 const EvaluateInput = z.object({
+  // Legacy single-site selector. Still accepted for backward compatibility;
+  // when both `siteId` and `siteIds` are absent the response is the
+  // unscoped requirements view.
   siteId: z.string().nullish(),
+  // New multi-site selector. When length >= 2, `multiSiteMode` controls
+  // how the sites are evaluated.
+  siteIds: z.array(z.string()).optional(),
+  multiSiteMode: z.enum(["combined", "compare", "primary"]).optional(),
+  primarySiteId: z.string().nullish(),
   patientCounts: z.record(z.string(), z.number().nonnegative()),
   arrivalWindowHours: z.number().positive().default(48),
   resupplyEtaHours: z.number().positive().nullish(),
@@ -140,40 +149,91 @@ router.post("/casualty/evaluate", async (req, res, next) => {
       patientRequirements: requirements,
     });
 
-    // Site-scoped sufficiency + reroute suggestions.
-    let sufficiency: ReturnType<typeof evaluateSiteSufficiency> | null = null;
-    let reroutes: ReturnType<typeof suggestPatientReroutes> | null = null;
-    let upstreamRouteDays = 5;
-    if (body.siteId) {
-      const balances = ctx.balances.filter((b) => b.nodeId === body.siteId);
-      const onHandByItem: Record<string, number> = {};
-      for (const b of balances) {
-        onHandByItem[b.itemId] = (onHandByItem[b.itemId] ?? 0) + b.onHand;
-      }
-      // Inbound shipments to this site over the arrival window.
-      const inboundRows = await db
+    // Resolve the effective site selection. `siteIds` (when populated) is
+    // authoritative; otherwise fall back to the legacy single `siteId`.
+    const rawSiteIds: string[] = (() => {
+      if (body.siteIds && body.siteIds.length > 0) return [...body.siteIds];
+      if (body.siteId) return [body.siteId];
+      return [];
+    })();
+    // Dedup while preserving order so the response echo is predictable.
+    const seen = new Set<string>();
+    const selectedSiteIds = rawSiteIds.filter((id) => {
+      if (seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    });
+
+    // Mode resolution: only matters when 2+ sites are selected. With 0/1
+    // sites we behave exactly like the old single-site path ("single").
+    const isMultiSite = selectedSiteIds.length >= 2;
+    const requestedMode = body.multiSiteMode ?? "combined";
+    const effectiveMode: "single" | "combined" | "compare" | "primary" =
+      isMultiSite ? requestedMode : "single";
+    const primarySiteId =
+      effectiveMode === "primary"
+        ? body.primarySiteId && selectedSiteIds.includes(body.primarySiteId)
+          ? body.primarySiteId
+          : selectedSiteIds[0] ?? null
+        : null;
+
+    // Inbound shipments fetched once for any selected site.
+    const inboundRowsBySite = new Map<string, ShipmentArrival[]>();
+    if (selectedSiteIds.length > 0) {
+      const rows = await db
         .select()
         .from(shipments)
-        .where(eq(shipments.toNode, body.siteId));
+        .where(inArray(shipments.toNode, selectedSiteIds));
       const now = Date.now();
-      const inbound: ShipmentArrival[] = inboundRows.map((r) => ({
-        itemId: r.itemId,
-        quantity: r.quantity,
-        hoursToArrival: Math.max(0, (r.etaAt.getTime() - now) / 3_600_000),
-      }));
-
-      // Look up the upstream route lead time for the site (used to score
-      // supplier alternatives more realistically). We'll average outgoing
-      // edges; if no route is known, leave the sim default.
-      const siteRoutes = ctx.routes.filter(
-        (r) => r.fromNode === body.siteId || r.toNode === body.siteId,
-      );
-      if (siteRoutes.length > 0) {
-        upstreamRouteDays =
-          siteRoutes.reduce((s, r) => s + r.days, 0) / siteRoutes.length;
+      for (const id of selectedSiteIds) inboundRowsBySite.set(id, []);
+      for (const r of rows) {
+        const list = inboundRowsBySite.get(r.toNode);
+        if (!list) continue;
+        list.push({
+          itemId: r.itemId,
+          quantity: r.quantity,
+          hoursToArrival: Math.max(0, (r.etaAt.getTime() - now) / 3_600_000),
+        });
       }
+    }
 
-      sufficiency = evaluateSiteSufficiency({
+    const supplierById = new Map(suppliers.map((s) => [s.id, s]));
+    const onHandIndex = buildOnHandIndex(ctx.balances);
+
+    // Helper: average upstream/outgoing route days for a single site (used
+    // to score supplier alternatives more realistically).
+    const upstreamDaysForSite = (siteId: string): number => {
+      const rs = ctx.routes.filter(
+        (r) => r.fromNode === siteId || r.toNode === siteId,
+      );
+      if (rs.length === 0) return 5;
+      return rs.reduce((s, r) => s + r.days, 0) / rs.length;
+    };
+
+    type RawSufficiency = ReturnType<typeof evaluateSiteSufficiency>;
+    const evaluateForSites = (
+      siteIds: string[],
+      pooled: boolean,
+    ): RawSufficiency => {
+      const onHandByItem: Record<string, number> = {};
+      const inbound: ShipmentArrival[] = [];
+      for (const id of siteIds) {
+        for (const b of ctx.balances) {
+          if (b.nodeId !== id) continue;
+          onHandByItem[b.itemId] = (onHandByItem[b.itemId] ?? 0) + b.onHand;
+        }
+        inbound.push(...(inboundRowsBySite.get(id) ?? []));
+      }
+      // For pooled (combined) mode, average the upstream days across the
+      // selected sites; for a single site use that site's routes.
+      const upstream =
+        siteIds.length === 1
+          ? upstreamDaysForSite(siteIds[0])
+          : siteIds.length > 0
+            ? siteIds.reduce((s, id) => s + upstreamDaysForSite(id), 0) /
+              siteIds.length
+            : 5;
+      return evaluateSiteSufficiency({
         required,
         onHandByItem,
         inbound,
@@ -181,92 +241,173 @@ router.post("/casualty/evaluate", async (req, res, next) => {
         resupplyEtaHours: body.resupplyEtaHours ?? undefined,
         supplierContext: {
           suppliers,
-          upstreamRouteDays,
+          upstreamRouteDays: upstream,
         },
       });
+      void pooled;
+    };
 
-      // Reroute suggestions for the *unmet* patient subset. We approximate
-      // unmet share per patient type by the global red-row severity: if 80%
-      // of the bill-of-materials is red, we treat 80% of the patients as
-      // unmet (rounded). This is intentionally simple — operators can edit
-      // the patient counts and re-evaluate.
-      const redCount = sufficiency.summary.redCount;
-      const totalReq = sufficiency.summary.totalRequiredItems;
+    const mapSufficiency = (s: RawSufficiency) => ({
+      summary: s.summary,
+      rows: s.rows.map((r) => ({
+        ...r,
+        supplierAlternatives: r.supplierAlternatives?.map((alt) => {
+          const sup = supplierById.get(alt.supplierId);
+          return {
+            supplierId: alt.supplierId,
+            supplierName: alt.supplierName,
+            channel: alt.channel,
+            country: sup?.country ?? "",
+            projectedEta: alt.etaDays,
+            score: alt.rankScore,
+            reliabilityScore: alt.reliabilityScore,
+            leadTimeDaysMean: sup?.leadTimeDaysMean,
+            rationale: null,
+          };
+        }),
+      })),
+    });
+
+    // Helper: derive an "unmet patient subset" from a sufficiency result
+    // (used to drive reroute suggestions). Mirrors the legacy heuristic.
+    const unmetSubset = (s: RawSufficiency): Record<string, number> => {
+      const redCount = s.summary.redCount;
+      const totalReq = s.summary.totalRequiredItems;
       const unmetFraction = totalReq > 0 ? Math.min(1, redCount / totalReq) : 0;
-      const unmetPatientCounts: Record<string, number> = {};
+      const out: Record<string, number> = {};
       for (const [pid, n] of Object.entries(body.patientCounts)) {
         const u = Math.ceil(n * unmetFraction);
-        if (u > 0) unmetPatientCounts[pid] = u;
+        if (u > 0) out[pid] = u;
       }
-      if (Object.keys(unmetPatientCounts).length > 0) {
-        const originSite = ctx.nodes.find((n) => n.id === body.siteId);
-        const candidates = body.restrictReroutesToHub
-          ? ctx.nodes.filter(
-              (n) =>
-                n.regionalHub &&
-                originSite?.regionalHub &&
-                n.regionalHub === originSite.regionalHub,
-            )
-          : ctx.nodes;
+      return out;
+    };
+
+    // Build reroute candidate pool given the effective mode + selection.
+    const candidatePoolForOrigin = (
+      originSiteId: string,
+      modeOverride?: typeof effectiveMode,
+    ): SimNode[] => {
+      const mode = modeOverride ?? effectiveMode;
+      let pool: SimNode[] = ctx.nodes;
+      if (body.restrictReroutesToHub) {
+        const originSite = ctx.nodes.find((n) => n.id === originSiteId);
+        pool = pool.filter(
+          (n) =>
+            n.regionalHub &&
+            originSite?.regionalHub &&
+            n.regionalHub === originSite.regionalHub,
+        );
+      }
+      if (mode === "combined") {
+        // Pool is everything outside the selection.
+        pool = pool.filter((n) => !selectedSiteIds.includes(n.id));
+      } else if (mode === "primary") {
+        // Pool is constrained to the *other* selected sites.
+        const others = new Set(
+          selectedSiteIds.filter((id) => id !== originSiteId),
+        );
+        pool = pool.filter((n) => others.has(n.id));
+      }
+      return pool;
+    };
+
+    let sufficiency: ReturnType<typeof mapSufficiency> | null = null;
+    let reroutes: ReturnType<typeof suggestPatientReroutes> = [];
+    const comparison: Array<{
+      siteId: string;
+      siteName: string;
+      sufficiency: ReturnType<typeof mapSufficiency>;
+    }> = [];
+
+    if (selectedSiteIds.length === 0) {
+      // Unscoped — keep the legacy behaviour (no sufficiency/reroutes).
+      sufficiency = null;
+      reroutes = [];
+    } else if (effectiveMode === "single") {
+      const onlyId = selectedSiteIds[0];
+      const raw = evaluateForSites([onlyId], false);
+      sufficiency = mapSufficiency(raw);
+      const unmet = unmetSubset(raw);
+      if (Object.keys(unmet).length > 0) {
         reroutes = suggestPatientReroutes({
-          originSiteId: body.siteId,
-          unmetPatientCounts,
+          originSiteId: onlyId,
+          unmetPatientCounts: unmet,
           arrivalWindowHours: body.arrivalWindowHours,
-          candidateSites: candidates,
+          candidateSites: candidatePoolForOrigin(onlyId, "single"),
           routes: ctx.routes,
-          onHandBySiteItem: buildOnHandIndex(ctx.balances),
+          onHandBySiteItem: onHandIndex,
           patientTypes: patientMeta,
           patientRequirements: requirements,
           items: ctx.items,
         });
       }
+    } else if (effectiveMode === "combined") {
+      const raw = evaluateForSites(selectedSiteIds, true);
+      sufficiency = mapSufficiency(raw);
+      const unmet = unmetSubset(raw);
+      if (Object.keys(unmet).length > 0) {
+        // Use the first selected site as the geographic anchor for distance
+        // calculations; reroute pool is all sites *outside* the selection.
+        reroutes = suggestPatientReroutes({
+          originSiteId: selectedSiteIds[0],
+          unmetPatientCounts: unmet,
+          arrivalWindowHours: body.arrivalWindowHours,
+          candidateSites: candidatePoolForOrigin(selectedSiteIds[0]),
+          routes: ctx.routes,
+          onHandBySiteItem: onHandIndex,
+          patientTypes: patientMeta,
+          patientRequirements: requirements,
+          items: ctx.items,
+        });
+      }
+    } else if (effectiveMode === "primary" && primarySiteId) {
+      const raw = evaluateForSites([primarySiteId], false);
+      sufficiency = mapSufficiency(raw);
+      const unmet = unmetSubset(raw);
+      if (Object.keys(unmet).length > 0) {
+        reroutes = suggestPatientReroutes({
+          originSiteId: primarySiteId,
+          unmetPatientCounts: unmet,
+          arrivalWindowHours: body.arrivalWindowHours,
+          candidateSites: candidatePoolForOrigin(primarySiteId),
+          routes: ctx.routes,
+          onHandBySiteItem: onHandIndex,
+          patientTypes: patientMeta,
+          patientRequirements: requirements,
+          items: ctx.items,
+        });
+      }
+    } else if (effectiveMode === "compare") {
+      // Per-site evaluations; no top-level sufficiency or reroutes.
+      for (const id of selectedSiteIds) {
+        const raw = evaluateForSites([id], false);
+        const node = ctx.nodes.find((n) => n.id === id);
+        comparison.push({
+          siteId: id,
+          siteName: node?.name ?? id,
+          sufficiency: mapSufficiency(raw),
+        });
+      }
+      sufficiency = null;
+      reroutes = [];
     }
 
-    // Staffing summary headline (clinician roster + total clinician hours)
-    // is implicit in the PPE row totals; surface a plain version too.
-    const staffingPatients = Object.entries(body.patientCounts)
-      .filter(([, n]) => n > 0)
-      .map(([pid, count]) => ({
-        patientTypeId: pid,
-        count,
-        avgClinicianMinutes:
-          patientMeta.find((p) => p.id === pid)?.avgClinicianMinutes ?? 60,
-      }));
-    const totalPatients = staffingPatients.reduce((s, p) => s + p.count, 0);
-
-    // Map RecommendationAlternative -> SupplierAlternative shape declared
-    // in OpenAPI (projectedEta/score/country are renamed/derived fields).
-    const supplierById = new Map(suppliers.map((s) => [s.id, s]));
-    const mappedSufficiency = sufficiency
-      ? {
-          summary: sufficiency.summary,
-          rows: sufficiency.rows.map((r) => ({
-            ...r,
-            supplierAlternatives: r.supplierAlternatives?.map((alt) => {
-              const s = supplierById.get(alt.supplierId);
-              return {
-                supplierId: alt.supplierId,
-                supplierName: alt.supplierName,
-                channel: alt.channel,
-                country: s?.country ?? "",
-                projectedEta: alt.etaDays,
-                score: alt.rankScore,
-                reliabilityScore: alt.reliabilityScore,
-                leadTimeDaysMean: s?.leadTimeDaysMean,
-                rationale: null,
-              };
-            }),
-          })),
-        }
-      : null;
+    const totalPatients = Object.values(body.patientCounts).reduce(
+      (s, n) => s + n,
+      0,
+    );
 
     res.json({
       arrivalWindowHours: body.arrivalWindowHours,
       totalPatients,
       patientCounts: body.patientCounts,
       requiredItems: required,
-      sufficiency: mappedSufficiency,
+      sufficiency,
       reroutes: reroutes ?? [],
+      multiSiteMode: effectiveMode,
+      selectedSiteIds,
+      primarySiteId,
+      comparison,
     });
   } catch (err) {
     next(err);

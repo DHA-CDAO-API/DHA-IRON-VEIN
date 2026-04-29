@@ -4029,7 +4029,25 @@ export const EvaluateCasualtyDemandBody = zod.object({
     .string()
     .nullish()
     .describe(
-      "Optional. When set, scopes the response to a specific site (adds sufficiency rows + reroute suggestions).",
+      "Optional. Legacy single-site selector. When set (and `siteIds` is empty\/absent), behaves exactly as before — scopes the response to one site.",
+    ),
+  siteIds: zod
+    .array(zod.string())
+    .optional()
+    .describe(
+      "Optional list of treatment site ids. When two or more are provided, `multiSiteMode` controls how they are evaluated. When exactly one is provided it behaves like `siteId`.",
+    ),
+  multiSiteMode: zod
+    .enum(["combined", "compare", "primary"])
+    .optional()
+    .describe(
+      "How to evaluate `siteIds` when 2+ are provided.\n- `combined`: pool on-hand + inbound across the selected sites and check sufficiency once. Reroute candidates are drawn from sites \*outside\* the selection.\n- `compare`: evaluate each selected site independently and return one entry per site under `comparison`. The top-level `sufficiency` is null and reroutes are empty.\n- `primary`: scope sufficiency to a single designated `primarySiteId`, but constrain reroute candidates to the \*other\* selected sites only.\n",
+    ),
+  primarySiteId: zod
+    .string()
+    .nullish()
+    .describe(
+      "Required when `multiSiteMode` is `primary`. Must be one of the entries in `siteIds`.",
     ),
   patientCounts: zod
     .record(zod.string(), zod.number())
@@ -4040,7 +4058,9 @@ export const EvaluateCasualtyDemandBody = zod.object({
   resupplyEtaHours: zod
     .number()
     .nullish()
-    .describe("Optional operator-entered ETA for next resupply."),
+    .describe(
+      "Optional operator-entered ETA (in hours) for the next major resupply.",
+    ),
   restrictReroutesToHub: zod
     .boolean()
     .default(evaluateCasualtyDemandBodyRestrictReroutesToHubDefault),
@@ -4131,4 +4151,74 @@ export const EvaluateCasualtyDemandResponse = zod.object({
       rationale: zod.string(),
     }),
   ),
+  multiSiteMode: zod
+    .enum(["single", "combined", "compare", "primary"])
+    .optional()
+    .describe(
+      "How the response was evaluated. `single` is the legacy single-site or single-entry-`siteIds` case.",
+    ),
+  selectedSiteIds: zod
+    .array(zod.string())
+    .optional()
+    .describe("Echo of the site ids the result was scoped to."),
+  primarySiteId: zod.string().nullish().describe("Echoed for `primary` mode."),
+  comparison: zod
+    .array(
+      zod.object({
+        siteId: zod.string(),
+        siteName: zod.string(),
+        sufficiency: zod.object({
+          rows: zod.array(
+            zod
+              .object({
+                itemId: zod.string(),
+                itemName: zod.string(),
+                category: zod.string(),
+                classOfSupply: zod.string(),
+                unitOfIssue: zod.string(),
+                commodityType: zod.string(),
+                unspscCommodity: zod.string(),
+                size: zod.string(),
+                productNoun: zod.string(),
+                requiredQty: zod.number(),
+                source: zod.enum(["patient_bom", "ppe_staffing", "both"]),
+              })
+              .and(
+                zod.object({
+                  onHand: zod.number(),
+                  inboundBeforeWindow: zod.number(),
+                  shortfallQty: zod.number(),
+                  verdict: zod.enum(["green", "amber", "red"]),
+                  supplierAlternatives: zod
+                    .array(
+                      zod.object({
+                        supplierId: zod.string(),
+                        supplierName: zod.string(),
+                        channel: zod.string(),
+                        country: zod.string(),
+                        projectedEta: zod.number(),
+                        score: zod.number(),
+                        reliabilityScore: zod.number().optional(),
+                        leadTimeDaysMean: zod.number().optional(),
+                        rationale: zod.string().nullish(),
+                      }),
+                    )
+                    .optional(),
+                }),
+              ),
+          ),
+          summary: zod.object({
+            totalRequiredItems: zod.number(),
+            greenCount: zod.number(),
+            amberCount: zod.number(),
+            redCount: zod.number(),
+            verdict: zod.string(),
+          }),
+        }),
+      }),
+    )
+    .optional()
+    .describe(
+      "Populated only for `compare` mode — one entry per selected site.",
+    ),
 });

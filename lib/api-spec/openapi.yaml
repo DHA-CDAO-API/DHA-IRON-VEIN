@@ -3334,7 +3334,22 @@ components:
       properties:
         siteId:
           type: ["string", "null"]
-          description: Optional. When set, scopes the response to a specific site (adds sufficiency rows + reroute suggestions).
+          description: Optional. Legacy single-site selector. When set (and `siteIds` is empty/absent), behaves exactly as before — scopes the response to one site.
+        siteIds:
+          type: array
+          items: { type: string }
+          description: Optional list of treatment site ids. When two or more are provided, `multiSiteMode` controls how they are evaluated. When exactly one is provided it behaves like `siteId`.
+        multiSiteMode:
+          type: string
+          enum: [combined, compare, primary]
+          description: |
+            How to evaluate `siteIds` when 2+ are provided.
+            - `combined`: pool on-hand + inbound across the selected sites and check sufficiency once. Reroute candidates are drawn from sites *outside* the selection.
+            - `compare`: evaluate each selected site independently and return one entry per site under `comparison`. The top-level `sufficiency` is null and reroutes are empty.
+            - `primary`: scope sufficiency to a single designated `primarySiteId`, but constrain reroute candidates to the *other* selected sites only.
+        primarySiteId:
+          type: ["string", "null"]
+          description: Required when `multiSiteMode` is `primary`. Must be one of the entries in `siteIds`.
         patientCounts:
           type: object
           additionalProperties: { type: number }
@@ -3344,7 +3359,7 @@ components:
           description: Hours over which the casualty load arrives.
         resupplyEtaHours:
           type: ["number", "null"]
-          description: Optional operator-entered ETA for next resupply.
+          description: Optional operator-entered ETA (in hours) for the next major resupply.
         restrictReroutesToHub:
           type: boolean
           default: false
@@ -3423,6 +3438,21 @@ components:
         residualCapacity: { type: integer }
         rationale: { type: string }
 
+    SiteSufficiencyEntry:
+      type: object
+      required: [siteId, siteName, sufficiency]
+      properties:
+        siteId: { type: string }
+        siteName: { type: string }
+        sufficiency:
+          type: object
+          required: [rows, summary]
+          properties:
+            rows:
+              type: array
+              items: { $ref: "#/components/schemas/SufficiencyRow" }
+            summary: { $ref: "#/components/schemas/SufficiencySummary" }
+
     CasualtyEvaluateResult:
       type: object
       required: [arrivalWindowHours, totalPatients, patientCounts, requiredItems, reroutes]
@@ -3448,3 +3478,18 @@ components:
         reroutes:
           type: array
           items: { $ref: "#/components/schemas/PatientRerouteCandidate" }
+        multiSiteMode:
+          type: string
+          enum: [single, combined, compare, primary]
+          description: How the response was evaluated. `single` is the legacy single-site or single-entry-`siteIds` case.
+        selectedSiteIds:
+          type: array
+          items: { type: string }
+          description: Echo of the site ids the result was scoped to.
+        primarySiteId:
+          type: ["string", "null"]
+          description: Echoed for `primary` mode.
+        comparison:
+          type: array
+          items: { $ref: "#/components/schemas/SiteSufficiencyEntry" }
+          description: Populated only for `compare` mode — one entry per selected site.

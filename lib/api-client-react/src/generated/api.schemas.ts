@@ -2233,22 +2233,51 @@ export interface EventType {
 }
 
 /**
+ * How to evaluate `siteIds` when 2+ are provided.
+- `combined`: pool on-hand + inbound across the selected sites and check sufficiency once. Reroute candidates are drawn from sites *outside* the selection.
+- `compare`: evaluate each selected site independently and return one entry per site under `comparison`. The top-level `sufficiency` is null and reroutes are empty.
+- `primary`: scope sufficiency to a single designated `primarySiteId`, but constrain reroute candidates to the *other* selected sites only.
+
+ */
+export type CasualtyEvaluateInputMultiSiteMode =
+  (typeof CasualtyEvaluateInputMultiSiteMode)[keyof typeof CasualtyEvaluateInputMultiSiteMode];
+
+export const CasualtyEvaluateInputMultiSiteMode = {
+  combined: "combined",
+  compare: "compare",
+  primary: "primary",
+} as const;
+
+/**
  * Patient counts keyed by patient_type id.
  */
 export type CasualtyEvaluateInputPatientCounts = { [key: string]: number };
 
 export interface CasualtyEvaluateInput {
   /**
-   * Optional. When set, scopes the response to a specific site (adds sufficiency rows + reroute suggestions).
+   * Optional. Legacy single-site selector. When set (and `siteIds` is empty/absent), behaves exactly as before — scopes the response to one site.
    * @nullable
    */
   siteId?: string | null;
+  /** Optional list of treatment site ids. When two or more are provided, `multiSiteMode` controls how they are evaluated. When exactly one is provided it behaves like `siteId`. */
+  siteIds?: string[];
+  /** How to evaluate `siteIds` when 2+ are provided.
+- `combined`: pool on-hand + inbound across the selected sites and check sufficiency once. Reroute candidates are drawn from sites *outside* the selection.
+- `compare`: evaluate each selected site independently and return one entry per site under `comparison`. The top-level `sufficiency` is null and reroutes are empty.
+- `primary`: scope sufficiency to a single designated `primarySiteId`, but constrain reroute candidates to the *other* selected sites only.
+ */
+  multiSiteMode?: CasualtyEvaluateInputMultiSiteMode;
+  /**
+   * Required when `multiSiteMode` is `primary`. Must be one of the entries in `siteIds`.
+   * @nullable
+   */
+  primarySiteId?: string | null;
   /** Patient counts keyed by patient_type id. */
   patientCounts: CasualtyEvaluateInputPatientCounts;
   /** Hours over which the casualty load arrives. */
   arrivalWindowHours: number;
   /**
-   * Optional operator-entered ETA for next resupply.
+   * Optional operator-entered ETA (in hours) for the next major resupply.
    * @nullable
    */
   resupplyEtaHours?: number | null;
@@ -2338,12 +2367,36 @@ export interface PatientRerouteCandidate {
   rationale: string;
 }
 
+export type SiteSufficiencyEntrySufficiency = {
+  rows: SufficiencyRow[];
+  summary: SufficiencySummary;
+};
+
+export interface SiteSufficiencyEntry {
+  siteId: string;
+  siteName: string;
+  sufficiency: SiteSufficiencyEntrySufficiency;
+}
+
 export type CasualtyEvaluateResultPatientCounts = { [key: string]: number };
 
 export type CasualtyEvaluateResultSufficiency = null | {
   rows: SufficiencyRow[];
   summary: SufficiencySummary;
 };
+
+/**
+ * How the response was evaluated. `single` is the legacy single-site or single-entry-`siteIds` case.
+ */
+export type CasualtyEvaluateResultMultiSiteMode =
+  (typeof CasualtyEvaluateResultMultiSiteMode)[keyof typeof CasualtyEvaluateResultMultiSiteMode];
+
+export const CasualtyEvaluateResultMultiSiteMode = {
+  single: "single",
+  combined: "combined",
+  compare: "compare",
+  primary: "primary",
+} as const;
 
 export interface CasualtyEvaluateResult {
   arrivalWindowHours: number;
@@ -2352,6 +2405,17 @@ export interface CasualtyEvaluateResult {
   requiredItems: CasualtyRequirementRow[];
   sufficiency?: CasualtyEvaluateResultSufficiency;
   reroutes: PatientRerouteCandidate[];
+  /** How the response was evaluated. `single` is the legacy single-site or single-entry-`siteIds` case. */
+  multiSiteMode?: CasualtyEvaluateResultMultiSiteMode;
+  /** Echo of the site ids the result was scoped to. */
+  selectedSiteIds?: string[];
+  /**
+   * Echoed for `primary` mode.
+   * @nullable
+   */
+  primarySiteId?: string | null;
+  /** Populated only for `compare` mode — one entry per selected site. */
+  comparison?: SiteSufficiencyEntry[];
 }
 
 export type ListCatalogItemsParams = {
