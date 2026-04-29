@@ -114,6 +114,16 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       hoverText: "hover:text-blue-100",
       ring: "focus-visible:ring-blue-400",
     },
+    "/tags": {
+      iconActive: "text-fuchsia-300",
+      iconInactive: "text-fuchsia-400/65",
+      iconHover: "group-hover:text-fuchsia-200",
+      activeBg: "bg-fuchsia-400/15",
+      activeText: "text-fuchsia-100",
+      hoverBg: "hover:bg-fuchsia-400/10",
+      hoverText: "hover:text-fuchsia-100",
+      ring: "focus-visible:ring-fuchsia-400",
+    },
     "/data": {
       iconActive: "text-lime-300",
       iconInactive: "text-lime-400/65",
