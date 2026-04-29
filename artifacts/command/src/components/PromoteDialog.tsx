@@ -234,7 +234,15 @@ export function PromoteDialog({
                   setDraft({ ...draft, supplierId: v })
                 }
               >
-                <SelectTrigger className="h-8 text-sm" data-testid="promote-supplier">
+                {/* The trigger's base styles include `[&>span]:line-clamp-1`,
+                    which sets `display:-webkit-box` on the value wrapper and
+                    breaks any inner flex layout. We override it with `!flex`
+                    so the supplier name can truncate while the channel badge
+                    and "suggested" tag stay visible next to the chevron. */}
+                <SelectTrigger
+                  className="h-8 text-sm [&>span]:!flex [&>span]:items-center [&>span]:gap-2 [&>span]:min-w-0 [&>span]:overflow-hidden"
+                  data-testid="promote-supplier"
+                >
                   <SelectValue placeholder="Select supplier" />
                 </SelectTrigger>
                 <SelectContent>
@@ -245,13 +253,13 @@ export function PromoteDialog({
                   ) : (
                     orderedSuppliers.map((s) => (
                       <SelectItem key={s.id} value={s.id}>
-                        <span className="flex items-center gap-2">
-                          <span>{s.name}</span>
-                          <span className="text-[10px] uppercase text-muted-foreground">
+                        <span className="flex items-center gap-2 min-w-0">
+                          <span className="truncate">{s.name}</span>
+                          <span className="text-[10px] uppercase text-muted-foreground shrink-0">
                             {s.channel}
                           </span>
                           {s.id === rec.suggestedSupplierId ? (
-                            <span className="text-[10px] text-primary">
+                            <span className="text-[10px] text-primary shrink-0">
                               · suggested
                             </span>
                           ) : null}
