@@ -19,7 +19,6 @@ import {
   type ActivityEntry,
 } from '@workspace/api-client-react';
 import { PromoteDialog, type PromoteOverrides } from '@/components/PromoteDialog';
-import { EditTlammDialog } from '@/components/EditTlammDialog';
 import { Area, AreaChart, ResponsiveContainer, Tooltip as RechartsTooltip, YAxis } from 'recharts';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -145,7 +144,6 @@ export default function SiteDetail() {
     { itemId: string; toNodeId: string; quantity: number } | null
   >(null);
   const [newOrderOpen, setNewOrderOpen] = useState(false);
-  const [editTlammOpen, setEditTlammOpen] = useState(false);
   const openOrderForRow = useCallback(
     (row: DosRow) => {
       if (!nodeId) return;
@@ -388,24 +386,6 @@ export default function SiteDetail() {
             <h1 className="text-2xl font-bold uppercase tracking-wider">{node.name}</h1>
             <Badge variant="outline" className="text-primary border-primary">{node.type}</Badge>
             <Badge variant={node.optempo === 'HEIGHTENED' ? 'destructive' : 'secondary'}>{node.optempo}</Badge>
-            {tlammStockpile ? (
-              <Badge
-                variant="outline"
-                className="text-[11px] font-bold tracking-wider border-cyan-400 text-cyan-300 bg-cyan-500/10"
-                title="Theater Lead Agent for Medical Materiel — regional stockpile and primary source for downstream MTFs"
-              >
-                TLAMM HUB
-              </Badge>
-            ) : null}
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-6 px-2 text-[10px] uppercase tracking-wider border-cyan-500/40 text-cyan-200 hover:text-cyan-100"
-              onClick={() => setEditTlammOpen(true)}
-              data-testid="edit-tlamm-button"
-            >
-              Edit TLAMM / AOR
-            </Button>
           </div>
           <div className="flex items-center text-sm text-muted-foreground gap-2">
             <MapPin className="h-4 w-4" />
@@ -957,19 +937,6 @@ export default function SiteDetail() {
         }}
         prefill={orderPrefill}
       />
-      {nodeId ? (
-        <EditTlammDialog
-          open={editTlammOpen}
-          onOpenChange={setEditTlammOpen}
-          nodeId={nodeId}
-          nodeName={node.name}
-          initial={{
-            isTlamm: node.isTlamm ?? false,
-            aorId: node.aorId ?? null,
-            primaryTlammNodeId: node.primaryTlammNodeId ?? null,
-          }}
-        />
-      ) : null}
     </div>
   );
 }
