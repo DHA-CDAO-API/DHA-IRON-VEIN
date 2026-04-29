@@ -67,7 +67,13 @@ import {
   Pencil,
   Trash2,
   Check,
+  Info,
 } from "lucide-react";
+import {
+  Tooltip as UiTooltip,
+  TooltipContent as UiTooltipContent,
+  TooltipTrigger as UiTooltipTrigger,
+} from "@/components/ui/tooltip";
 import {
   CartesianGrid,
   Label as RLabel,
@@ -1010,9 +1016,15 @@ function CustomBuilder({
     <Card className="bg-card/50 border-border">
       <CardContent className="p-3 space-y-3">
         <div className="space-y-1.5">
-          <Label htmlFor="builder-name" className="text-xs">
-            Name
-          </Label>
+          <div className="flex items-center gap-1">
+            <Label htmlFor="builder-name" className="text-xs">
+              Name
+            </Label>
+            <FieldInfo
+              label="Name"
+              text="Short label for this scenario in your library — e.g. 'Typhoon Yuzu — sustained denial'."
+            />
+          </div>
           <Input
             id="builder-name"
             value={state.name}
@@ -1022,7 +1034,13 @@ function CustomBuilder({
         </div>
 
         <div className="space-y-1.5">
-          <Label className="text-xs">Kind</Label>
+          <div className="flex items-center gap-1">
+            <Label className="text-xs">Kind</Label>
+            <FieldInfo
+              label="Kind"
+              text="Category for this scenario (natural disaster, peer conflict, supply disruption, etc.). Used to group it in the library and pick a default priority."
+            />
+          </div>
           <Select value={state.kind} onValueChange={(v) => update("kind", v)}>
             <SelectTrigger className="h-8 text-sm">
               <SelectValue />
@@ -1038,9 +1056,15 @@ function CustomBuilder({
         </div>
 
         <div className="space-y-1.5">
-          <Label className="text-xs">
-            Affected Nodes ({state.affectedNodes.length})
-          </Label>
+          <div className="flex items-center gap-1">
+            <Label className="text-xs">
+              Affected Nodes ({state.affectedNodes.length})
+            </Label>
+            <FieldInfo
+              label="Affected Nodes"
+              text="Sites where the perturbation hits — e.g. an APOD knocked offline or a base seeing a demand surge. The multipliers below apply to these nodes."
+            />
+          </div>
           <div className="max-h-32 overflow-y-auto rounded-md border border-border bg-background/50 p-1.5 space-y-0.5">
             {nodes.length === 0 ? (
               <div className="text-[11px] text-muted-foreground px-1 py-1">
@@ -1073,9 +1097,15 @@ function CustomBuilder({
         </div>
 
         <div className="space-y-1.5">
-          <Label className="text-xs">
-            Theater Zones ({state.zoneIds.length})
-          </Label>
+          <div className="flex items-center gap-1">
+            <Label className="text-xs">
+              Theater Zones ({state.zoneIds.length})
+            </Label>
+            <FieldInfo
+              label="Theater Zones"
+              text="Operational areas drawn on the Network Map. Routes that cross a selected zone get the route delay and reliability changes below."
+            />
+          </div>
           <div className="max-h-28 overflow-y-auto rounded-md border border-border bg-background/50 p-1.5 space-y-0.5">
             {zones.length === 0 ? (
               <div className="text-[11px] text-muted-foreground px-1 py-1 italic">
@@ -1130,6 +1160,7 @@ function CustomBuilder({
           step={0.05}
           value={state.populationMultiplier}
           onChange={(v) => update("populationMultiplier", v)}
+          info="Scales the population at risk at affected sites. 1× = baseline, 2× ≈ refugee influx, 5× ≈ mass-cas evac surge."
         />
         <SliderField
           label="Encounter Multiplier"
@@ -1138,6 +1169,7 @@ function CustomBuilder({
           step={0.05}
           value={state.encounterMultiplier}
           onChange={(v) => update("encounterMultiplier", v)}
+          info="Scales daily medical encounters per capita at affected sites. 1× = baseline, 3× ≈ MASCAL surge, 8× ≈ peer-fight optempo."
         />
         <SliderField
           label="Waste Multiplier"
@@ -1146,6 +1178,7 @@ function CustomBuilder({
           step={0.05}
           value={state.wasteMultiplier}
           onChange={(v) => update("wasteMultiplier", v)}
+          info="Scales consumable spoilage and loss. 1× = nominal, 2× ≈ degraded cold chain, 5× ≈ cascading cold-chain failure."
         />
         <SliderField
           label="Route Delay (days)"
@@ -1155,6 +1188,7 @@ function CustomBuilder({
           value={state.routeDelayDays}
           onChange={(v) => update("routeDelayDays", v)}
           format={(v) => `${v.toFixed(0)}d`}
+          info="Extra transit time added to inbound shipments routed through affected nodes or zones. 0d = no delay, 14d ≈ contested SLOC, 30d ≈ sustained denial."
         />
         <SliderField
           label="Route Reliability Δ"
@@ -1164,6 +1198,7 @@ function CustomBuilder({
           value={state.routeReliabilityDelta}
           onChange={(v) => update("routeReliabilityDelta", v)}
           format={(v) => `${v >= 0 ? "+" : ""}${v.toFixed(2)}`}
+          info="Change in route on-time reliability. 0 = no change, −0.40 ≈ 40-point drop in on-time delivery, +0.10 ≈ small improvement."
         />
         <SliderField
           label="Horizon (days)"
@@ -1173,12 +1208,19 @@ function CustomBuilder({
           value={state.horizonDays}
           onChange={(v) => update("horizonDays", v)}
           format={(v) => `${v.toFixed(0)}d`}
+          info="How far forward to simulate. 14d = two-week look-ahead, 30d = full month, 45d = extended outlook."
         />
 
         <div className="space-y-1.5">
-          <Label htmlFor="builder-summary" className="text-xs">
-            Summary (optional)
-          </Label>
+          <div className="flex items-center gap-1">
+            <Label htmlFor="builder-summary" className="text-xs">
+              Summary (optional)
+            </Label>
+            <FieldInfo
+              label="Summary"
+              text="Free-text description shown in the scenario library — e.g. assumptions, source intel, or what this scenario is exploring."
+            />
+          </div>
           <Textarea
             id="builder-summary"
             value={state.summary}
@@ -1236,6 +1278,25 @@ function CustomBuilder({
   );
 }
 
+function FieldInfo({ text, label }: { text: string; label: string }) {
+  return (
+    <UiTooltip>
+      <UiTooltipTrigger asChild>
+        <button
+          type="button"
+          aria-label={`${label}: more info`}
+          className="inline-flex h-3.5 w-3.5 items-center justify-center rounded-full text-muted-foreground/70 hover:text-foreground focus:text-foreground focus:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        >
+          <Info className="h-3 w-3" aria-hidden="true" />
+        </button>
+      </UiTooltipTrigger>
+      <UiTooltipContent side="top" className="max-w-[260px]">
+        <p className="leading-snug">{text}</p>
+      </UiTooltipContent>
+    </UiTooltip>
+  );
+}
+
 function SliderField({
   label,
   min,
@@ -1244,6 +1305,7 @@ function SliderField({
   value,
   onChange,
   format,
+  info,
 }: {
   label: string;
   min: number;
@@ -1252,11 +1314,15 @@ function SliderField({
   value: number;
   onChange: (v: number) => void;
   format?: (v: number) => string;
+  info?: string;
 }) {
   return (
     <div className="space-y-1">
       <div className="flex items-center justify-between">
-        <Label className="text-[11px] text-muted-foreground">{label}</Label>
+        <div className="flex items-center gap-1">
+          <Label className="text-[11px] text-muted-foreground">{label}</Label>
+          {info ? <FieldInfo text={info} label={label} /> : null}
+        </div>
         <span className="text-[11px] font-mono text-foreground">
           {format ? format(value) : value.toFixed(2)}
         </span>
