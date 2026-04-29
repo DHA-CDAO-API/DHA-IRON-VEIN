@@ -465,21 +465,64 @@ export default function NetworkGLMap(props: NetworkMapProps) {
     return effectiveCategories.has(cat);
   };
 
-  // Shipment-level match: itemId is the most specific signal — if the user
-  // picked individual items those shipments should pass even when their
-  // category isn't otherwise selected. Falls back to category match.
+  // Categories selected via the legacy `selectedCategories` prop are
+  // bare-category selections (no per-item narrowing implied), so shipments
+  // whose category falls in this set should always pass even when other
+  // sub-layers have contributed item-precise IDs. This keeps mixed
+  // selections like "LTOWB sub-layer + bare PPE category" working.
+  const bareCategorySelections = useMemo<Set<string>>(() => {
+    const out = new Set<string>();
+    if (selectedCategories) for (const c of selectedCategories) out.add(c);
+    return out;
+  }, [selectedCategories]);
+
+  // Shipment-level match. When the user has narrowed the selection to
+  // specific items (any sub-layer in Blood/Supplies/Custom contributes a
+  // concrete itemIds set), require a strict itemId match for shipments
+  // that carry an itemId — the category fallback would over-match here
+  // because, e.g. picking LTOWB also sets `blood_products` in
+  // effectiveCategories, which every PRBC/FFP/Platelet shipment shares.
+  // Bare-category selections (legacy prop) still match. Shipments without
+  // an itemId fall back to category so legacy rows aren't lost.
   const shipmentMatchesFilter = (s: any): boolean => {
     if (allLayersActive) return true;
-    if (s?.itemId && effectiveItemIds.has(s.itemId)) return true;
+    if (s?.itemId) {
+      if (effectiveItemIds.has(s.itemId)) return true;
+      if (s.category && bareCategorySelections.has(s.category)) return true;
+      if (effectiveItemIds.size === 0) return categoryActive(s.category);
+      return false;
+    }
     return categoryActive(s?.category);
   };
 
+  // Routes don't carry per-item granularity on the wire (their `categories`
+  // field is the union of every supply class that has ever traversed them),
+  // so deriving route activity from `r.categories` over-matches the same
+  // way shipments would. Instead, a route is active iff it currently has
+  // at least one in-flight shipment that passes the layer filter. This
+  // matches the per-sub-layer "in flight" badge the operator already sees
+  // in the Layers panel. We additionally honour bare-category selections
+  // (legacy prop): a route whose categories include a bare-category pick
+  // is always active, because that path doesn't imply item-level narrowing.
+  const activeRouteEndpoints = useMemo<Set<string> | null>(() => {
+    if (allLayersActive) return null;
+    const set = new Set<string>();
+    for (const s of shipments) {
+      if (!shipmentMatchesFilter(s)) continue;
+      set.add(`${s.fromNode}::${s.toNode}`);
+    }
+    return set;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shipments, allLayersActive, effectiveItemIds, effectiveCategories, bareCategorySelections]);
+
   const routeMatchesFilter = (r: any): boolean => {
     if (allLayersActive) return true;
-    const cats: string[] = r.categories ?? [];
-    if (cats.length === 0) return false;
-    for (const c of cats) if (categoryActive(c)) return true;
-    return false;
+    if (bareCategorySelections.size > 0) {
+      const cats: string[] = r.categories ?? [];
+      for (const c of cats) if (bareCategorySelections.has(c)) return true;
+    }
+    if (!activeRouteEndpoints) return true;
+    return activeRouteEndpoints.has(`${r.fromNode}::${r.toNode}`);
   };
 
   // Pre-compute curved waypoints for every route once
@@ -509,7 +552,7 @@ export default function NetworkGLMap(props: NetworkMapProps) {
     }
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [routes, nodeIndex, allLayersActive, selectedCategories, layerSelection]);
+  }, [routes, nodeIndex, allLayersActive, selectedCategories, layerSelection, activeRouteEndpoints, bareCategorySelections]);
 
   // Build animated shipment trips. Each trip is a real shipment row, so the
   // particle the operator sees is clickable and surfaces the underlying
