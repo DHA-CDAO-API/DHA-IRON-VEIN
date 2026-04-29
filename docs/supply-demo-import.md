@@ -419,3 +419,426 @@ curl -X POST $API/admin/supply-import/rollback | jq .
 # All four supply_demo_v2_* tables empty, catalog_entries back to 1664,
 # nodes back to 35.
 ```
+
+# Supply demo v2 import — operator reference
+
+## Overview
+
+The Supply demo v2 import loads a single source workbook —
+`attached_assets/Supply_Demo_Data_2_1777401753577.xlsx` — into the
+Postgres database backing the IRON VEIN platform. The workbook is the
+"Supply_Demo_Data_2" extract: 14 columns of issuance records covering
+catalog metadata, military treatment facility (MTF) codes, and per-line
+order quantities. It is dense with byte-identical duplicate rows.
+
+Observed source size: roughly **1.05 million data rows**, which sits
+right at Microsoft Excel's per-sheet row limit of 1,048,576. The
+workbook itself is ~110 MB compressed and decompresses to ~1 GB across
+its shared-strings and sheet streams, so the importer treats it as a
+streaming source rather than loading it into memory.
+
+**Non-destructive design guarantee.** The import lands in **four new
+tables only**, all prefixed `supply_demo_v2_`. No existing table,
+route, seed, or UI is read from, written to, or modified by the
+import. A rollback endpoint truncates only those four tables. A
+read-only verification script proves that every other table's row
+count is unchanged before vs after a run.
+
+---
+
+## Schema
+
+The schema is defined in `lib/db/src/schema/supply_demo_v2.ts` and
+exported from `lib/db/src/schema/index.ts`. Migrations are generated
+by the project's existing Drizzle tooling and contain only `CREATE
+TABLE` / `CREATE INDEX` statements against the four new tables.
+
+### `supply_demo_v2_catalog`
+
+One row per unique catalog entry. **Natural key:** `(mfr_cat_no,
+manufacturer_short)`.
+
+| Column                 | Type                       | Notes                                       |
+| ---------------------- | -------------------------- | ------------------------------------------- |
+| `id`                   | `serial` PK                |                                             |
+| `mfr_cat_no`           | `text` NOT NULL            | Manufacturer catalog number.                |
+| `manufacturer_short`   | `text` NOT NULL            | Short manufacturer name from source.        |
+| `manufacturer_long`    | `text`                     | GHX-canonical manufacturer name.            |
+| `product_noun`         | `text`                     |                                             |
+| `product_type`         | `text`                     |                                             |
+| `item_dsc_short`       | `text`                     |                                             |
+| `full_description`     | `text`                     |                                             |
+| `product_ndc`          | `text`                     | National Drug Code, when present.           |
+| `product_size`         | `text`                     | Free-text size string from source.          |
+| `unspsc_commodity`     | `text`                     |                                             |
+| `ghx_commodity_type`   | `text`                     |                                             |
+| `sos_type_description` | `text`                     |                                             |
+| `source`               | `text` NOT NULL            | Defaults to `'supply_demo_v2'`.             |
+| `imported_at`          | `timestamptz` NOT NULL     | Defaults to `now()`.                        |
+
+Unique index: `supply_demo_v2_catalog_mfr_cat_no_mfr_short_idx` on
+`(mfr_cat_no, manufacturer_short)`.
+
+### `supply_demo_v2_facilities`
+
+One row per unique MTF code. **Natural key:** `code`.
+
+| Column         | Type                   | Notes                                  |
+| -------------- | ---------------------- | -------------------------------------- |
+| `id`           | `serial` PK            |                                        |
+| `code`         | `text` NOT NULL UNIQUE | MTF code as it appears in the source.  |
+| `display_name` | `text` NOT NULL        | Currently a copy of `code`.            |
+| `source`       | `text` NOT NULL        | Defaults to `'supply_demo_v2'`.        |
+| `imported_at`  | `timestamptz` NOT NULL | Defaults to `now()`.                   |
+
+### `supply_demo_v2_issues`
+
+Dedup-and-rolled-up issuance records. **Natural key:** `(catalog_id,
+facility_id, quantity)`.
+
+| Column           | Type                         | Notes                                                                |
+| ---------------- | ---------------------------- | -------------------------------------------------------------------- |
+| `id`             | `serial` PK                  |                                                                      |
+| `catalog_id`     | `int` NOT NULL FK            | References `supply_demo_v2_catalog(id)` ON DELETE CASCADE.           |
+| `facility_id`    | `int` NOT NULL FK            | References `supply_demo_v2_facilities(id)` ON DELETE CASCADE.        |
+| `quantity`       | `numeric` NOT NULL           | Per-line surviving quantity (one of the distinct quantities seen).   |
+| `total_quantity` | `numeric` NOT NULL           | Sum of `orderQty` across all surviving lines for this catalog × facility. |
+| `line_count`     | `int` NOT NULL               | Count of surviving lines that fed this catalog × facility pair.      |
+| `source`         | `text` NOT NULL              | Defaults to `'supply_demo_v2'`.                                      |
+| `imported_at`    | `timestamptz` NOT NULL       | Defaults to `now()`.                                                 |
+
+Indexes:
+
+- Unique: `supply_demo_v2_issues_catalog_facility_qty_idx` on
+  `(catalog_id, facility_id, quantity)`.
+- Lookup: `supply_demo_v2_issues_catalog_facility_idx` on
+  `(catalog_id, facility_id)`.
+
+### `supply_demo_v2_imports`
+
+Run-level metadata, one row per importer invocation.
+
+| Column                 | Type                   | Notes                                                                  |
+| ---------------------- | ---------------------- | ---------------------------------------------------------------------- |
+| `id`                   | `serial` PK            |                                                                        |
+| `source_file`          | `text`                 | Path passed to the importer.                                           |
+| `started_at`           | `timestamptz` NOT NULL | Defaults to `now()`.                                                   |
+| `finished_at`          | `timestamptz`          | Set when the run completes (success or failure).                       |
+| `source_rows_read`     | `int`                  | Surviving issue lines counted from the staged `issues.ndjson`.         |
+| `duplicates_collapsed` | `int`                  | Reserved; the dedup pipeline reports this separately to its caller.    |
+| `catalog_upserts`      | `int`                  | Number of catalog rows upserted.                                       |
+| `facility_upserts`     | `int`                  | Number of facility rows upserted.                                      |
+| `issue_rows_inserted`  | `int`                  | Number of new issue rows inserted (skips dedup conflicts).             |
+| `notes`                | `text`                 | Failure reason or post-run skip count, if any.                         |
+
+---
+
+## Source-to-target mapping
+
+The 14 columns of the source workbook map as follows. Source column
+letters refer to columns A..N of `Supply_Demo_Data_2_1777401753577.xlsx`.
+
+| # | Source column          | Source field name      | Target table                  | Target column          |
+| - | ---------------------- | ---------------------- | ----------------------------- | ---------------------- |
+| 1 | A `productNoun`        | Product noun           | `supply_demo_v2_catalog`      | `product_noun`         |
+| 2 | B `productType`        | Product type           | `supply_demo_v2_catalog`      | `product_type`         |
+| 3 | C `itemDscShort`       | Short item description | `supply_demo_v2_catalog`      | `item_dsc_short`       |
+| 4 | D `manufacturer`       | Manufacturer (short)   | `supply_demo_v2_catalog`      | `manufacturer_short`   |
+| 5 | E `ghxCommodityType`   | GHX commodity type     | `supply_demo_v2_catalog`      | `ghx_commodity_type`   |
+| 6 | F `ghxManufacturerLong`| GHX manufacturer (long)| `supply_demo_v2_catalog`      | `manufacturer_long`    |
+| 7 | G `fullDescription`    | Full description       | `supply_demo_v2_catalog`      | `full_description`     |
+| 8 | H `mfrCatNo`           | Manufacturer cat. no.  | `supply_demo_v2_catalog`      | `mfr_cat_no`           |
+| 9 | I `productNDC`         | National Drug Code     | `supply_demo_v2_catalog`      | `product_ndc`          |
+| 10| J `sosTypeDescription` | SOS type description   | `supply_demo_v2_catalog`      | `sos_type_description` |
+| 11| K `unspscCommodity`    | UNSPSC commodity       | `supply_demo_v2_catalog`      | `unspsc_commodity`     |
+| 12| L `productSize`        | Product size           | `supply_demo_v2_catalog`      | `product_size`         |
+| 13| M `orderQty`           | Order quantity         | `supply_demo_v2_issues`       | `quantity` (and rolled into `total_quantity`) |
+| 14| N `mtfName`            | MTF name / code        | `supply_demo_v2_facilities`   | `code` (also `display_name`) |
+
+`mtfName` is also used to derive `supply_demo_v2_issues.facility_id`
+via the natural key on `supply_demo_v2_facilities.code`. Likewise
+`mfrCatNo` + `manufacturer` derive `supply_demo_v2_issues.catalog_id`
+via the natural key on `supply_demo_v2_catalog`.
+
+---
+
+## Dedup rules
+
+Dedup is performed in
+`artifacts/api-server/src/lib/supply-import/dedup.ts` before any data
+reaches the database. The pipeline streams the parser's output through
+an external sort (`sort -k1,1 -u` on a TSV intermediate) so it stays
+within the ~512 MB heap budget on the full ~1 M-row workbook.
+
+### The 5-tuple dedup key
+
+Two source rows are treated as exact duplicates and collapsed into one
+when they agree on **all five** of the following fields, byte for byte:
+
+1. `mfrCatNo`
+2. `manufacturer` (short)
+3. `mtfName`
+4. `productSize`
+5. `orderQty`
+
+Only one surviving row per 5-tuple is written to staging. The number
+of duplicates collapsed is reported as `duplicatesCollapsed =
+sourceRowsRead - uniqueSurvivingRows` in the dedup report.
+
+### Per-`(catalog, facility)` rollup
+
+After dedup, the surviving lines are bucketed by the
+`(mfrCatNo, manufacturer)` × `mtfName` pair (the catalog × facility
+pair). For each pair:
+
+- `lineCount` = number of surviving lines in the pair.
+- `totalQuantity` = sum of `orderQty` across those surviving lines
+  (treating null quantities as zero).
+
+Then **one issue row is emitted per distinct `quantity` within the
+pair**, preserving first-seen order. Each emitted issue carries the
+denormalized `lineCount` and `totalQuantity` for its pair, so
+downstream consumers can read either the per-quantity slice or the
+per-pair total without a separate query.
+
+### `UNK` and whitespace handling
+
+Per-cell normalization runs in the parser
+(`artifacts/api-server/src/lib/supply-import/parse.ts`):
+
+- Every text cell is `trim()`ed.
+- A literal value of `UNK` (case-sensitive, after trim) is converted
+  to `null`.
+- The empty string and whitespace-only values are converted to `null`.
+- `orderQty` is coerced to a finite `number`; non-numeric values
+  become `null`.
+
+`null` propagates into the dedup key. So two source rows that differ
+only because one has `UNK` and the other has empty whitespace in the
+same field will collide on the same dedup key (both become `null`)
+and are collapsed.
+
+The catalog and facility staging files are slightly stricter than the
+issue stream:
+
+- `catalog.ndjson` skips rows where **both** `mfrCatNo` and
+  `manufacturer` are null — there's no usable catalog identity to
+  store.
+- `facilities.ndjson` skips rows where `mtfName` is null — there's no
+  usable facility identity to store.
+- `issues.ndjson` keeps every surviving post-dedup line; the importer
+  drops issue rows whose catalog or facility key cannot be resolved
+  and counts them in the run notes.
+
+---
+
+## How to run
+
+The importer reads three NDJSON files (`catalog.ndjson`,
+`facilities.ndjson`, `issues.ndjson`) from a staging directory. The
+end-to-end flow is **stage, then import**.
+
+### 1. Place the source workbook
+
+The workbook is checked into the repo at:
+
+```
+attached_assets/Supply_Demo_Data_2_1777401753577.xlsx
+```
+
+If you're loading a different snapshot, drop it into `attached_assets/`
+or any path the api-server process can read.
+
+### 2. Stage: run the dedup pipeline (CLI)
+
+The dedup pipeline is pure (no DB) and produces the three NDJSON
+staging files. Run it from the repo root:
+
+```bash
+pnpm --filter @workspace/api-server exec tsx \
+  src/lib/supply-import/dedup-cli.ts \
+  attached_assets/Supply_Demo_Data_2_1777401753577.xlsx \
+  tmp/supply-import-staging
+```
+
+Optional flags:
+
+- `--max-rows N` — stop after N parser rows (useful for smoke runs).
+
+The CLI prints a small report on completion:
+
+```
+sourceRowsRead:       1052673
+duplicatesCollapsed:  ...
+uniqueCatalogEntries: ...
+uniqueFacilities:     ...
+uniqueIssueLines:     ...
+```
+
+The pipeline shells out to GNU `sort` and requires GNU coreutils on
+PATH (true on the Replit Linux runtime; on macOS install `gsort` or
+run inside a Linux container).
+
+### 3. Import: load the staging files
+
+The importer is exposed as an admin HTTP endpoint registered in
+`artifacts/api-server/src/routes/admin-supply-import.ts` and
+mounted from `artifacts/api-server/src/routes/index.ts`:
+
+```bash
+curl -X POST "$API_BASE/admin/supply-import/run" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "stagingDir": "tmp/supply-import-staging",
+    "sourceFile": "attached_assets/Supply_Demo_Data_2_1777401753577.xlsx"
+  }'
+```
+
+Both body fields are optional. When omitted, the route falls back to:
+
+- `stagingDir` ← `SUPPLY_IMPORT_STAGING_DIR` env var, else
+  `tmp/supply-import-staging` under the api-server process CWD.
+- `sourceFile` ← `SUPPLY_IMPORT_SOURCE` env var, else `null` (recorded
+  as null on the import row, doesn't affect data loaded).
+
+The endpoint returns an `ImportRunSummary` with the import id, start /
+finish timestamps, and counters for catalog upserts, facility upserts,
+issue rows inserted, and issue rows skipped.
+
+The import is **idempotent**: re-running it against the same staging
+directory produces zero net row changes. Catalog and facility writes
+use `ON CONFLICT … DO UPDATE` on their natural keys; issue writes use
+`ON CONFLICT (catalog_id, facility_id, quantity) DO NOTHING`.
+
+---
+
+## How to roll back
+
+```bash
+curl -X POST "$API_BASE/admin/supply-import/rollback"
+```
+
+The rollback endpoint runs a single transaction against the database
+that:
+
+1. Counts current rows in each of the four `supply_demo_v2_*` tables.
+2. `TRUNCATE`s all four tables together (`supply_demo_v2_issues`,
+   `supply_demo_v2_catalog`, `supply_demo_v2_facilities`,
+   `supply_demo_v2_imports`) with `RESTART IDENTITY`.
+3. Returns the per-table row counts that were deleted.
+
+It touches **only** those four tables. No other table — and no file
+on disk, including the staging NDJSON files — is read or modified.
+Re-running the importer after a rollback re-loads the same data with
+fresh ids.
+
+---
+
+## How to verify
+
+There are three independently-runnable checks today. All four
+artifact workflows (`api-server`, `web`, `scenario-brief`,
+`mockup-sandbox`) should remain healthy throughout — if any fail to
+restart after the import, that is a regression.
+
+### 1. Parser smoke test (no DB)
+
+Confirms the streaming parser opens the workbook, advances through
+the shared-strings stream without OOM, and yields normalized rows:
+
+```bash
+pnpm --filter @workspace/api-server exec tsx \
+  src/lib/supply-import/smoke-test.ts --rows 100
+```
+
+The script
+(`artifacts/api-server/src/lib/supply-import/smoke-test.ts`) prints
+the first N rows as JSON and exits 0. PASS = exits cleanly with the
+requested number of rows printed and `heapUsedMB` reported well below
+the container limit.
+
+### 2. Dedup CLI report (no DB)
+
+The dedup CLI prints `sourceRowsRead`, `duplicatesCollapsed`,
+`uniqueCatalogEntries`, `uniqueFacilities`, and `uniqueIssueLines` on
+completion. PASS = the totals are non-zero, `duplicatesCollapsed +
+uniqueIssueLines + (issues with null catalog or facility key)` ties
+back to `sourceRowsRead`, and the three NDJSON files in `stagingDir`
+contain valid JSON on every line.
+
+### 3. Importer + rollback round-trip (against the DB)
+
+Because the import is non-destructive by construction, the
+operationally-meaningful check is a row-count baseline of the
+existing tables, taken before and after a run, plus a comparison of
+the four isolated tables against the importer's returned summary.
+
+Capture a baseline of every existing public-schema table, excluding
+the four `supply_demo_v2_*` tables, e.g.:
+
+```sql
+SELECT table_name, (xpath('/row/c/text()',
+  query_to_xml(format('SELECT COUNT(*) AS c FROM %I', table_name),
+  false, true, '')))[1]::text::int AS row_count
+FROM information_schema.tables
+WHERE table_schema = 'public'
+  AND table_name NOT LIKE 'supply_demo_v2_%'
+ORDER BY table_name;
+```
+
+Then:
+
+1. Save the baseline.
+2. Call `POST /admin/supply-import/run` and keep the returned
+   `ImportRunSummary` (it contains `catalogUpserts`,
+   `facilityUpserts`, `issueRowsInserted`).
+3. Re-run the same SQL. Every row count must be **identical** to the
+   baseline. Any drift on a non-`supply_demo_v2_*` table is a
+   regression and the import should be rolled back immediately.
+4. Run `SELECT COUNT(*)` on each of the four `supply_demo_v2_*`
+   tables. Catalog and facility counts should equal the upsert counts
+   in the summary on a fresh DB; issue count should equal
+   `issueRowsInserted`.
+5. Call `POST /admin/supply-import/rollback`. The returned per-table
+   `deleted` counts should match what step 4 saw, and step 1's SQL
+   should still report the original baseline.
+
+**PASS means:** the baseline is unchanged across run and rollback,
+the four isolated tables hold exactly the rows the importer's
+summary claims, the rollback empties only those four tables, and all
+running workflows continue to serve traffic. An automated wrapper
+that runs this exact sequence and prints a single PASS/FAIL summary
+is planned but not yet landed; until it does, the steps above are
+the source of truth.
+
+---
+
+## Known caveats
+
+- **Heavy duplication in source.** A double-digit percentage of rows
+  in `Supply_Demo_Data_2_1777401753577.xlsx` are byte-identical
+  duplicates of another row. The dedup pipeline collapses these
+  before any DB write; do not be surprised when `uniqueIssueLines` is
+  much smaller than `sourceRowsRead`.
+- **`UNK` placeholders.** Source cells containing the literal string
+  `UNK` are normalized to `null`. Treat null values in the staged /
+  imported data as "unknown in the source", not "no value".
+- **Free-text size strings.** `productSize` is stored as raw text and
+  is part of the dedup key. Variations like `"100 mL"` vs
+  `"100 ml "` vs `"100ML"` will be treated as different sizes.
+  Whitespace is trimmed; case is preserved.
+- **Mixed-case manufacturer names.** `manufacturer` (short) is
+  preserved as-is. Two rows that differ only in casing
+  (`"AcmeCo"` vs `"ACMECO"`) will produce two distinct catalog
+  rows and two distinct catalog ids. No case-folding is applied.
+- **MTF codes are opaque.** The pipeline treats every `mtfName` value
+  as an opaque facility identifier — it is copied verbatim into both
+  `supply_demo_v2_facilities.code` and `display_name`. There is no
+  mapping to the existing logical `nodes` / `sites` tables; that
+  reconciliation is a separate, future task.
+- **`source_rows_read` on the import row.** The importer does not
+  receive the dedup pipeline's parser-side row count, so it records
+  `source_rows_read` as the count of staged issue lines (a faithful
+  count of rows actually loaded), and leaves `duplicates_collapsed`
+  null. The pipeline's own dedup report (printed by the CLI) is the
+  authoritative source for parser-side counts.
