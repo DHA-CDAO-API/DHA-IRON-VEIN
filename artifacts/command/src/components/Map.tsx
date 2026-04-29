@@ -63,6 +63,14 @@ interface NetworkMapProps {
    */
   selectedCategories?: Set<SupplyCategory>;
   /**
+   * When `true`, the deck.gl controller responds to mouse-wheel input by
+   * zooming the map. When `false` (the default), wheel events fall through
+   * to the surrounding page so that embedding the map inside a scrollable
+   * dashboard does not hijack page scroll. The dedicated full-page Network
+   * Map opts in; dashboard tiles (e.g. Command Overview) must not.
+   */
+  scrollZoom?: boolean;
+  /**
    * Generalised layer filter. When both `itemIds` and `categories` are empty
    * the map shows everything. When set, a shipment passes the filter if its
    * itemId is in `itemIds` OR its category is in `categories`. Routes are
@@ -226,6 +234,7 @@ function NetworkFallback({
   onNodeClick,
   selectedCategories,
   layerSelection,
+  scrollZoom = false,
 }: NetworkMapProps) {
   const riskMap = new Map(riskByNode.map((r) => [r.nodeId, r]));
   // Mirror the GL map's layer-filter logic so the fallback list view
@@ -360,6 +369,7 @@ export default function NetworkGLMap(props: NetworkMapProps) {
     onDraftChange,
     viewState,
     onViewStateChange,
+    scrollZoom = false,
   } = props;
 
   // Drawing buffer (in-progress polygon/rectangle vertices)
@@ -1408,15 +1418,15 @@ export default function NetworkGLMap(props: NetworkMapProps) {
   };
 
   // Disable map drag while drawing so clicks register cleanly. Outside
-  // of draw mode we leave the full default MapController behaviour
-  // intact (drag-pan, drag-rotate, touch, keyboard, double-click zoom,
-  // and scroll-wheel zoom). The Network Map is a dedicated full-page
-  // surface with no other scrollable content, so scroll-to-zoom is the
-  // expected, "no-friction" interaction; the dashboard-hijack concern
-  // that justified disabling it elsewhere does not apply here.
+  // of draw mode we keep the standard MapController interactions
+  // (drag-pan, drag-rotate, touch, keyboard, double-click zoom). Scroll-
+  // wheel zoom is opt-in via the `scrollZoom` prop: the dedicated full-
+  // page Network Map enables it (no surrounding scroll surface to
+  // hijack), while dashboard tiles like Command Overview leave it off
+  // so users can scroll the page through the map.
   const controllerOpts = drawMode !== null
     ? { dragPan: false, doubleClickZoom: false }
-    : (true as any);
+    : ({ scrollZoom } as any);
 
   // Build a deck.gl tooltip object for the node currently under the
   // cursor. Returning a small HTML card here is much faster than

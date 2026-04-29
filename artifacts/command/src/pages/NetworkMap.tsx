@@ -1303,6 +1303,7 @@ export default function NetworkMapPage() {
           showThreats={showThreats}
           showAOR={showAOR}
           animate={animateMap}
+          scrollZoom
           onNodeClick={(node) => {
             setSelectedShipmentId(null);
             setSelectedNodeId(node?.id ?? null);
