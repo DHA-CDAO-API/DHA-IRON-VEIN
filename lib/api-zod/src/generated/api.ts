@@ -1110,22 +1110,49 @@ export const ListOrdersResponseItem = zod.object({
 });
 export const ListOrdersResponse = zod.array(ListOrdersResponseItem);
 
-export const CreateOrderBody = zod.object({
-  toNodeId: zod.string(),
-  fromNodeId: zod.string().nullish(),
-  supplierId: zod.string().nullish(),
-  itemId: zod.string(),
-  quantity: zod.number(),
-  priority: zod.string(),
-  rationale: zod.string().nullish(),
-  sourceRecommendationId: zod.string().nullish(),
-  requestedDeliveryAt: zod.coerce
-    .date()
-    .optional()
+export const CreateOrderBody = zod.union([
+  zod.object({
+    toNodeId: zod.string(),
+    fromNodeId: zod.string().nullish(),
+    supplierId: zod.string().nullish(),
+    itemId: zod.string(),
+    quantity: zod.number(),
+    priority: zod.string(),
+    rationale: zod.string().nullish(),
+    sourceRecommendationId: zod.string().nullish(),
+    requestedDeliveryAt: zod.coerce
+      .date()
+      .optional()
+      .describe(
+        "ISO timestamp for the requested delivery date. Defaults to 7 days from creation if omitted.",
+      ),
+  }),
+  zod
+    .object({
+      toNodeId: zod.string(),
+      supplierId: zod.string(),
+      priority: zod.string(),
+      rationale: zod.string().nullish(),
+      requestedDeliveryAt: zod.coerce
+        .date()
+        .optional()
+        .describe(
+          "ISO timestamp for the requested delivery date. Defaults to 7 days from creation if omitted.",
+        ),
+      lines: zod
+        .array(
+          zod.object({
+            itemId: zod.string(),
+            quantity: zod.number(),
+            unitPriceUsd: zod.number().optional(),
+          }),
+        )
+        .min(1),
+    })
     .describe(
-      "ISO timestamp for the requested delivery date. Defaults to 7 days from creation if omitted.",
+      "Multi-line order — one PO with one line per item, all sourced from the same supplier.",
     ),
-});
+]);
 
 export const GetOrderParams = zod.object({
   orderId: zod.coerce.string(),

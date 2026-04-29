@@ -155,6 +155,16 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       ring: "focus-visible:ring-indigo-400",
     },
   };
+  const DEFAULT_NAV_COLOR: NavColor = {
+    iconActive: "text-slate-200",
+    iconInactive: "text-slate-400/60",
+    iconHover: "group-hover:text-slate-200",
+    activeBg: "bg-slate-400/15",
+    activeText: "text-slate-100",
+    hoverBg: "hover:bg-slate-400/10",
+    hoverText: "hover:text-slate-100",
+    ring: "focus-visible:ring-slate-400",
+  };
 
   const navItems: Array<{
     href: string;
@@ -234,7 +244,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               const active = item.matches
                 ? item.matches(location)
                 : location === item.href || (item.href !== "/" && location.startsWith(item.href));
-              const c = NAV_COLORS[item.href];
+              const c = NAV_COLORS[item.href] ?? DEFAULT_NAV_COLOR;
               return (
                 <Link
                   key={item.href}
@@ -260,7 +270,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         <div className="p-2 border-t border-border flex flex-col gap-1 shrink-0">
           {bottomItems.map((item) => {
             const active = location === item.href;
-            const c = NAV_COLORS[item.href];
+            const c = NAV_COLORS[item.href] ?? DEFAULT_NAV_COLOR;
             return (
               <Link
                 key={item.href}

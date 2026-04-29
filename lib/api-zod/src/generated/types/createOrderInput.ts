@@ -5,20 +5,7 @@
  * Predictive Sustainment Platform API for INDOPACOM medical logistics decision support.
  * OpenAPI spec version: 1.0.0
  */
+import type { CreateBulkOrderInput } from "./createBulkOrderInput";
+import type { CreateSingleOrderInput } from "./createSingleOrderInput";
 
-export interface CreateOrderInput {
-  toNodeId: string;
-  /** @nullable */
-  fromNodeId?: string | null;
-  /** @nullable */
-  supplierId?: string | null;
-  itemId: string;
-  quantity: number;
-  priority: string;
-  /** @nullable */
-  rationale?: string | null;
-  /** @nullable */
-  sourceRecommendationId?: string | null;
-  /** ISO timestamp for the requested delivery date. Defaults to 7 days from creation if omitted. */
-  requestedDeliveryAt?: Date;
-}
+export type CreateOrderInput = CreateSingleOrderInput | CreateBulkOrderInput;

@@ -129,7 +129,10 @@ router.get("/orders", async (req, res, next) => {
   }
 });
 
-// Accept both the legacy multi-line shape and the OpenAPI single-line shape.
+// Accept three shapes:
+//   1. Legacy multi-line (`nodeId` + `lines`)
+//   2. OpenAPI single-line (`toNodeId` + `itemId`/`quantity`)
+//   3. OpenAPI bulk multi-line (`toNodeId` + `supplierId` + `lines`)
 const CreateOrderInput = z.union([
   z.object({
     nodeId: z.string(),
@@ -137,6 +140,20 @@ const CreateOrderInput = z.union([
     priority: z.string().optional(),
     requestedDeliveryAt: z.string().optional(),
     notes: z.string().optional(),
+    lines: z.array(
+      z.object({
+        itemId: z.string(),
+        quantity: z.number().positive(),
+        unitPriceUsd: z.number().nonnegative().optional(),
+      }),
+    ).min(1),
+  }),
+  z.object({
+    toNodeId: z.string(),
+    supplierId: z.string(),
+    priority: z.string(),
+    rationale: z.string().nullish(),
+    requestedDeliveryAt: z.string().optional(),
     lines: z.array(
       z.object({
         itemId: z.string(),
@@ -169,11 +186,24 @@ router.post("/orders", async (req, res, next) => {
     const orderId = `o-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
     const orderNo = `PO-${new Date().getFullYear()}-${Math.floor(Math.random() * 90000 + 10000)}`;
 
-    const isLegacy = "lines" in body;
-    const nodeId = isLegacy ? body.nodeId : body.toNodeId;
-    const supplierId = isLegacy ? body.supplierId : (body.supplierId ?? body.fromNodeId ?? "");
+    const isMultiLine = "lines" in body;
+    const isLegacyMulti = isMultiLine && "nodeId" in body;
+    const nodeId = isLegacyMulti
+      ? body.nodeId
+      : isMultiLine
+        ? body.toNodeId
+        : body.toNodeId;
+    const supplierId = isLegacyMulti
+      ? body.supplierId
+      : isMultiLine
+        ? body.supplierId
+        : (body.supplierId ?? body.fromNodeId ?? "");
     const priority = body.priority ?? "ROUTINE";
-    const notes = isLegacy ? body.notes : (body.rationale ?? undefined);
+    const notes = isLegacyMulti
+      ? body.notes
+      : isMultiLine
+        ? (body.rationale ?? undefined)
+        : (body.rationale ?? undefined);
     const requestedRaw = body.requestedDeliveryAt;
     let requested: Date;
     if (requestedRaw) {
@@ -186,7 +216,7 @@ router.post("/orders", async (req, res, next) => {
     } else {
       requested = new Date(Date.now() + 7 * 86400_000);
     }
-    const lineInputs = isLegacy
+    const lineInputs = isMultiLine
       ? body.lines
       : [{ itemId: body.itemId, quantity: body.quantity, unitPriceUsd: 0 }];
     const totalUsd = lineInputs.reduce((sum, l) => sum + (l.unitPriceUsd ?? 0) * l.quantity, 0);

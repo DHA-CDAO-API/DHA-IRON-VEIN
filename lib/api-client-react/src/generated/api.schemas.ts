@@ -1031,7 +1031,7 @@ export interface OrderDetail {
   shipments?: OrderShipmentProgress[];
 }
 
-export interface CreateOrderInput {
+export interface CreateSingleOrderInput {
   toNodeId: string;
   /** @nullable */
   fromNodeId?: string | null;
@@ -1047,6 +1047,29 @@ export interface CreateOrderInput {
   /** ISO timestamp for the requested delivery date. Defaults to 7 days from creation if omitted. */
   requestedDeliveryAt?: string;
 }
+
+export type CreateBulkOrderInputLinesItem = {
+  itemId: string;
+  quantity: number;
+  unitPriceUsd?: number;
+};
+
+/**
+ * Multi-line order — one PO with one line per item, all sourced from the same supplier.
+ */
+export interface CreateBulkOrderInput {
+  toNodeId: string;
+  supplierId: string;
+  priority: string;
+  /** @nullable */
+  rationale?: string | null;
+  /** ISO timestamp for the requested delivery date. Defaults to 7 days from creation if omitted. */
+  requestedDeliveryAt?: string;
+  /** @minItems 1 */
+  lines: CreateBulkOrderInputLinesItem[];
+}
+
+export type CreateOrderInput = CreateSingleOrderInput | CreateBulkOrderInput;
 
 export type UpdateOrderStatusInputStatus =
   (typeof UpdateOrderStatusInputStatus)[keyof typeof UpdateOrderStatusInputStatus];

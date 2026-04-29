@@ -144,31 +144,64 @@ export default function CasualtyPlanner() {
       });
       return;
     }
-    let created = 0;
-    let skipped = 0;
+    // Group shortfalls by their top-ranked supplier so each supplier gets
+    // exactly one purchase order with one line per shortfall item, instead of
+    // one PO per item.
+    type Grouped = {
+      supplierId: string;
+      supplierName: string;
+      lines: { itemId: string; quantity: number; itemName: string }[];
+    };
+    const groups = new Map<string, Grouped>();
+    let skippedItems = 0;
     for (const row of shortRows) {
       const supplier = row.supplierAlternatives?.[0];
       if (!supplier) {
-        skipped += 1;
+        skippedItems += 1;
         continue;
       }
+      const existing = groups.get(supplier.supplierId);
+      const line = {
+        itemId: row.itemId,
+        quantity: row.shortfallQty,
+        itemName: row.itemName,
+      };
+      if (existing) {
+        existing.lines.push(line);
+      } else {
+        groups.set(supplier.supplierId, {
+          supplierId: supplier.supplierId,
+          supplierName: supplier.supplierName,
+          lines: [line],
+        });
+      }
+    }
+
+    const requestedDeliveryAt = new Date(
+      Date.now() + arrivalWindowHours * 3_600_000,
+    ).toISOString();
+    let createdOrders = 0;
+    let skippedOrders = 0;
+    for (const group of groups.values()) {
       try {
         await createOrder.mutateAsync({
           data: {
             toNodeId: siteId,
-            supplierId: supplier.supplierId,
-            itemId: row.itemId,
-            quantity: row.shortfallQty,
+            supplierId: group.supplierId,
             priority: "URGENT",
-            rationale: `Casualty Planner — sufficiency shortfall (${row.itemName})`,
-            requestedDeliveryAt: new Date(
-              Date.now() + arrivalWindowHours * 3_600_000,
-            ).toISOString(),
+            rationale: `Casualty Planner — sufficiency shortfall (${group.lines
+              .map((l) => l.itemName)
+              .join(", ")})`,
+            requestedDeliveryAt,
+            lines: group.lines.map((l) => ({
+              itemId: l.itemId,
+              quantity: l.quantity,
+            })),
           },
         });
-        created += 1;
+        createdOrders += 1;
       } catch {
-        skipped += 1;
+        skippedOrders += 1;
       }
     }
     await queryClient.invalidateQueries({
@@ -184,11 +217,23 @@ export default function CasualtyPlanner() {
         restrictReroutesToHub: restrictReroutes,
       },
     });
+    const supplierCount = groups.size - skippedOrders;
+    const descriptionParts: string[] = [];
+    if (skippedItems > 0) {
+      descriptionParts.push(
+        `${skippedItems} item${skippedItems === 1 ? "" : "s"} skipped (no supplier alternative available)`,
+      );
+    }
+    if (skippedOrders > 0) {
+      descriptionParts.push(
+        `${skippedOrders} supplier order${skippedOrders === 1 ? "" : "s"} failed to submit`,
+      );
+    }
     toast({
-      title: `Ordered ${created} item${created === 1 ? "" : "s"}`,
+      title: `Sent ${createdOrders} order${createdOrders === 1 ? "" : "s"} to ${supplierCount} supplier${supplierCount === 1 ? "" : "s"}`,
       description:
-        skipped > 0
-          ? `${skipped} skipped (no supplier alternative available)`
+        descriptionParts.length > 0
+          ? descriptionParts.join(" · ")
           : "All shortfalls dispatched.",
     });
   };
