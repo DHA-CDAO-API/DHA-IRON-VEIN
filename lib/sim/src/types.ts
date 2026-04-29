@@ -74,6 +74,40 @@ export type SimSupplier = {
   country?: string;
   unitCostUsd?: number;
   itemsCovered?: string[];
+  // 0..1 fraction of nominal capacity available during the scenario horizon.
+  // 1 = unaffected. 0 = fully offline (skipped by the supplier ranker).
+  // Set by `applySupplierDegradation` from a perturbation's
+  // `impactedSuppliers` knobs.
+  availabilityFraction?: number;
+};
+
+// Per-supplier degradation knob set referenced from a scenario perturbation.
+// Each field is a delta from baseline; the runner blends them across the
+// horizon (a 7-day outage on a 21-day horizon applies ~1/3 of the
+// degradation to mean values used downstream).
+export type SupplierImpact = {
+  supplierId: string;
+  // 0..1 multiplier on baseline capacity. 1 = unchanged. 0 = offline.
+  capacityMultiplier?: number;
+  // Days added to the supplier's mean lead time.
+  leadTimeDeltaDays?: number;
+  // Delta on reliability score (e.g. -0.3 drops a 0.9 supplier to 0.6).
+  reliabilityDelta?: number;
+  // Number of days inside the scenario horizon the supplier is degraded.
+  // Defaults to the full horizon if omitted.
+  outageDays?: number;
+  // Optional human-friendly cause; surfaced in the UI / AI brief.
+  cause?: string;
+  // True when the impact was auto-suggested by the country auto-flag pass
+  // and not explicitly authored by the operator. Helps the UI distinguish
+  // operator intent vs. system-derived guesses.
+  autoFlagged?: boolean;
+  // Operator override: explicitly suppress this supplier degradation. Used
+  // to remember when the operator removed an auto-flagged row so the
+  // server's auto-flag pass doesn't keep re-adding it on every save/run.
+  // Excluded entries are persisted in the scenario inputs but skipped by
+  // `applySupplierDegradation` so they don't affect the simulation.
+  excluded?: boolean;
 };
 
 // Cold-chain failure cascade. Identifies which cold-chain assets (or asset
@@ -139,6 +173,10 @@ export type ScenarioPerturbation = {
   coldChain?: ColdChainFailure;
   reagent?: ReagentShortage;
   airlift?: AirliftLoss;
+  // Per-supplier degradation knobs. Used by the recommendations layer to
+  // blend reduced capacity / longer lead time / lower reliability into the
+  // supplier ranker, so the COA shifts to next-best sources.
+  impactedSuppliers?: SupplierImpact[];
 };
 
 // Per-node blood lot used by the cold-chain cascade and airlift cascade.

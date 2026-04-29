@@ -86,6 +86,31 @@ export function estimateUnitCostUsd(
   return Number((cataloged * premium).toFixed(2));
 }
 
+// When a scenario degrades the primary supplier for an item, we attribute
+// the COA reroute back to that supplier so the operator sees *why* the
+// recommendation looks different from the steady-state pick.
+export type RecommendationDisplacement = {
+  supplierId: string;
+  supplierName: string;
+  // Horizon-blended availability of the displaced supplier (0..1). 0 means
+  // "fully offline during the scenario", 1 means "unaffected".
+  availabilityFraction: number;
+  // Optional human-friendly cause sourced from the perturbation entry.
+  cause?: string;
+};
+
+// When the chosen supplier is capacity-constrained, the COA spreads the
+// fill across a primary + secondary supplier proportional to available
+// capacity instead of single-sourcing a degraded vendor.
+export type RecommendationSplitAllocation = {
+  supplierId: string;
+  supplierName: string;
+  channel: "DOD" | "COMMERCIAL" | "HOST_NATION" | "ALLIED";
+  qty: number;
+  pctOfTotal: number; // 0..1
+  etaDays: number;
+};
+
 export type Recommendation = {
   id: string;
   nodeId: string;
@@ -100,6 +125,10 @@ export type Recommendation = {
   estimatedTotalCostUsd?: number;
   etaDays: number;
   alternatives?: RecommendationAlternative[];
+  // Set when the scenario knocked out the would-be primary source.
+  displacedFrom?: RecommendationDisplacement;
+  // Set when capacity constraints force a multi-supplier fill.
+  splitAllocation?: RecommendationSplitAllocation[];
 };
 
 export type RecommendationAlternative = {
@@ -136,6 +165,13 @@ export function rankSuppliersForShortfall(args: {
     ) {
       continue;
     }
+    // Hard-skip a supplier whose horizon-blended capacity is effectively
+    // zero. They are physically unable to deliver during the scenario, so
+    // surfacing them as an alternative would be misleading and could even
+    // win the rank if their baseline ETA was best.
+    const availability =
+      typeof s.availabilityFraction === "number" ? s.availabilityFraction : 1;
+    if (availability <= 0.001) continue;
     const eta = Number(
       ((s.leadTimeDaysMean ?? 7) + (args.upstreamRouteDays ?? 2)).toFixed(1),
     );
@@ -151,8 +187,13 @@ export function rankSuppliersForShortfall(args: {
     const etaScore = eta * 1.5;
     const reliabilityScore = (1 - (s.reliabilityScore ?? 0.85)) * 30;
     const costScore = Math.log10(Math.max(1, totalCost)) * 2;
+    // Capacity penalty grows as availability drops. A 60%-capacity supplier
+    // gets +8, a 20%-capacity supplier gets +24. This nudges the ranker
+    // toward intact alternates while still keeping a half-degraded supplier
+    // viable when no better source exists.
+    const capacityPenalty = (1 - availability) * 30;
     const rankScore =
-      viabilityPenalty + etaScore + reliabilityScore + costScore;
+      viabilityPenalty + etaScore + reliabilityScore + costScore + capacityPenalty;
     ranked.push({
       supplierId: s.id,
       supplierName: s.name,

@@ -17,9 +17,16 @@ import {
   findUpstreamRoute,
   rankSuppliersForShortfall,
   classifySupplierChannel,
+  applySupplierDegradation,
+  summarizeSupplierImpact,
+  type AppliedSupplierImpact,
   type RecommendationAlternative,
+  type RecommendationDisplacement,
+  type RecommendationSplitAllocation,
   type ScenarioRunInput,
+  type ScenarioSupplierImpactRow,
   type SimSupplier,
+  type SupplierImpact,
 } from "@workspace/sim";
 import { completeChat, resolveModel, SCENARIO_BRIEF_SYSTEM } from "@workspace/ai-orchestrator";
 
@@ -94,6 +101,47 @@ async function expandZonesIntoPerturbation(
     matchedZoneNames: zoneRows.map((z) => z.name),
     addedNodeIds: Array.from(insideNodeIds),
   };
+}
+
+// Auto-suggest supplier impacts from the set of affected nodes' countries.
+// Operator-supplied entries always win — we only add entries for suppliers
+// whose `country` matches an affected country and which the operator has
+// not already flagged. The defaults are intentionally conservative
+// (50% capacity hit, +5d lead time, -0.15 reliability for the full
+// horizon) so the impact is visible without overpowering the model.
+function autoFlagSuppliersByCountry(args: {
+  affectedNodeIds: string[];
+  nodes: { id: string; countryCode?: string | null }[];
+  suppliers: SimSupplier[];
+  existing: SupplierImpact[];
+}): SupplierImpact[] {
+  const { affectedNodeIds, nodes, suppliers, existing } = args;
+  if (affectedNodeIds.length === 0) return existing;
+  const affectedSet = new Set(affectedNodeIds);
+  const countries = new Set<string>();
+  for (const n of nodes) {
+    if (!affectedSet.has(n.id)) continue;
+    if (typeof n.countryCode === "string" && n.countryCode.length > 0) {
+      countries.add(n.countryCode.toUpperCase());
+    }
+  }
+  if (countries.size === 0) return existing;
+  const explicit = new Set(existing.map((e) => e.supplierId));
+  const additions: SupplierImpact[] = [];
+  for (const s of suppliers) {
+    if (!s.country) continue;
+    if (!countries.has(s.country.toUpperCase())) continue;
+    if (explicit.has(s.id)) continue;
+    additions.push({
+      supplierId: s.id,
+      capacityMultiplier: 0.5,
+      leadTimeDeltaDays: 5,
+      reliabilityDelta: -0.15,
+      autoFlagged: true,
+      cause: `In-country with affected nodes (${s.country})`,
+    });
+  }
+  return [...existing, ...additions];
 }
 
 const router: IRouter = Router();
@@ -269,6 +317,24 @@ router.get("/scenarios/:scenarioId", async (req, res, next) => {
       .select()
       .from(recsTable)
       .where(eq(recsTable.scenarioId, row.id));
+    // Reconstruct the supplier degradation that was in effect when the
+    // scenario was saved so the rendered Supplier Impact section matches
+    // the COA recommendations the operator originally saw.
+    const inputs = (row.inputs as Record<string, unknown>) ?? {};
+    const savedPerturbation =
+      (inputs.perturbation as Record<string, unknown> | undefined) ?? {};
+    const savedHorizon =
+      typeof inputs.horizonDays === "number" ? (inputs.horizonDays as number) : 21;
+    const savedImpacts: SupplierImpact[] = Array.isArray(
+      savedPerturbation.impactedSuppliers,
+    )
+      ? (savedPerturbation.impactedSuppliers as SupplierImpact[])
+      : [];
+    const degraded = applySupplierDegradation({
+      suppliers: ctx.suppliers,
+      impacted: savedImpacts,
+      horizonDays: savedHorizon,
+    });
     const envelope = buildScenarioResultEnvelope({
       id: row.id,
       name: row.name,
@@ -278,7 +344,9 @@ router.get("/scenarios/:scenarioId", async (req, res, next) => {
       result: row.result as ReturnType<typeof runScenario>,
       coaBrief: row.coaBrief ?? "",
       ctx: ctx.ctx,
-      suppliers: ctx.suppliers,
+      suppliers: degraded.suppliers,
+      baselineSuppliers: ctx.suppliers,
+      appliedSupplierImpacts: degraded.applied,
       promotedByRecId: new Map(
         persistedRecs.map((r) => [r.id, r.promotedOrderId ?? null]),
       ),
@@ -345,7 +413,44 @@ router.post("/scenarios/preview", async (req, res, next) => {
         summary = summary || preset.summary;
       }
     }
+    // Expand operator-drawn zones into affected nodes BEFORE the auto-flag
+    // pass so suppliers in zone-only countries get auto-flagged on every
+    // live preview tick (parity with the save/run path).
+    if (raw.zoneIds && raw.zoneIds.length > 0) {
+      const existingZ = Array.isArray(
+        (perturbation as Record<string, unknown>).zoneIds,
+      )
+        ? ((perturbation as Record<string, unknown>).zoneIds as string[])
+        : [];
+      (perturbation as Record<string, unknown>).zoneIds = Array.from(
+        new Set([...existingZ, ...raw.zoneIds]),
+      );
+    }
+    await expandZonesIntoPerturbation(perturbation as Record<string, unknown>);
     const horizonDays = Math.max(1, Math.min(45, raw.horizonDays ?? 21));
+    // Auto-flag suppliers in countries that contain affected nodes, then
+    // apply the per-supplier degradation knobs to a horizon-blended copy
+    // of the supplier list. The original list stays untouched so the
+    // ranker can still see baseline values where needed. Operator-supplied
+    // entries (including `excluded` tombstones for previously auto-flagged
+    // suppliers) always win, so the operator has the final say.
+    const explicitImpacts: SupplierImpact[] = Array.isArray(
+      perturbation.impactedSuppliers,
+    )
+      ? perturbation.impactedSuppliers
+      : [];
+    const allImpacts = autoFlagSuppliersByCountry({
+      affectedNodeIds: perturbation.affectedNodes ?? [],
+      nodes: ctx.ctx.nodes,
+      suppliers: ctx.suppliers,
+      existing: explicitImpacts,
+    });
+    perturbation = { ...perturbation, impactedSuppliers: allImpacts };
+    const degraded = applySupplierDegradation({
+      suppliers: ctx.suppliers,
+      impacted: allImpacts,
+      horizonDays,
+    });
     const result = runScenario(ctx.ctx, { horizonDays, perturbation });
     const envelope = buildScenarioResultEnvelope({
       id: "preview",
@@ -356,7 +461,9 @@ router.post("/scenarios/preview", async (req, res, next) => {
       result,
       coaBrief: "",
       ctx: ctx.ctx,
-      suppliers: ctx.suppliers,
+      suppliers: degraded.suppliers,
+      baselineSuppliers: ctx.suppliers,
+      appliedSupplierImpacts: degraded.applied,
       promotedByRecId: new Map(),
     });
     res.json({
@@ -426,6 +533,31 @@ router.post("/scenarios", async (req, res, next) => {
     }
 
     const horizonDays = Math.max(1, Math.min(45, body.horizonDays ?? 21));
+
+    // Auto-flag in-country suppliers (operator-supplied entries always win),
+    // then apply degradation to a copy of the supplier list. The degraded
+    // list is what the COA ranker sees, so degraded suppliers fall down
+    // the alternatives list and offline ones are skipped entirely.
+    const explicitImpacts: SupplierImpact[] = Array.isArray(
+      (perturbation as Record<string, unknown>).impactedSuppliers,
+    )
+      ? ((perturbation as Record<string, unknown>).impactedSuppliers as SupplierImpact[])
+      : [];
+    const allImpacts = autoFlagSuppliersByCountry({
+      affectedNodeIds: Array.isArray(perturbation.affectedNodes)
+        ? (perturbation.affectedNodes as string[])
+        : [],
+      nodes: ctx.ctx.nodes,
+      suppliers: ctx.suppliers,
+      existing: explicitImpacts,
+    });
+    perturbation.impactedSuppliers = allImpacts;
+    const degraded = applySupplierDegradation({
+      suppliers: ctx.suppliers,
+      impacted: allImpacts,
+      horizonDays,
+    });
+
     const result = runScenario(ctx.ctx, {
       horizonDays,
       perturbation: perturbation as ScenarioRunInput["perturbation"],
@@ -442,7 +574,20 @@ router.post("/scenarios", async (req, res, next) => {
         const node = ctx.ctx.nodes.find((x) => x.id === n.nodeId);
         return `${node?.name ?? n.nodeId} [node:${n.nodeId}] baseline=${n.baselineRisk} peak=${n.peakRisk} minDOS=${n.minDOS.toFixed(1)}d`;
       });
-      const userMsg = `SCENARIO: ${body.name}\nKIND: ${body.kind}\nSUMMARY: ${summary}\nHORIZON: ${horizonDays} days\nPERTURBATION: ${JSON.stringify(perturbation)}\nPEAK DAY: ${result.peakDay}\nTOP IMPACTED NODES:\n${topImpacted.join("\n")}\n\nWrite the COA brief.`;
+      const supplierLines = degraded.applied.length > 0
+        ? degraded.applied.slice(0, 6).map((a) => {
+            const cap = (a.capacityMultiplierApplied * 100).toFixed(0);
+            const flag = a.autoFlagged ? " [auto-flagged]" : "";
+            const cause = a.cause ? ` cause=${a.cause}` : "";
+            return `${a.supplierName} [supplier:${a.supplierId}] capacity=${cap}% +${a.leadTimeDeltaApplied.toFixed(1)}d lead Δrel=${a.reliabilityDeltaApplied.toFixed(2)} outage=${a.outageDays}d${flag}${cause}`;
+          })
+        : ["(no supplier degradation applied)"];
+      const userMsg =
+        `SCENARIO: ${body.name}\nKIND: ${body.kind}\nSUMMARY: ${summary}\nHORIZON: ${horizonDays} days\n` +
+        `PERTURBATION: ${JSON.stringify(perturbation)}\nPEAK DAY: ${result.peakDay}\n` +
+        `TOP IMPACTED NODES:\n${topImpacted.join("\n")}\n` +
+        `IMPACTED SUPPLIERS:\n${supplierLines.join("\n")}\n\n` +
+        `Write the COA brief. When suppliers are degraded, explicitly call out which sources are offline or constrained, which items they normally fulfill, and the recommended reroute.`;
       // Race the AI brief against a hard 12s deadline. The Replit
       // edge proxy in front of this server cancels upstream requests
       // that take too long and surfaces them to the browser as a
@@ -513,11 +658,21 @@ router.post("/scenarios", async (req, res, next) => {
       scenarioId: id,
       result,
       ctx: ctx.ctx,
-      suppliers: ctx.suppliers,
+      suppliers: degraded.suppliers,
+      baselineSuppliers: ctx.suppliers,
+      appliedSupplierImpacts: degraded.applied,
     });
     if (recsToPersist.length > 0) {
-      // Strip envelope-only field before insert
-      const dbRows = recsToPersist.map(({ alternatives: _alt, ...row }) => row);
+      // Strip envelope-only fields before insert (DB schema only has the
+      // narrative reason; UI-only attribution stays in-memory).
+      const dbRows = recsToPersist.map(
+        ({
+          alternatives: _alt,
+          displacedFrom: _df,
+          splitAllocation: _sa,
+          ...row
+        }) => row,
+      );
       await db.insert(recsTable).values(dbRows).onConflictDoNothing();
     }
 
@@ -530,7 +685,9 @@ router.post("/scenarios", async (req, res, next) => {
       result,
       coaBrief,
       ctx: ctx.ctx,
-      suppliers: ctx.suppliers,
+      suppliers: degraded.suppliers,
+      baselineSuppliers: ctx.suppliers,
+      appliedSupplierImpacts: degraded.applied,
       promotedByRecId: new Map(),
     });
     res.json({
@@ -562,7 +719,14 @@ function buildScenarioResultEnvelope(args: {
   result: ReturnType<typeof runScenario>;
   coaBrief: string;
   ctx: ScenarioCtxLite;
+  // Supplier list the COA ranker should see — already mutated with any
+  // active per-supplier degradation. The ranker treats availability,
+  // lead-time, and reliability values as authoritative.
   suppliers: SimSupplier[];
+  // Untouched supplier list used to compute the Supplier Impact section
+  // (so we can show baseline values alongside the degraded ones).
+  baselineSuppliers?: SimSupplier[];
+  appliedSupplierImpacts?: AppliedSupplierImpact[];
   promotedByRecId: Map<string, string | null>;
 }) {
   const {
@@ -575,6 +739,8 @@ function buildScenarioResultEnvelope(args: {
     coaBrief,
     ctx,
     suppliers,
+    baselineSuppliers,
+    appliedSupplierImpacts,
     promotedByRecId,
   } = args;
   const nodeMap = new Map(ctx.nodes.map((n) => [n.id, n]));
@@ -691,6 +857,56 @@ function buildScenarioResultEnvelope(args: {
       : 0;
   })();
 
+  const recommendations = buildScenarioRecommendationsView({
+    scenarioId: id,
+    result,
+    ctx,
+    suppliers,
+    baselineSuppliers,
+    appliedSupplierImpacts,
+    promotedByRecId,
+    runAt,
+  });
+
+  // Build the Supplier Impact section. We derive the "rerouted to" map by
+  // looking at the recs we just produced: for every shortfall item where
+  // an impacted supplier USED to be a viable source (it covers the item)
+  // but the ranker chose a different supplier, we tag that as a reroute
+  // away from the impacted supplier.
+  const baseline = baselineSuppliers ?? suppliers;
+  const baselineById = new Map(baseline.map((s) => [s.id, s]));
+  const reroutedTo = new Map<
+    string,
+    { supplierId: string; supplierName: string }
+  >();
+  if (appliedSupplierImpacts && appliedSupplierImpacts.length > 0) {
+    const impactedIds = new Set(appliedSupplierImpacts.map((a) => a.supplierId));
+    for (const rec of recommendations) {
+      const chosenId = rec.suggestedSupplierId;
+      if (!chosenId || impactedIds.has(chosenId)) continue;
+      const chosenName = suppliers.find((s) => s.id === chosenId)?.name ?? chosenId;
+      for (const impactedId of impactedIds) {
+        const base = baselineById.get(impactedId);
+        const items = base?.itemsCovered ?? [];
+        if (items.length > 0 && !items.includes(rec.itemId)) continue;
+        reroutedTo.set(`${impactedId}:${rec.itemId}`, {
+          supplierId: chosenId,
+          supplierName: chosenName,
+        });
+      }
+    }
+  }
+  const shortfallItemIds = new Set(result.perItemShortfall.map((s) => s.itemId));
+  const supplierImpact: ScenarioSupplierImpactRow[] =
+    appliedSupplierImpacts && appliedSupplierImpacts.length > 0
+      ? summarizeSupplierImpact({
+          applied: appliedSupplierImpacts,
+          baselineSuppliers: baseline,
+          shortfallItemIds,
+          reroutedTo,
+        })
+      : [];
+
   return {
     scenario: {
       id,
@@ -713,18 +929,12 @@ function buildScenarioResultEnvelope(args: {
     },
     perNode,
     perItem,
-    recommendations: buildScenarioRecommendationsView({
-      scenarioId: id,
-      result,
-      ctx,
-      suppliers,
-      promotedByRecId,
-      runAt,
-    }),
+    recommendations,
     timeline,
     narrative: coaBrief || null,
     cascades: result.cascades,
     cascadeNarrative: result.cascades?.narrative ?? [],
+    supplierImpact,
     kind,
   };
 }
@@ -778,6 +988,8 @@ function buildScenarioRecRationale(args: {
   channel?: "DOD" | "COMMERCIAL" | "HOST_NATION" | "ALLIED";
   etaDays: number;
   estimatedTotalCostUsd?: number;
+  displacedFrom?: RecommendationDisplacement;
+  splitAllocation?: RecommendationSplitAllocation[];
 }): string {
   const supplierClause = args.supplierName
     ? ` via ${args.supplierName} (~${args.etaDays.toFixed(0)}d ETA)`
@@ -795,21 +1007,134 @@ function buildScenarioRecRationale(args: {
     typeof args.estimatedTotalCostUsd === "number" && Number.isFinite(args.estimatedTotalCostUsd)
       ? ` Est. cost $${args.estimatedTotalCostUsd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}.`
       : "";
-  return `Pre-position ${args.qty.toLocaleString()} ${args.unitOfIssue} ${args.itemName} to ${args.nodeName} — projected DOS ${args.dos.toFixed(1)} d at ${args.burn.toFixed(1)}/d burn${supplierClause}${channelClause}.${costClause}`;
+  // Explicit attribution: "primary supplier X is offline → routing through Y"
+  // so the operator immediately understands why the COA shifted off the
+  // steady-state pick.
+  const displacedClause = args.displacedFrom
+    ? args.displacedFrom.availabilityFraction <= 0.001
+      ? ` Primary source ${args.displacedFrom.supplierName} is OFFLINE${args.displacedFrom.cause ? ` (${args.displacedFrom.cause})` : ""} — routing through ${args.supplierName ?? "alternate"}.`
+      : ` Primary source ${args.displacedFrom.supplierName} at ${(args.displacedFrom.availabilityFraction * 100).toFixed(0)}% capacity${args.displacedFrom.cause ? ` (${args.displacedFrom.cause})` : ""} — routing through ${args.supplierName ?? "alternate"}.`
+    : "";
+  // Split-source attribution: when one supplier can't carry the load, we
+  // call out the proportional fill across the chosen alternates.
+  const splitClause =
+    args.splitAllocation && args.splitAllocation.length >= 2
+      ? ` Split fill: ${args.splitAllocation
+          .map(
+            (a) =>
+              `${(a.pctOfTotal * 100).toFixed(0)}% ${a.supplierName} (${a.qty.toLocaleString()} ${args.unitOfIssue})`,
+          )
+          .join(" + ")}.`
+      : "";
+  return `Pre-position ${args.qty.toLocaleString()} ${args.unitOfIssue} ${args.itemName} to ${args.nodeName} — projected DOS ${args.dos.toFixed(1)} d at ${args.burn.toFixed(1)}/d burn${supplierClause}${channelClause}.${costClause}${displacedClause}${splitClause}`;
 }
 
-type EnrichedRecRow = ScenarioRecRow & { alternatives: RecommendationAlternative[] };
+// Compute the would-be primary supplier for an item using *baseline* (un-
+// degraded) supplier values. Returns the highest-ranked supplier that
+// covers `itemId` against an empty perturbation. We use this to attribute
+// reroutes back to the primary source the scenario knocked out.
+function pickBaselinePrimary(args: {
+  itemId: string;
+  shortfallHorizonDays: number;
+  upstreamRouteDays: number;
+  baselineSuppliers: SimSupplier[];
+}): SimSupplier | undefined {
+  const ranked = rankSuppliersForShortfall({
+    itemId: args.itemId,
+    suggestedQty: 1,
+    shortfallHorizonDays: args.shortfallHorizonDays,
+    upstreamRouteDays: args.upstreamRouteDays,
+    suppliers: args.baselineSuppliers,
+  });
+  if (ranked.length === 0) return undefined;
+  return args.baselineSuppliers.find((s) => s.id === ranked[0].supplierId);
+}
+
+// Allocate `totalQty` across two suppliers proportional to their available
+// capacity fractions. We only split when the primary's capacity is meaningfully
+// constrained (< 0.7) AND a secondary alternate has higher availability;
+// otherwise single-source as before.
+function computeSplitAllocation(args: {
+  totalQty: number;
+  primary: RecommendationAlternative;
+  alternates: RecommendationAlternative[];
+  suppliers: SimSupplier[];
+}): RecommendationSplitAllocation[] | undefined {
+  const { totalQty, primary, alternates, suppliers } = args;
+  if (totalQty <= 0) return undefined;
+  const primarySim = suppliers.find((s) => s.id === primary.supplierId);
+  const primaryAvail =
+    typeof primarySim?.availabilityFraction === "number"
+      ? primarySim.availabilityFraction
+      : 1;
+  if (primaryAvail >= 0.7) return undefined;
+  // Find the next alternate that actually carries the item and has higher
+  // availability than the primary. Skip the primary itself.
+  const secondary = alternates.find((a) => {
+    if (a.supplierId === primary.supplierId) return false;
+    const sim = suppliers.find((s) => s.id === a.supplierId);
+    const avail =
+      typeof sim?.availabilityFraction === "number" ? sim.availabilityFraction : 1;
+    return avail > primaryAvail + 0.05;
+  });
+  if (!secondary) return undefined;
+  const secondarySim = suppliers.find((s) => s.id === secondary.supplierId);
+  const secondaryAvail =
+    typeof secondarySim?.availabilityFraction === "number"
+      ? secondarySim.availabilityFraction
+      : 1;
+  const totalAvail = primaryAvail + secondaryAvail;
+  if (totalAvail <= 0) return undefined;
+  const primaryPct = primaryAvail / totalAvail;
+  const secondaryPct = 1 - primaryPct;
+  const primaryQty = Math.max(1, Math.round(totalQty * primaryPct));
+  const secondaryQty = Math.max(1, totalQty - primaryQty);
+  return [
+    {
+      supplierId: primary.supplierId,
+      supplierName: primary.supplierName,
+      channel: primary.channel,
+      qty: primaryQty,
+      pctOfTotal: Number((primaryQty / totalQty).toFixed(3)),
+      etaDays: primary.etaDays,
+    },
+    {
+      supplierId: secondary.supplierId,
+      supplierName: secondary.supplierName,
+      channel: secondary.channel,
+      qty: secondaryQty,
+      pctOfTotal: Number((secondaryQty / totalQty).toFixed(3)),
+      etaDays: secondary.etaDays,
+    },
+  ];
+}
+
+type EnrichedRecRow = ScenarioRecRow & {
+  alternatives: RecommendationAlternative[];
+  displacedFrom?: RecommendationDisplacement;
+  splitAllocation?: RecommendationSplitAllocation[];
+};
 
 function buildScenarioRecommendationRows(args: {
   scenarioId: string;
   result: ReturnType<typeof runScenario>;
   ctx: ScenarioCtxLite;
   suppliers: SimSupplier[];
+  // Untouched supplier list — used to identify the would-be primary
+  // source so we can attribute reroutes when degraded.
+  baselineSuppliers?: SimSupplier[];
+  appliedSupplierImpacts?: AppliedSupplierImpact[];
 }): EnrichedRecRow[] {
-  const { scenarioId, result, ctx, suppliers } = args;
+  const { scenarioId, result, ctx, suppliers, baselineSuppliers, appliedSupplierImpacts } = args;
   const nodeMap = new Map(ctx.nodes.map((n) => [n.id, n]));
   const itemMap = new Map(ctx.items.map((i) => [i.id, i]));
   const rows: EnrichedRecRow[] = [];
+  // Index applied impacts so we can attach human-friendly cause + capacity
+  // to the displaced-from rationale.
+  const appliedById = new Map(
+    (appliedSupplierImpacts ?? []).map((a) => [a.supplierId, a]),
+  );
+  const baselineList = baselineSuppliers ?? suppliers;
   const shortlist = result.perItemShortfall.slice(0, 8);
   for (const sf of shortlist) {
     const node = nodeMap.get(sf.nodeId);
@@ -824,6 +1149,45 @@ function buildScenarioRecommendationRows(args: {
       suppliers,
     });
     const top = ranked[0];
+    // Identify the would-be primary against baseline values. If the chosen
+    // supplier differs and the baseline primary is in the impacted set, we
+    // attribute the reroute back to that primary so the rationale can say
+    // "primary X at 40% capacity → routing through Y".
+    const baselinePrimary =
+      appliedSupplierImpacts && appliedSupplierImpacts.length > 0
+        ? pickBaselinePrimary({
+            itemId: sf.itemId,
+            shortfallHorizonDays: Math.max(ctx.criticalDays, sf.projectedDOS),
+            upstreamRouteDays: upstream?.days ?? 2,
+            baselineSuppliers: baselineList,
+          })
+        : undefined;
+    let displacedFrom: RecommendationDisplacement | undefined;
+    if (
+      baselinePrimary &&
+      top &&
+      baselinePrimary.id !== top.supplierId &&
+      appliedById.has(baselinePrimary.id)
+    ) {
+      const a = appliedById.get(baselinePrimary.id)!;
+      displacedFrom = {
+        supplierId: baselinePrimary.id,
+        supplierName: baselinePrimary.name,
+        availabilityFraction: a.capacityMultiplierApplied,
+        cause: a.cause,
+      };
+    }
+    // Capacity-aware split sourcing: if the chosen supplier's availability is
+    // constrained AND a healthier alternate exists, split the fill across both
+    // suppliers proportional to capacity.
+    const splitAllocation = top
+      ? computeSplitAllocation({
+          totalQty: sf.suggestedQty,
+          primary: top,
+          alternates: ranked.slice(1, 4),
+          suppliers,
+        })
+      : undefined;
     // Fallback if no supplier carries the item: use the legacy upstream pick
     // so we never emit a row with a missing supplier when the catalog is
     // sparse.
@@ -867,6 +1231,8 @@ function buildScenarioRecommendationRows(args: {
         channel: channel ?? undefined,
         etaDays: eta,
         estimatedTotalCostUsd: estimatedTotalCost,
+        displacedFrom,
+        splitAllocation,
       }),
       expectedRiskReduction,
       sourceSupplierId: top?.supplierId ?? fallback?.id ?? null,
@@ -877,6 +1243,8 @@ function buildScenarioRecommendationRows(args: {
       status: "OPEN",
       scenarioId,
       alternatives: ranked.slice(0, 4),
+      displacedFrom,
+      splitAllocation,
     });
   }
   return rows;
@@ -887,13 +1255,31 @@ function buildScenarioRecommendationsView(args: {
   result: ReturnType<typeof runScenario>;
   ctx: ScenarioCtxLite;
   suppliers: SimSupplier[];
+  baselineSuppliers?: SimSupplier[];
+  appliedSupplierImpacts?: AppliedSupplierImpact[];
   promotedByRecId: Map<string, string | null>;
   runAt: Date;
 }) {
-  const { scenarioId, result, ctx, suppliers, promotedByRecId, runAt } = args;
+  const {
+    scenarioId,
+    result,
+    ctx,
+    suppliers,
+    baselineSuppliers,
+    appliedSupplierImpacts,
+    promotedByRecId,
+    runAt,
+  } = args;
   const nodeMap = new Map(ctx.nodes.map((n) => [n.id, n]));
   const itemMap = new Map(ctx.items.map((i) => [i.id, i]));
-  const rows = buildScenarioRecommendationRows({ scenarioId, result, ctx, suppliers });
+  const rows = buildScenarioRecommendationRows({
+    scenarioId,
+    result,
+    ctx,
+    suppliers,
+    baselineSuppliers,
+    appliedSupplierImpacts,
+  });
   return rows.map((row) => {
     const node = nodeMap.get(row.nodeId);
     const item = itemMap.get(row.itemId);
@@ -921,6 +1307,8 @@ function buildScenarioRecommendationsView(args: {
       estimatedTotalCostUsd: row.estimatedTotalCostUsd ?? 0,
       estimatedCost: row.estimatedTotalCostUsd ?? 0,
       alternatives: row.alternatives,
+      displacedFrom: row.displacedFrom ?? null,
+      splitAllocation: row.splitAllocation ?? null,
       generatedAt: runAt.toISOString(),
       confidenceScore: Math.min(0.95, 0.55 + (row.expectedRiskReduction ?? 0) / 200),
       scenarioId,

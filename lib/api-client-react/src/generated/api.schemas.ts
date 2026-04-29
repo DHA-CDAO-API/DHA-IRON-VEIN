@@ -603,6 +603,35 @@ export interface RecommendationAlternative {
   rankScore: number;
 }
 
+export interface RecommendationDisplacement {
+  supplierId: string;
+  supplierName: string;
+  /** Capacity multiplier the scenario applied (0..1). */
+  availabilityFraction: number;
+  /** @nullable */
+  cause?: string | null;
+}
+
+export type RecommendationSplitAllocationChannel =
+  (typeof RecommendationSplitAllocationChannel)[keyof typeof RecommendationSplitAllocationChannel];
+
+export const RecommendationSplitAllocationChannel = {
+  DOD: "DOD",
+  COMMERCIAL: "COMMERCIAL",
+  HOST_NATION: "HOST_NATION",
+  ALLIED: "ALLIED",
+} as const;
+
+export interface RecommendationSplitAllocation {
+  supplierId: string;
+  supplierName: string;
+  channel: RecommendationSplitAllocationChannel;
+  qty: number;
+  /** Fraction of the total qty assigned to this supplier (0..1). */
+  pctOfTotal: number;
+  etaDays: number;
+}
+
 export interface Recommendation {
   id: string;
   kind: string;
@@ -630,6 +659,17 @@ export interface Recommendation {
   estimatedTotalCostUsd?: number;
   /** Up to 4 ranked alternative suppliers across channels. */
   alternatives?: RecommendationAlternative[];
+  /** When the scenario knocked the would-be primary supplier offline or
+below capacity and the COA had to reroute through an alternate,
+this records the displaced supplier and its degraded availability.
+ */
+  displacedFrom?: RecommendationDisplacement | null;
+  /** Capacity-aware split sourcing across two suppliers. Present only
+when the chosen primary's availability is constrained and a
+healthier alternate exists; the planner divides the total qty
+proportional to capacity.
+ */
+  splitAllocation?: RecommendationSplitAllocation[] | null;
   generatedAt: string;
   confidenceScore?: number;
   /** @nullable */
@@ -1029,6 +1069,22 @@ export type EventParametersAirlift = {
   affectedModalities?: string[];
 };
 
+export type EventParametersImpactedSuppliersItem = {
+  supplierId: string;
+  /** 0..1 multiplier on baseline capacity. 1 = unchanged. 0 = offline (skipped by the ranker). */
+  capacityMultiplier?: number;
+  /** Days added to the supplier's mean lead time during the outage window. */
+  leadTimeDeltaDays?: number;
+  /** Delta on reliability score (e.g. -0.3 drops a 0.9 supplier to 0.6). */
+  reliabilityDelta?: number;
+  /** Days inside the scenario horizon the supplier is degraded. Defaults to the full horizon. */
+  outageDays?: number;
+  /** Human-friendly cause surfaced in the UI / AI brief. */
+  cause?: string;
+  /** True when the entry was auto-suggested by the country auto-flag pass (not authored by the operator). */
+  autoFlagged?: boolean;
+};
+
 /**
  * Perturbation parameters applied by the simulation engine.
  */
@@ -1049,6 +1105,8 @@ export interface EventParameters {
   reagent?: EventParametersReagent;
   /** Airlift loss cascade. Lengthens routes and degrades viability of arriving liquid blood lots. */
   airlift?: EventParametersAirlift;
+  /** Per-supplier degradation knobs. The runner blends each entry over the scenario horizon and feeds the degraded values into the COA supplier ranker. */
+  impactedSuppliers?: EventParametersImpactedSuppliersItem[];
 }
 
 export interface PresetEvent {
@@ -1185,6 +1243,43 @@ export interface ScenarioCascadeOutcome {
   narrative?: string[];
 }
 
+export type ScenarioSupplierImpactBaseline = {
+  leadTimeDaysMean?: number;
+  reliabilityScore?: number;
+};
+
+export type ScenarioSupplierImpactReroutesItem = {
+  itemId: string;
+  supplierId: string;
+  supplierName: string;
+};
+
+export interface ScenarioSupplierImpact {
+  supplierId: string;
+  supplierName: string;
+  /** @nullable */
+  country?: string | null;
+  /** @nullable */
+  channel?: string | null;
+  /** 0..1 horizon-blended capacity. 0 = supplier completely offline during the scenario. */
+  capacityMultiplierApplied: number;
+  /** Days added to the supplier's mean lead time after horizon blending. */
+  leadTimeDeltaApplied: number;
+  /** Delta on reliability score after horizon blending. */
+  reliabilityDeltaApplied: number;
+  outageDays: number;
+  horizonDays: number;
+  /** @nullable */
+  cause?: string | null;
+  autoFlagged: boolean;
+  baseline?: ScenarioSupplierImpactBaseline;
+  itemsCovered?: string[];
+  /** Items the impacted supplier normally fulfills that are also experiencing shortfalls in this run. */
+  affectedItemIds?: string[];
+  /** Per-item COA reroutes away from this supplier. */
+  reroutes?: ScenarioSupplierImpactReroutesItem[];
+}
+
 export interface ScenarioResult {
   scenario: Scenario;
   summary: ScenarioSummary;
@@ -1197,6 +1292,8 @@ export interface ScenarioResult {
   /** Per-cascade plain-English impact lines (cold-chain, reagent, airlift). */
   cascadeNarrative?: string[];
   cascades?: ScenarioCascadeOutcome;
+  /** Per-supplier impact summary covering both operator-flagged and auto-flagged degradations applied during the run. */
+  supplierImpact?: ScenarioSupplierImpact[];
   kind?: string;
 }
 

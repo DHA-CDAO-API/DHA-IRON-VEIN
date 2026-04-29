@@ -1822,6 +1822,32 @@ components:
             affectedModalities:
               type: array
               items: { type: string }
+        impactedSuppliers:
+          type: array
+          description: Per-supplier degradation knobs. The runner blends each entry over the scenario horizon and feeds the degraded values into the COA supplier ranker.
+          items:
+            type: object
+            required: [supplierId]
+            properties:
+              supplierId: { type: string }
+              capacityMultiplier:
+                type: number
+                description: 0..1 multiplier on baseline capacity. 1 = unchanged. 0 = offline (skipped by the ranker).
+              leadTimeDeltaDays:
+                type: number
+                description: Days added to the supplier's mean lead time during the outage window.
+              reliabilityDelta:
+                type: number
+                description: Delta on reliability score (e.g. -0.3 drops a 0.9 supplier to 0.6).
+              outageDays:
+                type: number
+                description: Days inside the scenario horizon the supplier is degraded. Defaults to the full horizon.
+              cause:
+                type: string
+                description: Human-friendly cause surfaced in the UI / AI brief.
+              autoFlagged:
+                type: boolean
+                description: True when the entry was auto-suggested by the country auto-flag pass (not authored by the operator).
 
     Scenario:
       type: object
@@ -1884,7 +1910,55 @@ components:
           items: { type: string }
         cascades:
           $ref: "#/components/schemas/ScenarioCascadeOutcome"
+        supplierImpact:
+          type: array
+          description: Per-supplier impact summary covering both operator-flagged and auto-flagged degradations applied during the run.
+          items: { $ref: "#/components/schemas/ScenarioSupplierImpact" }
         kind: { type: string }
+
+    ScenarioSupplierImpact:
+      type: object
+      required: [supplierId, supplierName, capacityMultiplierApplied, leadTimeDeltaApplied, reliabilityDeltaApplied, outageDays, horizonDays, autoFlagged]
+      properties:
+        supplierId: { type: string }
+        supplierName: { type: string }
+        country: { type: ["string", "null"] }
+        channel: { type: ["string", "null"] }
+        capacityMultiplierApplied:
+          type: number
+          description: 0..1 horizon-blended capacity. 0 = supplier completely offline during the scenario.
+        leadTimeDeltaApplied:
+          type: number
+          description: Days added to the supplier's mean lead time after horizon blending.
+        reliabilityDeltaApplied:
+          type: number
+          description: Delta on reliability score after horizon blending.
+        outageDays: { type: number }
+        horizonDays: { type: number }
+        cause: { type: ["string", "null"] }
+        autoFlagged: { type: boolean }
+        baseline:
+          type: object
+          properties:
+            leadTimeDaysMean: { type: number }
+            reliabilityScore: { type: number }
+        itemsCovered:
+          type: array
+          items: { type: string }
+        affectedItemIds:
+          type: array
+          description: Items the impacted supplier normally fulfills that are also experiencing shortfalls in this run.
+          items: { type: string }
+        reroutes:
+          type: array
+          description: Per-item COA reroutes away from this supplier.
+          items:
+            type: object
+            required: [itemId, supplierId, supplierName]
+            properties:
+              itemId: { type: string }
+              supplierId: { type: string }
+              supplierName: { type: string }
 
     ScenarioCascadeOutcome:
       type: object
@@ -2023,6 +2097,24 @@ components:
           type: array
           description: Up to 4 ranked alternative suppliers across channels.
           items: { $ref: "#/components/schemas/RecommendationAlternative" }
+        displacedFrom:
+          oneOf:
+            - $ref: "#/components/schemas/RecommendationDisplacement"
+            - type: "null"
+          description: |
+            When the scenario knocked the would-be primary supplier offline or
+            below capacity and the COA had to reroute through an alternate,
+            this records the displaced supplier and its degraded availability.
+        splitAllocation:
+          oneOf:
+            - type: array
+              items: { $ref: "#/components/schemas/RecommendationSplitAllocation" }
+            - type: "null"
+          description: |
+            Capacity-aware split sourcing across two suppliers. Present only
+            when the chosen primary's availability is constrained and a
+            healthier alternate exists; the planner divides the total qty
+            proportional to capacity.
         generatedAt: { type: string, format: date-time }
         confidenceScore: { type: number }
         scenarioId: { type: ["string", "null"] }
@@ -2042,6 +2134,32 @@ components:
         estimatedUnitCostUsd: { type: number }
         estimatedTotalCostUsd: { type: number }
         rankScore: { type: number }
+
+    RecommendationDisplacement:
+      type: object
+      required: [supplierId, supplierName, availabilityFraction]
+      properties:
+        supplierId: { type: string }
+        supplierName: { type: string }
+        availabilityFraction:
+          type: number
+          description: Capacity multiplier the scenario applied (0..1).
+        cause: { type: ["string", "null"] }
+
+    RecommendationSplitAllocation:
+      type: object
+      required: [supplierId, supplierName, channel, qty, pctOfTotal, etaDays]
+      properties:
+        supplierId: { type: string }
+        supplierName: { type: string }
+        channel:
+          type: string
+          enum: [DOD, COMMERCIAL, HOST_NATION, ALLIED]
+        qty: { type: number }
+        pctOfTotal:
+          type: number
+          description: Fraction of the total qty assigned to this supplier (0..1).
+        etaDays: { type: number }
 
     PromoteRecommendationOverrides:
       type: object

@@ -7,6 +7,7 @@
  */
 import type { EventParametersAirlift } from "./eventParametersAirlift";
 import type { EventParametersColdChain } from "./eventParametersColdChain";
+import type { EventParametersImpactedSuppliersItem } from "./eventParametersImpactedSuppliersItem";
 import type { EventParametersItemSkew } from "./eventParametersItemSkew";
 import type { EventParametersReagent } from "./eventParametersReagent";
 
@@ -30,4 +31,6 @@ export interface EventParameters {
   reagent?: EventParametersReagent;
   /** Airlift loss cascade. Lengthens routes and degrades viability of arriving liquid blood lots. */
   airlift?: EventParametersAirlift;
+  /** Per-supplier degradation knobs. The runner blends each entry over the scenario horizon and feeds the degraded values into the COA supplier ranker. */
+  impactedSuppliers?: EventParametersImpactedSuppliersItem[];
 }

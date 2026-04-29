@@ -6,7 +6,9 @@
  * OpenAPI spec version: 1.0.0
  */
 import type { RecommendationAlternative } from "./recommendationAlternative";
+import type { RecommendationDisplacement } from "./recommendationDisplacement";
 import type { RecommendationSourceChannel } from "./recommendationSourceChannel";
+import type { RecommendationSplitAllocation } from "./recommendationSplitAllocation";
 
 export interface Recommendation {
   id: string;
@@ -35,6 +37,17 @@ export interface Recommendation {
   estimatedTotalCostUsd?: number;
   /** Up to 4 ranked alternative suppliers across channels. */
   alternatives?: RecommendationAlternative[];
+  /** When the scenario knocked the would-be primary supplier offline or
+below capacity and the COA had to reroute through an alternate,
+this records the displaced supplier and its degraded availability.
+ */
+  displacedFrom?: RecommendationDisplacement | null;
+  /** Capacity-aware split sourcing across two suppliers. Present only
+when the chosen primary's availability is constrained and a
+healthier alternate exists; the planner divides the total qty
+proportional to capacity.
+ */
+  splitAllocation?: RecommendationSplitAllocation[] | null;
   generatedAt: Date;
   confidenceScore?: number;
   /** @nullable */

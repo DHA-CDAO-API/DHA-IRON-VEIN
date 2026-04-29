@@ -102,6 +102,20 @@ import {
   type PromoteOverrides,
 } from "@/components/PromoteDialog";
 
+type SupplierImpactInput = {
+  supplierId: string;
+  capacityMultiplier?: number;
+  leadTimeDeltaDays?: number;
+  reliabilityDelta?: number;
+  outageDays?: number;
+  cause?: string;
+  autoFlagged?: boolean;
+  // Operator override: when true, the API treats this entry as a tombstone
+  // and skips applying any degradation, even if the country-based auto-flag
+  // pass would otherwise re-add it.
+  excluded?: boolean;
+};
+
 type Perturbation = {
   affectedNodes?: string[];
   encounterMultiplier?: number;
@@ -111,6 +125,7 @@ type Perturbation = {
   routeDelayDays?: number;
   specimensMultiplier?: number;
   itemSkew?: Record<string, number>;
+  impactedSuppliers?: SupplierImpactInput[];
 };
 
 type CustomBuilderState = {
@@ -125,6 +140,10 @@ type CustomBuilderState = {
   routeDelayDays: number;
   routeReliabilityDelta: number;
   horizonDays: number;
+  // Operator-authored supplier degradations. Auto-flagged entries from
+  // the country pass are layered on by the API and surfaced separately
+  // in the Results panel; we only carry operator intent here.
+  impactedSuppliers: SupplierImpactInput[];
 };
 
 const DEFAULT_BUILDER: CustomBuilderState = {
@@ -139,6 +158,7 @@ const DEFAULT_BUILDER: CustomBuilderState = {
   routeDelayDays: 3,
   routeReliabilityDelta: -0.2,
   horizonDays: 21,
+  impactedSuppliers: [],
 };
 
 const ZONE_SEVERITY_COLOR: Record<string, [number, number, number]> = {
@@ -187,6 +207,13 @@ function builderFromSavedDetail(
   prev: CustomBuilderState,
 ): CustomBuilderState {
   const p = detail.inputs?.perturbation ?? {};
+  // Keep ALL persisted supplier impacts on load — including auto-flagged
+  // entries and explicit `excluded` tombstones. The operator needs to see
+  // what the country-based pass added so they can override the cap/lead/
+  // reliability knobs or exclude a supplier entirely.
+  const savedSuppliers = Array.isArray(p.impactedSuppliers)
+    ? (p.impactedSuppliers as SupplierImpactInput[])
+    : prev.impactedSuppliers;
   return {
     name: detail.scenario?.name ?? prev.name,
     kind: detail.kind ?? prev.kind,
@@ -199,6 +226,7 @@ function builderFromSavedDetail(
     routeReliabilityDelta: p.routeReliabilityDelta ?? prev.routeReliabilityDelta,
     horizonDays: detail.inputs?.horizonDays ?? prev.horizonDays,
     zoneIds: (detail as any).zoneIds ?? prev.zoneIds,
+    impactedSuppliers: savedSuppliers,
   };
 }
 
@@ -209,6 +237,7 @@ export default function Scenarios() {
   const { data: zones = [] } = useListTheaterZones({
     query: { queryKey: getListTheaterZonesQueryKey() },
   });
+  const { data: builderSuppliers = [] } = useListSuppliers();
   const runScenario = useRunScenario();
   const previewScenario = usePreviewScenario();
   const queryClient = useQueryClient();
@@ -393,6 +422,9 @@ export default function Scenarios() {
       wasteMultiplier: builder.wasteMultiplier,
       routeDelayDays: builder.routeDelayDays,
       routeReliabilityDelta: builder.routeReliabilityDelta,
+      ...(builder.impactedSuppliers.length > 0
+        ? { impactedSuppliers: builder.impactedSuppliers }
+        : {}),
     };
     try {
       const res = (await runScenario.mutateAsync({
@@ -437,6 +469,9 @@ export default function Scenarios() {
         wasteMultiplier: builder.wasteMultiplier,
         routeDelayDays: builder.routeDelayDays,
         routeReliabilityDelta: builder.routeReliabilityDelta,
+        ...(builder.impactedSuppliers.length > 0
+          ? { impactedSuppliers: builder.impactedSuppliers }
+          : {}),
       };
       try {
         const res = (await previewMutate({
@@ -635,6 +670,7 @@ export default function Scenarios() {
           onChange={setBuilder}
           nodes={focusableNodes}
           zones={zones as TheaterZone[]}
+          suppliers={builderSuppliers}
           isSaving={
             runScenario.isPending &&
             !runScenario.variables?.data?.presetEventId
@@ -972,6 +1008,7 @@ function CustomBuilder({
   onChange,
   nodes,
   zones,
+  suppliers,
   onSave,
   onRun,
   onReset,
@@ -984,6 +1021,9 @@ function CustomBuilder({
   onChange: (next: CustomBuilderState) => void;
   nodes: NetworkNode[];
   zones: TheaterZone[];
+  // The list is loaded by the parent so the builder can render
+  // friendly supplier names in the impact section.
+  suppliers: Array<{ id: string; name: string; countryCode?: string | null }>;
   onSave: () => void;
   onRun: () => void;
   onReset: () => void;
@@ -996,6 +1036,114 @@ function CustomBuilder({
     key: K,
     value: CustomBuilderState[K],
   ) => onChange({ ...state, [key]: value });
+
+  const supplierById = React.useMemo(
+    () => new Map(suppliers.map((s) => [s.id, s])),
+    [suppliers],
+  );
+
+  const updateImpact = (
+    supplierId: string,
+    patch: Partial<SupplierImpactInput>,
+  ) => {
+    update(
+      "impactedSuppliers",
+      state.impactedSuppliers.map((i) =>
+        i.supplierId === supplierId ? { ...i, ...patch } : i,
+      ),
+    );
+  };
+
+  // Operator override on auto-flagged rows: instead of dropping the entry
+  // (which the country pass would re-add on the next run), we mark it as
+  // `excluded`. The API treats excluded entries as tombstones and skips
+  // both auto re-add AND degradation. Manual rows are removed outright.
+  const removeImpact = (supplierId: string) => {
+    const entry = state.impactedSuppliers.find((i) => i.supplierId === supplierId);
+    if (entry?.autoFlagged) {
+      update(
+        "impactedSuppliers",
+        state.impactedSuppliers.map((i) =>
+          i.supplierId === supplierId
+            ? { ...i, excluded: true, cause: i.cause ?? "operator override" }
+            : i,
+        ),
+      );
+      return;
+    }
+    update(
+      "impactedSuppliers",
+      state.impactedSuppliers.filter((i) => i.supplierId !== supplierId),
+    );
+  };
+
+  // Re-include a previously excluded auto-flagged supplier. Clears the
+  // tombstone and lets the country pass govern its degradation again.
+  const reincludeImpact = (supplierId: string) => {
+    update(
+      "impactedSuppliers",
+      state.impactedSuppliers.map((i) =>
+        i.supplierId === supplierId ? { ...i, excluded: false } : i,
+      ),
+    );
+  };
+
+  const addImpact = (supplierId: string) => {
+    if (!supplierId) return;
+    const existing = state.impactedSuppliers.find((i) => i.supplierId === supplierId);
+    // If the supplier is already in the list as an excluded tombstone, the
+    // "Add" select acts as a re-include shortcut.
+    if (existing) {
+      if (existing.excluded) {
+        reincludeImpact(supplierId);
+      }
+      return;
+    }
+    // Default to a heavy hit (50% capacity, +5d lead time, -0.15 reliability)
+    // so the operator sees the impact immediately and can dial it back.
+    update("impactedSuppliers", [
+      ...state.impactedSuppliers,
+      {
+        supplierId,
+        capacityMultiplier: 0.5,
+        leadTimeDeltaDays: 5,
+        reliabilityDelta: -0.15,
+      },
+    ]);
+  };
+
+  // Explicit, operator-driven auto-flag from affected nodes' countries.
+  // Mirrors the server's autoFlagSuppliersByCountry pass so the operator
+  // can preview/edit the auto rows in the builder before saving. Skips
+  // suppliers already in the list (manual or previously auto-flagged) so
+  // existing knobs and tombstones are preserved.
+  const autoFlagFromAffected = () => {
+    const affectedCountries = new Set<string>();
+    for (const id of state.affectedNodes) {
+      const node = nodes.find((n) => n.id === id);
+      const cc = (node as { countryCode?: string | null } | undefined)?.countryCode;
+      if (cc) affectedCountries.add(cc);
+    }
+    if (affectedCountries.size === 0) return;
+    const existingIds = new Set(state.impactedSuppliers.map((i) => i.supplierId));
+    const additions: SupplierImpactInput[] = suppliers
+      .filter(
+        (s) =>
+          s.countryCode &&
+          affectedCountries.has(s.countryCode) &&
+          !existingIds.has(s.id),
+      )
+      .map((s) => ({
+        supplierId: s.id,
+        capacityMultiplier: 0.5,
+        leadTimeDeltaDays: 5,
+        reliabilityDelta: -0.15,
+        autoFlagged: true,
+        cause: `auto-flagged: ${s.countryCode} affected`,
+      }));
+    if (additions.length === 0) return;
+    update("impactedSuppliers", [...state.impactedSuppliers, ...additions]);
+  };
 
   const toggleNode = (id: string) => {
     const has = state.affectedNodes.includes(id);
@@ -1211,6 +1359,217 @@ function CustomBuilder({
           format={(v) => `${v.toFixed(0)}d`}
           info="How far forward to simulate. 14d = two-week look-ahead, 30d = full month, 45d = extended outlook."
         />
+
+        {/* ---------- Supplier Impact ----------
+            Operator-authored degradation knobs per supplier. The server
+            also auto-flags any supplier in a country that contains an
+            affected node — those rows show up in the Results panel under
+            "Supplier Impact" labelled [auto], so they don't need to be
+            re-entered here. */}
+        <div className="space-y-2 pt-1 border-t border-border/40">
+          <div className="flex items-center justify-between">
+            <Label className="text-xs">
+              Supplier Impact (
+              {
+                state.impactedSuppliers.filter((i) => !i.excluded).length
+              }
+              {state.impactedSuppliers.some((i) => i.excluded)
+                ? `, ${state.impactedSuppliers.filter((i) => i.excluded).length} excluded`
+                : ""}
+              )
+            </Label>
+            <div className="flex items-center gap-1.5">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-7 px-2 text-[10px]"
+                onClick={autoFlagFromAffected}
+                disabled={state.affectedNodes.length === 0}
+                title={
+                  state.affectedNodes.length === 0
+                    ? "Pick at least one affected node first"
+                    : "Add suppliers in countries that contain the selected affected nodes"
+                }
+              >
+                Auto-flag from affected
+              </Button>
+              {suppliers.length > 0 ? (
+                <Select value="" onValueChange={addImpact}>
+                  <SelectTrigger className="h-7 w-[140px] text-[11px]">
+                    <SelectValue placeholder="+ Add supplier" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {suppliers
+                      .filter(
+                        (s) =>
+                          !state.impactedSuppliers.some(
+                            (i) => i.supplierId === s.id && !i.excluded,
+                          ),
+                      )
+                      .map((s) => (
+                        <SelectItem
+                          key={s.id}
+                          value={s.id}
+                          className="text-xs"
+                        >
+                          {s.name}
+                          {s.countryCode ? ` · ${s.countryCode}` : ""}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+              ) : null}
+            </div>
+          </div>
+          {state.impactedSuppliers.length === 0 ? (
+            <div className="text-[10px] text-muted-foreground italic px-1">
+              No supplier degradations. Use “Auto-flag from affected” to add
+              every supplier in a country with an affected node, or pick one
+              manually.
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {state.impactedSuppliers.map((imp) => {
+                const sup = supplierById.get(imp.supplierId);
+                const cap = imp.capacityMultiplier ?? 1;
+                const lt = imp.leadTimeDeltaDays ?? 0;
+                const rel = imp.reliabilityDelta ?? 0;
+                const out = imp.outageDays ?? state.horizonDays;
+                const isExcluded = !!imp.excluded;
+                return (
+                  <div
+                    key={imp.supplierId}
+                    className={cn(
+                      "rounded-md border p-2 space-y-1.5",
+                      isExcluded
+                        ? "border-border/40 bg-background/20 opacity-60"
+                        : "border-border bg-background/50",
+                    )}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="text-[11px] font-medium truncate flex items-center gap-1.5 min-w-0">
+                        <span className="truncate">
+                          {sup?.name ?? imp.supplierId}
+                        </span>
+                        {sup?.countryCode ? (
+                          <span className="text-muted-foreground font-normal shrink-0">
+                            · {sup.countryCode}
+                          </span>
+                        ) : null}
+                        {imp.autoFlagged ? (
+                          <span
+                            className="shrink-0 text-[9px] uppercase font-mono px-1 py-px rounded border border-amber-500/50 text-amber-400 bg-amber-500/10"
+                            title={imp.cause ?? "Auto-flagged by country"}
+                          >
+                            auto
+                          </span>
+                        ) : null}
+                        {isExcluded ? (
+                          <span
+                            className="shrink-0 text-[9px] uppercase font-mono px-1 py-px rounded border border-muted text-muted-foreground"
+                            title="Operator override — degradation suppressed"
+                          >
+                            excluded
+                          </span>
+                        ) : null}
+                      </div>
+                      {isExcluded ? (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-6 px-1.5 text-[10px]"
+                          onClick={() => reincludeImpact(imp.supplierId)}
+                          title="Re-include this supplier in the degradation pass"
+                        >
+                          Re-include
+                        </Button>
+                      ) : (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-6 px-1.5 text-[10px]"
+                          onClick={() => removeImpact(imp.supplierId)}
+                          title={
+                            imp.autoFlagged
+                              ? "Exclude this auto-flagged supplier (operator override)"
+                              : "Remove this supplier"
+                          }
+                        >
+                          {imp.autoFlagged ? "Exclude" : "Remove"}
+                        </Button>
+                      )}
+                    </div>
+                    {isExcluded ? (
+                      <div className="text-[10px] text-muted-foreground italic px-0.5">
+                        Excluded — no degradation will be applied to this
+                        supplier on the next run.
+                      </div>
+                    ) : (
+                      <>
+                        <SliderField
+                          label="Capacity"
+                          min={0}
+                          max={1}
+                          step={0.05}
+                          value={cap}
+                          onChange={(v) =>
+                            updateImpact(imp.supplierId, {
+                              capacityMultiplier: v,
+                            })
+                          }
+                          format={(v) => `${(v * 100).toFixed(0)}%`}
+                        />
+                        <SliderField
+                          label="Lead Time Δ (days)"
+                          min={0}
+                          max={30}
+                          step={1}
+                          value={lt}
+                          onChange={(v) =>
+                            updateImpact(imp.supplierId, {
+                              leadTimeDeltaDays: v,
+                            })
+                          }
+                          format={(v) => `+${v.toFixed(0)}d`}
+                        />
+                        <SliderField
+                          label="Reliability Δ"
+                          min={-0.7}
+                          max={0}
+                          step={0.05}
+                          value={rel}
+                          onChange={(v) =>
+                            updateImpact(imp.supplierId, {
+                              reliabilityDelta: v,
+                            })
+                          }
+                          format={(v) =>
+                            `${v >= 0 ? "+" : ""}${v.toFixed(2)}`
+                          }
+                        />
+                        <SliderField
+                          label="Outage (days)"
+                          min={1}
+                          max={Math.max(state.horizonDays, 45)}
+                          step={1}
+                          value={Math.min(
+                            out,
+                            Math.max(state.horizonDays, 45),
+                          )}
+                          onChange={(v) =>
+                            updateImpact(imp.supplierId, { outageDays: v })
+                          }
+                          format={(v) => `${v.toFixed(0)}d`}
+                        />
+                      </>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
 
         <div className="space-y-1.5">
           <div className="flex items-center gap-1">
@@ -2160,6 +2519,8 @@ function ResultPanel({
         </div>
       </section>
 
+      <SupplierImpactSection result={result} />
+
       {result.recommendations.length > 0 ? (
         <section>
           <RecommendationCards recommendations={result.recommendations} />
@@ -2168,6 +2529,156 @@ function ResultPanel({
     </div>
   );
 }
+
+// Render the Supplier Impact panel. Shows the operator-flagged and
+// auto-flagged supplier degradations the run actually applied, with
+// a baseline-vs-applied diff for lead time / reliability and a list of
+// the items that got rerouted to a different source.
+function SupplierImpactSection({ result }: { result: ScenarioResult }) {
+  const rows =
+    (result as ScenarioResult & { supplierImpact?: ScenarioSupplierImpactRow[] })
+      .supplierImpact ?? [];
+  if (!Array.isArray(rows) || rows.length === 0) return null;
+  return (
+    <section data-testid="supplier-impact-section">
+      <SectionHeader title={`Supplier Impact (${rows.length})`} />
+      <div className="rounded-md border border-border bg-background/30 divide-y divide-border">
+        {rows.map((r) => {
+          const cap = (r.capacityMultiplierApplied ?? 1) * 100;
+          const offline = (r.capacityMultiplierApplied ?? 1) <= 0.001;
+          const lt = r.leadTimeDeltaApplied ?? 0;
+          const rel = r.reliabilityDeltaApplied ?? 0;
+          const baselineLt = r.baseline?.leadTimeDaysMean;
+          const baselineRel = r.baseline?.reliabilityScore;
+          return (
+            <div
+              key={r.supplierId}
+              className="p-3 space-y-1.5"
+              data-testid={`supplier-impact-row-${r.supplierId}`}
+            >
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="text-xs font-semibold truncate">
+                    {r.supplierName}
+                  </span>
+                  {r.country ? (
+                    <span className="text-[10px] font-mono uppercase text-muted-foreground">
+                      {r.country}
+                    </span>
+                  ) : null}
+                  {r.autoFlagged ? (
+                    <Badge
+                      variant="outline"
+                      className="h-4 px-1 text-[9px] font-mono uppercase tracking-wider"
+                      title="Auto-flagged because this supplier is in a country with affected nodes"
+                    >
+                      auto
+                    </Badge>
+                  ) : null}
+                  {offline ? (
+                    <Badge
+                      variant="outline"
+                      className="h-4 px-1 text-[9px] font-mono uppercase tracking-wider bg-destructive/15 text-destructive border-destructive/40"
+                    >
+                      offline
+                    </Badge>
+                  ) : null}
+                </div>
+                <span className="text-[10px] text-muted-foreground">
+                  {r.outageDays}d / {r.horizonDays}d horizon
+                </span>
+              </div>
+              {r.cause ? (
+                <div className="text-[11px] text-muted-foreground italic">
+                  {r.cause}
+                </div>
+              ) : null}
+              <div className="grid grid-cols-3 gap-2 text-[11px]">
+                <div>
+                  <div className="text-muted-foreground uppercase tracking-wider text-[9px]">
+                    Capacity
+                  </div>
+                  <div
+                    className={cn(
+                      "font-mono font-semibold",
+                      cap < 50 ? "text-destructive" : "text-amber-400",
+                    )}
+                  >
+                    {cap.toFixed(0)}%
+                  </div>
+                </div>
+                <div>
+                  <div className="text-muted-foreground uppercase tracking-wider text-[9px]">
+                    Lead Time
+                  </div>
+                  <div className="font-mono">
+                    {typeof baselineLt === "number"
+                      ? `${baselineLt.toFixed(1)}d → ${(baselineLt + lt).toFixed(1)}d`
+                      : `+${lt.toFixed(1)}d`}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-muted-foreground uppercase tracking-wider text-[9px]">
+                    Reliability
+                  </div>
+                  <div className="font-mono">
+                    {typeof baselineRel === "number"
+                      ? `${baselineRel.toFixed(2)} → ${(baselineRel + rel).toFixed(2)}`
+                      : `${rel >= 0 ? "+" : ""}${rel.toFixed(2)}`}
+                  </div>
+                </div>
+              </div>
+              {Array.isArray(r.affectedItemIds) && r.affectedItemIds.length > 0 ? (
+                <div className="text-[11px] text-muted-foreground">
+                  <span className="uppercase tracking-wider text-[9px] mr-1">
+                    Affected items:
+                  </span>
+                  <span className="font-mono">
+                    {r.affectedItemIds.slice(0, 6).join(", ")}
+                    {r.affectedItemIds.length > 6
+                      ? ` +${r.affectedItemIds.length - 6}`
+                      : ""}
+                  </span>
+                </div>
+              ) : null}
+              {Array.isArray(r.reroutes) && r.reroutes.length > 0 ? (
+                <div className="text-[11px]">
+                  <span className="uppercase tracking-wider text-[9px] text-muted-foreground mr-1">
+                    Rerouted to:
+                  </span>
+                  {r.reroutes.slice(0, 4).map((reroute, i) => (
+                    <span key={`${reroute.itemId}-${i}`} className="font-mono">
+                      {i > 0 ? ", " : ""}
+                      {reroute.itemId} → {reroute.supplierName}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+type ScenarioSupplierImpactRow = {
+  supplierId: string;
+  supplierName: string;
+  country?: string | null;
+  channel?: string | null;
+  capacityMultiplierApplied: number;
+  leadTimeDeltaApplied: number;
+  reliabilityDeltaApplied: number;
+  outageDays: number;
+  horizonDays: number;
+  cause?: string | null;
+  autoFlagged?: boolean;
+  baseline?: { leadTimeDaysMean?: number; reliabilityScore?: number };
+  itemsCovered?: string[];
+  affectedItemIds?: string[];
+  reroutes?: Array<{ itemId: string; supplierId: string; supplierName: string }>;
+};
 
 function priorityClass(priority: string | undefined): string {
   const p = (priority ?? "").toUpperCase();

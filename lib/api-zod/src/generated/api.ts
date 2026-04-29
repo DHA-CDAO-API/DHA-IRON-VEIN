@@ -572,6 +572,44 @@ export const GetSiteDetailResponse = zod.object({
         )
         .optional()
         .describe("Up to 4 ranked alternative suppliers across channels."),
+      displacedFrom: zod
+        .union([
+          zod.object({
+            supplierId: zod.string(),
+            supplierName: zod.string(),
+            availabilityFraction: zod
+              .number()
+              .describe("Capacity multiplier the scenario applied (0..1)."),
+            cause: zod.string().nullish(),
+          }),
+          zod.null(),
+        ])
+        .optional()
+        .describe(
+          "When the scenario knocked the would-be primary supplier offline or\nbelow capacity and the COA had to reroute through an alternate,\nthis records the displaced supplier and its degraded availability.\n",
+        ),
+      splitAllocation: zod
+        .union([
+          zod.array(
+            zod.object({
+              supplierId: zod.string(),
+              supplierName: zod.string(),
+              channel: zod.enum(["DOD", "COMMERCIAL", "HOST_NATION", "ALLIED"]),
+              qty: zod.number(),
+              pctOfTotal: zod
+                .number()
+                .describe(
+                  "Fraction of the total qty assigned to this supplier (0..1).",
+                ),
+              etaDays: zod.number(),
+            }),
+          ),
+          zod.null(),
+        ])
+        .optional()
+        .describe(
+          "Capacity-aware split sourcing across two suppliers. Present only\nwhen the chosen primary's availability is constrained and a\nhealthier alternate exists; the planner divides the total qty\nproportional to capacity.\n",
+        ),
       generatedAt: zod.coerce.date(),
       confidenceScore: zod.number().optional(),
       scenarioId: zod.string().nullish(),
@@ -863,6 +901,44 @@ export const GetItemDetailResponse = zod.object({
         )
         .optional()
         .describe("Up to 4 ranked alternative suppliers across channels."),
+      displacedFrom: zod
+        .union([
+          zod.object({
+            supplierId: zod.string(),
+            supplierName: zod.string(),
+            availabilityFraction: zod
+              .number()
+              .describe("Capacity multiplier the scenario applied (0..1)."),
+            cause: zod.string().nullish(),
+          }),
+          zod.null(),
+        ])
+        .optional()
+        .describe(
+          "When the scenario knocked the would-be primary supplier offline or\nbelow capacity and the COA had to reroute through an alternate,\nthis records the displaced supplier and its degraded availability.\n",
+        ),
+      splitAllocation: zod
+        .union([
+          zod.array(
+            zod.object({
+              supplierId: zod.string(),
+              supplierName: zod.string(),
+              channel: zod.enum(["DOD", "COMMERCIAL", "HOST_NATION", "ALLIED"]),
+              qty: zod.number(),
+              pctOfTotal: zod
+                .number()
+                .describe(
+                  "Fraction of the total qty assigned to this supplier (0..1).",
+                ),
+              etaDays: zod.number(),
+            }),
+          ),
+          zod.null(),
+        ])
+        .optional()
+        .describe(
+          "Capacity-aware split sourcing across two suppliers. Present only\nwhen the chosen primary's availability is constrained and a\nhealthier alternate exists; the planner divides the total qty\nproportional to capacity.\n",
+        ),
       generatedAt: zod.coerce.date(),
       confidenceScore: zod.number().optional(),
       scenarioId: zod.string().nullish(),
@@ -1128,6 +1204,44 @@ export const GetOrderResponse = zod.object({
         )
         .optional()
         .describe("Up to 4 ranked alternative suppliers across channels."),
+      displacedFrom: zod
+        .union([
+          zod.object({
+            supplierId: zod.string(),
+            supplierName: zod.string(),
+            availabilityFraction: zod
+              .number()
+              .describe("Capacity multiplier the scenario applied (0..1)."),
+            cause: zod.string().nullish(),
+          }),
+          zod.null(),
+        ])
+        .optional()
+        .describe(
+          "When the scenario knocked the would-be primary supplier offline or\nbelow capacity and the COA had to reroute through an alternate,\nthis records the displaced supplier and its degraded availability.\n",
+        ),
+      splitAllocation: zod
+        .union([
+          zod.array(
+            zod.object({
+              supplierId: zod.string(),
+              supplierName: zod.string(),
+              channel: zod.enum(["DOD", "COMMERCIAL", "HOST_NATION", "ALLIED"]),
+              qty: zod.number(),
+              pctOfTotal: zod
+                .number()
+                .describe(
+                  "Fraction of the total qty assigned to this supplier (0..1).",
+                ),
+              etaDays: zod.number(),
+            }),
+          ),
+          zod.null(),
+        ])
+        .optional()
+        .describe(
+          "Capacity-aware split sourcing across two suppliers. Present only\nwhen the chosen primary's availability is constrained and a\nhealthier alternate exists; the planner divides the total qty\nproportional to capacity.\n",
+        ),
       generatedAt: zod.coerce.date(),
       confidenceScore: zod.number().optional(),
       scenarioId: zod.string().nullish(),
@@ -1330,6 +1444,50 @@ export const RunScenarioBody = zod.object({
         .describe(
           "Airlift loss cascade. Lengthens routes and degrades viability of arriving liquid blood lots.",
         ),
+      impactedSuppliers: zod
+        .array(
+          zod.object({
+            supplierId: zod.string(),
+            capacityMultiplier: zod
+              .number()
+              .optional()
+              .describe(
+                "0..1 multiplier on baseline capacity. 1 = unchanged. 0 = offline (skipped by the ranker).",
+              ),
+            leadTimeDeltaDays: zod
+              .number()
+              .optional()
+              .describe(
+                "Days added to the supplier's mean lead time during the outage window.",
+              ),
+            reliabilityDelta: zod
+              .number()
+              .optional()
+              .describe(
+                "Delta on reliability score (e.g. -0.3 drops a 0.9 supplier to 0.6).",
+              ),
+            outageDays: zod
+              .number()
+              .optional()
+              .describe(
+                "Days inside the scenario horizon the supplier is degraded. Defaults to the full horizon.",
+              ),
+            cause: zod
+              .string()
+              .optional()
+              .describe("Human-friendly cause surfaced in the UI \/ AI brief."),
+            autoFlagged: zod
+              .boolean()
+              .optional()
+              .describe(
+                "True when the entry was auto-suggested by the country auto-flag pass (not authored by the operator).",
+              ),
+          }),
+        )
+        .optional()
+        .describe(
+          "Per-supplier degradation knobs. The runner blends each entry over the scenario horizon and feeds the degraded values into the COA supplier ranker.",
+        ),
     })
     .optional()
     .describe("Perturbation parameters applied by the simulation engine."),
@@ -1419,6 +1577,44 @@ export const RunScenarioResponse = zod.object({
         )
         .optional()
         .describe("Up to 4 ranked alternative suppliers across channels."),
+      displacedFrom: zod
+        .union([
+          zod.object({
+            supplierId: zod.string(),
+            supplierName: zod.string(),
+            availabilityFraction: zod
+              .number()
+              .describe("Capacity multiplier the scenario applied (0..1)."),
+            cause: zod.string().nullish(),
+          }),
+          zod.null(),
+        ])
+        .optional()
+        .describe(
+          "When the scenario knocked the would-be primary supplier offline or\nbelow capacity and the COA had to reroute through an alternate,\nthis records the displaced supplier and its degraded availability.\n",
+        ),
+      splitAllocation: zod
+        .union([
+          zod.array(
+            zod.object({
+              supplierId: zod.string(),
+              supplierName: zod.string(),
+              channel: zod.enum(["DOD", "COMMERCIAL", "HOST_NATION", "ALLIED"]),
+              qty: zod.number(),
+              pctOfTotal: zod
+                .number()
+                .describe(
+                  "Fraction of the total qty assigned to this supplier (0..1).",
+                ),
+              etaDays: zod.number(),
+            }),
+          ),
+          zod.null(),
+        ])
+        .optional()
+        .describe(
+          "Capacity-aware split sourcing across two suppliers. Present only\nwhen the chosen primary's availability is constrained and a\nhealthier alternate exists; the planner divides the total qty\nproportional to capacity.\n",
+        ),
       generatedAt: zod.coerce.date(),
       confidenceScore: zod.number().optional(),
       scenarioId: zod.string().nullish(),
@@ -1504,6 +1700,59 @@ export const RunScenarioResponse = zod.object({
       narrative: zod.array(zod.string()).optional(),
     })
     .optional(),
+  supplierImpact: zod
+    .array(
+      zod.object({
+        supplierId: zod.string(),
+        supplierName: zod.string(),
+        country: zod.string().nullish(),
+        channel: zod.string().nullish(),
+        capacityMultiplierApplied: zod
+          .number()
+          .describe(
+            "0..1 horizon-blended capacity. 0 = supplier completely offline during the scenario.",
+          ),
+        leadTimeDeltaApplied: zod
+          .number()
+          .describe(
+            "Days added to the supplier's mean lead time after horizon blending.",
+          ),
+        reliabilityDeltaApplied: zod
+          .number()
+          .describe("Delta on reliability score after horizon blending."),
+        outageDays: zod.number(),
+        horizonDays: zod.number(),
+        cause: zod.string().nullish(),
+        autoFlagged: zod.boolean(),
+        baseline: zod
+          .object({
+            leadTimeDaysMean: zod.number().optional(),
+            reliabilityScore: zod.number().optional(),
+          })
+          .optional(),
+        itemsCovered: zod.array(zod.string()).optional(),
+        affectedItemIds: zod
+          .array(zod.string())
+          .optional()
+          .describe(
+            "Items the impacted supplier normally fulfills that are also experiencing shortfalls in this run.",
+          ),
+        reroutes: zod
+          .array(
+            zod.object({
+              itemId: zod.string(),
+              supplierId: zod.string(),
+              supplierName: zod.string(),
+            }),
+          )
+          .optional()
+          .describe("Per-item COA reroutes away from this supplier."),
+      }),
+    )
+    .optional()
+    .describe(
+      "Per-supplier impact summary covering both operator-flagged and auto-flagged degradations applied during the run.",
+    ),
   kind: zod.string().optional(),
 });
 
@@ -1594,6 +1843,44 @@ export const GetScenarioResponse = zod.object({
         )
         .optional()
         .describe("Up to 4 ranked alternative suppliers across channels."),
+      displacedFrom: zod
+        .union([
+          zod.object({
+            supplierId: zod.string(),
+            supplierName: zod.string(),
+            availabilityFraction: zod
+              .number()
+              .describe("Capacity multiplier the scenario applied (0..1)."),
+            cause: zod.string().nullish(),
+          }),
+          zod.null(),
+        ])
+        .optional()
+        .describe(
+          "When the scenario knocked the would-be primary supplier offline or\nbelow capacity and the COA had to reroute through an alternate,\nthis records the displaced supplier and its degraded availability.\n",
+        ),
+      splitAllocation: zod
+        .union([
+          zod.array(
+            zod.object({
+              supplierId: zod.string(),
+              supplierName: zod.string(),
+              channel: zod.enum(["DOD", "COMMERCIAL", "HOST_NATION", "ALLIED"]),
+              qty: zod.number(),
+              pctOfTotal: zod
+                .number()
+                .describe(
+                  "Fraction of the total qty assigned to this supplier (0..1).",
+                ),
+              etaDays: zod.number(),
+            }),
+          ),
+          zod.null(),
+        ])
+        .optional()
+        .describe(
+          "Capacity-aware split sourcing across two suppliers. Present only\nwhen the chosen primary's availability is constrained and a\nhealthier alternate exists; the planner divides the total qty\nproportional to capacity.\n",
+        ),
       generatedAt: zod.coerce.date(),
       confidenceScore: zod.number().optional(),
       scenarioId: zod.string().nullish(),
@@ -1679,6 +1966,59 @@ export const GetScenarioResponse = zod.object({
       narrative: zod.array(zod.string()).optional(),
     })
     .optional(),
+  supplierImpact: zod
+    .array(
+      zod.object({
+        supplierId: zod.string(),
+        supplierName: zod.string(),
+        country: zod.string().nullish(),
+        channel: zod.string().nullish(),
+        capacityMultiplierApplied: zod
+          .number()
+          .describe(
+            "0..1 horizon-blended capacity. 0 = supplier completely offline during the scenario.",
+          ),
+        leadTimeDeltaApplied: zod
+          .number()
+          .describe(
+            "Days added to the supplier's mean lead time after horizon blending.",
+          ),
+        reliabilityDeltaApplied: zod
+          .number()
+          .describe("Delta on reliability score after horizon blending."),
+        outageDays: zod.number(),
+        horizonDays: zod.number(),
+        cause: zod.string().nullish(),
+        autoFlagged: zod.boolean(),
+        baseline: zod
+          .object({
+            leadTimeDaysMean: zod.number().optional(),
+            reliabilityScore: zod.number().optional(),
+          })
+          .optional(),
+        itemsCovered: zod.array(zod.string()).optional(),
+        affectedItemIds: zod
+          .array(zod.string())
+          .optional()
+          .describe(
+            "Items the impacted supplier normally fulfills that are also experiencing shortfalls in this run.",
+          ),
+        reroutes: zod
+          .array(
+            zod.object({
+              itemId: zod.string(),
+              supplierId: zod.string(),
+              supplierName: zod.string(),
+            }),
+          )
+          .optional()
+          .describe("Per-item COA reroutes away from this supplier."),
+      }),
+    )
+    .optional()
+    .describe(
+      "Per-supplier impact summary covering both operator-flagged and auto-flagged degradations applied during the run.",
+    ),
   kind: zod.string().optional(),
 });
 
@@ -1770,6 +2110,50 @@ export const PreviewScenarioBody = zod.object({
         .describe(
           "Airlift loss cascade. Lengthens routes and degrades viability of arriving liquid blood lots.",
         ),
+      impactedSuppliers: zod
+        .array(
+          zod.object({
+            supplierId: zod.string(),
+            capacityMultiplier: zod
+              .number()
+              .optional()
+              .describe(
+                "0..1 multiplier on baseline capacity. 1 = unchanged. 0 = offline (skipped by the ranker).",
+              ),
+            leadTimeDeltaDays: zod
+              .number()
+              .optional()
+              .describe(
+                "Days added to the supplier's mean lead time during the outage window.",
+              ),
+            reliabilityDelta: zod
+              .number()
+              .optional()
+              .describe(
+                "Delta on reliability score (e.g. -0.3 drops a 0.9 supplier to 0.6).",
+              ),
+            outageDays: zod
+              .number()
+              .optional()
+              .describe(
+                "Days inside the scenario horizon the supplier is degraded. Defaults to the full horizon.",
+              ),
+            cause: zod
+              .string()
+              .optional()
+              .describe("Human-friendly cause surfaced in the UI \/ AI brief."),
+            autoFlagged: zod
+              .boolean()
+              .optional()
+              .describe(
+                "True when the entry was auto-suggested by the country auto-flag pass (not authored by the operator).",
+              ),
+          }),
+        )
+        .optional()
+        .describe(
+          "Per-supplier degradation knobs. The runner blends each entry over the scenario horizon and feeds the degraded values into the COA supplier ranker.",
+        ),
     })
     .optional()
     .describe("Perturbation parameters applied by the simulation engine."),
@@ -1859,6 +2243,44 @@ export const PreviewScenarioResponse = zod.object({
         )
         .optional()
         .describe("Up to 4 ranked alternative suppliers across channels."),
+      displacedFrom: zod
+        .union([
+          zod.object({
+            supplierId: zod.string(),
+            supplierName: zod.string(),
+            availabilityFraction: zod
+              .number()
+              .describe("Capacity multiplier the scenario applied (0..1)."),
+            cause: zod.string().nullish(),
+          }),
+          zod.null(),
+        ])
+        .optional()
+        .describe(
+          "When the scenario knocked the would-be primary supplier offline or\nbelow capacity and the COA had to reroute through an alternate,\nthis records the displaced supplier and its degraded availability.\n",
+        ),
+      splitAllocation: zod
+        .union([
+          zod.array(
+            zod.object({
+              supplierId: zod.string(),
+              supplierName: zod.string(),
+              channel: zod.enum(["DOD", "COMMERCIAL", "HOST_NATION", "ALLIED"]),
+              qty: zod.number(),
+              pctOfTotal: zod
+                .number()
+                .describe(
+                  "Fraction of the total qty assigned to this supplier (0..1).",
+                ),
+              etaDays: zod.number(),
+            }),
+          ),
+          zod.null(),
+        ])
+        .optional()
+        .describe(
+          "Capacity-aware split sourcing across two suppliers. Present only\nwhen the chosen primary's availability is constrained and a\nhealthier alternate exists; the planner divides the total qty\nproportional to capacity.\n",
+        ),
       generatedAt: zod.coerce.date(),
       confidenceScore: zod.number().optional(),
       scenarioId: zod.string().nullish(),
@@ -1944,6 +2366,59 @@ export const PreviewScenarioResponse = zod.object({
       narrative: zod.array(zod.string()).optional(),
     })
     .optional(),
+  supplierImpact: zod
+    .array(
+      zod.object({
+        supplierId: zod.string(),
+        supplierName: zod.string(),
+        country: zod.string().nullish(),
+        channel: zod.string().nullish(),
+        capacityMultiplierApplied: zod
+          .number()
+          .describe(
+            "0..1 horizon-blended capacity. 0 = supplier completely offline during the scenario.",
+          ),
+        leadTimeDeltaApplied: zod
+          .number()
+          .describe(
+            "Days added to the supplier's mean lead time after horizon blending.",
+          ),
+        reliabilityDeltaApplied: zod
+          .number()
+          .describe("Delta on reliability score after horizon blending."),
+        outageDays: zod.number(),
+        horizonDays: zod.number(),
+        cause: zod.string().nullish(),
+        autoFlagged: zod.boolean(),
+        baseline: zod
+          .object({
+            leadTimeDaysMean: zod.number().optional(),
+            reliabilityScore: zod.number().optional(),
+          })
+          .optional(),
+        itemsCovered: zod.array(zod.string()).optional(),
+        affectedItemIds: zod
+          .array(zod.string())
+          .optional()
+          .describe(
+            "Items the impacted supplier normally fulfills that are also experiencing shortfalls in this run.",
+          ),
+        reroutes: zod
+          .array(
+            zod.object({
+              itemId: zod.string(),
+              supplierId: zod.string(),
+              supplierName: zod.string(),
+            }),
+          )
+          .optional()
+          .describe("Per-item COA reroutes away from this supplier."),
+      }),
+    )
+    .optional()
+    .describe(
+      "Per-supplier impact summary covering both operator-flagged and auto-flagged degradations applied during the run.",
+    ),
   kind: zod.string().optional(),
 });
 
@@ -2001,6 +2476,50 @@ export const ListPresetEventsResponseItem = zod.object({
         .optional()
         .describe(
           "Airlift loss cascade. Lengthens routes and degrades viability of arriving liquid blood lots.",
+        ),
+      impactedSuppliers: zod
+        .array(
+          zod.object({
+            supplierId: zod.string(),
+            capacityMultiplier: zod
+              .number()
+              .optional()
+              .describe(
+                "0..1 multiplier on baseline capacity. 1 = unchanged. 0 = offline (skipped by the ranker).",
+              ),
+            leadTimeDeltaDays: zod
+              .number()
+              .optional()
+              .describe(
+                "Days added to the supplier's mean lead time during the outage window.",
+              ),
+            reliabilityDelta: zod
+              .number()
+              .optional()
+              .describe(
+                "Delta on reliability score (e.g. -0.3 drops a 0.9 supplier to 0.6).",
+              ),
+            outageDays: zod
+              .number()
+              .optional()
+              .describe(
+                "Days inside the scenario horizon the supplier is degraded. Defaults to the full horizon.",
+              ),
+            cause: zod
+              .string()
+              .optional()
+              .describe("Human-friendly cause surfaced in the UI \/ AI brief."),
+            autoFlagged: zod
+              .boolean()
+              .optional()
+              .describe(
+                "True when the entry was auto-suggested by the country auto-flag pass (not authored by the operator).",
+              ),
+          }),
+        )
+        .optional()
+        .describe(
+          "Per-supplier degradation knobs. The runner blends each entry over the scenario horizon and feeds the degraded values into the COA supplier ranker.",
         ),
     })
     .describe("Perturbation parameters applied by the simulation engine."),
@@ -2080,6 +2599,44 @@ export const GetRecommendationsResponseItem = zod.object({
     )
     .optional()
     .describe("Up to 4 ranked alternative suppliers across channels."),
+  displacedFrom: zod
+    .union([
+      zod.object({
+        supplierId: zod.string(),
+        supplierName: zod.string(),
+        availabilityFraction: zod
+          .number()
+          .describe("Capacity multiplier the scenario applied (0..1)."),
+        cause: zod.string().nullish(),
+      }),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "When the scenario knocked the would-be primary supplier offline or\nbelow capacity and the COA had to reroute through an alternate,\nthis records the displaced supplier and its degraded availability.\n",
+    ),
+  splitAllocation: zod
+    .union([
+      zod.array(
+        zod.object({
+          supplierId: zod.string(),
+          supplierName: zod.string(),
+          channel: zod.enum(["DOD", "COMMERCIAL", "HOST_NATION", "ALLIED"]),
+          qty: zod.number(),
+          pctOfTotal: zod
+            .number()
+            .describe(
+              "Fraction of the total qty assigned to this supplier (0..1).",
+            ),
+          etaDays: zod.number(),
+        }),
+      ),
+      zod.null(),
+    ])
+    .optional()
+    .describe(
+      "Capacity-aware split sourcing across two suppliers. Present only\nwhen the chosen primary's availability is constrained and a\nhealthier alternate exists; the planner divides the total qty\nproportional to capacity.\n",
+    ),
   generatedAt: zod.coerce.date(),
   confidenceScore: zod.number().optional(),
   scenarioId: zod.string().nullish(),

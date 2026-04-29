@@ -11,6 +11,7 @@ import type { ScenarioCascadeOutcome } from "./scenarioCascadeOutcome";
 import type { ScenarioItemOutcome } from "./scenarioItemOutcome";
 import type { ScenarioNodeOutcome } from "./scenarioNodeOutcome";
 import type { ScenarioSummary } from "./scenarioSummary";
+import type { ScenarioSupplierImpact } from "./scenarioSupplierImpact";
 import type { ScenarioTimelinePoint } from "./scenarioTimelinePoint";
 
 export interface ScenarioResult {
@@ -25,5 +26,7 @@ export interface ScenarioResult {
   /** Per-cascade plain-English impact lines (cold-chain, reagent, airlift). */
   cascadeNarrative?: string[];
   cascades?: ScenarioCascadeOutcome;
+  /** Per-supplier impact summary covering both operator-flagged and auto-flagged degradations applied during the run. */
+  supplierImpact?: ScenarioSupplierImpact[];
   kind?: string;
 }

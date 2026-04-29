@@ -7,3 +7,4 @@ export * from "./recommendations";
 export * from "./risk";
 export * from "./staffing";
 export * from "./casualty";
+export * from "./supplierImpact";
