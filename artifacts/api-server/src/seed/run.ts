@@ -465,7 +465,8 @@ export async function runSeed(opts: SeedOptions = {}): Promise<void> {
       shipments, order_lines, orders, alerts, inventory_balances, demand_profiles,
       item_skew_factors, preset_events, operational_states, supplier_items, suppliers, items,
       routes, nodes, catalog_entries, app_settings, profiles,
-      blood_lots, cold_chain_assets, donor_pools, temperature_events
+      blood_lots, cold_chain_assets, donor_pools, temperature_events,
+      tag_assignments, tags
       RESTART IDENTITY`);
   }
 
@@ -943,6 +944,9 @@ export async function runSeed(opts: SeedOptions = {}): Promise<void> {
     },
   ]);
 
+  // ---- Starter tag library ----
+  await seedStarterTags();
+
   // ---- Touch unused imports for typecheck ----
   void conversations;
   void conversationMessages;
@@ -950,6 +954,39 @@ export async function runSeed(opts: SeedOptions = {}): Promise<void> {
   void recommendations;
 
   logger.info("seed complete");
+}
+
+async function seedStarterTags(): Promise<void> {
+  const { tags: tagsTable } = await import("@workspace/db");
+  const STARTER_TAGS: Array<{
+    name: string;
+    slug: string;
+    color: string;
+    description: string;
+  }> = [
+    { name: "Pacific Theater", slug: "pacific-theater", color: "sky", description: "Sites and shipments inside the broader Pacific AOR." },
+    { name: "First Island Chain", slug: "first-island-chain", color: "cyan", description: "Forward sites along the first island chain (Japan, Taiwan, Philippines)." },
+    { name: "Forward Operating", slug: "forward-operating", color: "rose", description: "Forward operating sites under heightened or higher optempo." },
+    { name: "High Priority", slug: "high-priority", color: "amber", description: "Records the watch officer flagged as high priority." },
+    { name: "Critical Mission", slug: "critical-mission", color: "rose", description: "Tied to a critical mission set or named operation." },
+    { name: "Cold Chain", slug: "cold-chain", color: "fuchsia", description: "Cold-chain dependent items, lots, or sustainment paths." },
+    { name: "Walking Blood Bank", slug: "walking-blood-bank", color: "rose", description: "Walking blood bank readiness — donor pool, lots, sites." },
+    { name: "Long Lead", slug: "long-lead", color: "orange", description: "Items or suppliers with multi-week lead times." },
+    { name: "Trusted Supplier", slug: "trusted-supplier", color: "emerald", description: "High-reliability supplier the planners default to." },
+    { name: "Disruption Watch", slug: "disruption-watch", color: "violet", description: "Currently affected by an active disruption / scenario." },
+  ];
+  await db.insert(tagsTable).values(
+    STARTER_TAGS.map((t) => ({
+      id: `tag_${t.slug}`,
+      name: t.name,
+      slug: t.slug,
+      color: t.color,
+      description: t.description,
+      source: "manual",
+      createdBy: "system",
+    })),
+  );
+  logger.info({ count: STARTER_TAGS.length }, "seed: starter tags inserted");
 }
 
 function inferModality(priority: string, days: number): string {

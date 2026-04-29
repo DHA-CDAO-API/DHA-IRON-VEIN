@@ -3,7 +3,7 @@ import { Link, useLocation } from "wouter";
 import { 
   Activity, Map as MapIcon, Box, ShoppingCart, PlayCircle, 
   MessageSquare, Database, Settings, UserCircle, Search,
-  Building2, Truck
+  Building2, Truck, Tag as TagIcon
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import RoleBadge from "@/components/RoleBadge";
@@ -158,6 +158,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     },
     { href: "/orders", label: "Orders", icon: ShoppingCart },
     { href: "/scenarios", label: "Scenarios", icon: PlayCircle },
+    { href: "/tags", label: "Tags", icon: TagIcon, matches: (p) => p === "/tags" || p.startsWith("/tags/") },
     { href: "/copilot", label: "Copilot", icon: MessageSquare },
   ];
 

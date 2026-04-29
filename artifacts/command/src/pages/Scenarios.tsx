@@ -92,6 +92,7 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
+import { TagEditor } from "@/components/tags/TagEditor";
 import { cn } from "@/lib/utils";
 import { formatCurrency } from "@/lib/format";
 import { useToast } from "@/hooks/use-toast";
@@ -1755,6 +1756,9 @@ function ResultPanel({
             {result.scenario.description}
           </p>
         ) : null}
+        <div className="mb-3">
+          <TagEditor entityType="scenario" entityId={result.scenario.id} size="xs" />
+        </div>
 
         {previous ? <RerunDiffBar current={result} previous={previous} /> : null}
 

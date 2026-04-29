@@ -12,6 +12,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Bell, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { Link } from 'wouter';
+import { TagEditor } from '@/components/tags/TagEditor';
 
 // A row that mixes a real persisted Alert with a synthetic alert that we
 // derive in-memory from the live network snapshot. Synthetic rows can't
@@ -164,6 +165,12 @@ export default function AlertsRail() {
               </div>
               <h4 className="font-bold text-sm mb-1">{alert.title}</h4>
               <p className="text-xs text-muted-foreground mb-3">{alert.body}</p>
+
+              {alert.source === 'persisted' && (
+                <div className="mb-2">
+                  <TagEditor entityType="alert" entityId={alert.id} size="xs" align="end" />
+                </div>
+              )}
 
               <div className="flex items-center justify-between mt-3 pt-3 border-t border-border/50">
                 <div className="flex gap-2">

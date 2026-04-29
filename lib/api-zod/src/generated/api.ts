@@ -2713,3 +2713,320 @@ export const GetOverviewAiBriefResponse = zod.object({
     .nullish()
     .describe("Raw model response text (null when fallback was used)."),
 });
+
+/**
+ * @summary List all tags with usage counts.
+ */
+export const ListTagsQueryParams = zod.object({
+  q: zod.coerce
+    .string()
+    .optional()
+    .describe("Optional search filter by name or slug."),
+});
+
+export const ListTagsResponseItem = zod
+  .object({
+    id: zod.string(),
+    name: zod.string(),
+    slug: zod.string(),
+    color: zod.string(),
+    description: zod.string(),
+    source: zod.enum(["manual", "ai"]),
+    createdAt: zod.coerce.date(),
+    updatedAt: zod.coerce.date(),
+  })
+  .and(
+    zod.object({
+      usageCount: zod.number(),
+    }),
+  );
+export const ListTagsResponse = zod.array(ListTagsResponseItem);
+
+/**
+ * @summary Create a new tag.
+ */
+export const createTagBodySourceDefault = `manual`;
+
+export const CreateTagBody = zod.object({
+  name: zod.string(),
+  color: zod.string().optional(),
+  description: zod.string().optional(),
+  source: zod.enum(["manual", "ai"]).default(createTagBodySourceDefault),
+});
+
+/**
+ * @summary Get a tag with all of its assignments grouped by entity type.
+ */
+export const GetTagBySlugParams = zod.object({
+  slug: zod.coerce.string(),
+});
+
+export const GetTagBySlugResponse = zod.object({
+  tag: zod.object({
+    id: zod.string(),
+    name: zod.string(),
+    slug: zod.string(),
+    color: zod.string(),
+    description: zod.string(),
+    source: zod.enum(["manual", "ai"]),
+    createdAt: zod.coerce.date(),
+    updatedAt: zod.coerce.date(),
+  }),
+  usageCount: zod.number(),
+  byEntityType: zod.array(
+    zod.object({
+      entityType: zod.enum([
+        "node",
+        "item",
+        "supplier",
+        "order",
+        "shipment",
+        "scenario",
+        "alert",
+        "blood_lot",
+      ]),
+      entries: zod.array(
+        zod.object({
+          entityType: zod.enum([
+            "node",
+            "item",
+            "supplier",
+            "order",
+            "shipment",
+            "scenario",
+            "alert",
+            "blood_lot",
+          ]),
+          entityId: zod.string(),
+          label: zod.string(),
+          sublabel: zod.string().nullish(),
+          deeplink: zod.string().nullish(),
+          appliedBy: zod.enum(["manual", "ai"]).optional(),
+          rationale: zod.string().nullish(),
+          createdAt: zod.coerce.date().optional(),
+        }),
+      ),
+    }),
+  ),
+});
+
+/**
+ * @summary Update tag fields (name, color, description). Renames also re-slug.
+ */
+export const UpdateTagParams = zod.object({
+  slug: zod.coerce.string(),
+});
+
+export const UpdateTagBody = zod.object({
+  name: zod.string().optional(),
+  color: zod.string().optional(),
+  description: zod.string().optional(),
+});
+
+export const UpdateTagResponse = zod.object({
+  id: zod.string(),
+  name: zod.string(),
+  slug: zod.string(),
+  color: zod.string(),
+  description: zod.string(),
+  source: zod.enum(["manual", "ai"]),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+
+/**
+ * @summary Delete a tag and all of its assignments.
+ */
+export const DeleteTagParams = zod.object({
+  slug: zod.coerce.string(),
+});
+
+/**
+ * @summary Merge this tag into another. Re-points all assignments and deletes the source tag.
+ */
+export const MergeTagParams = zod.object({
+  slug: zod.coerce.string(),
+});
+
+export const MergeTagBody = zod.object({
+  intoSlug: zod.string(),
+});
+
+export const MergeTagResponse = zod.object({
+  id: zod.string(),
+  name: zod.string(),
+  slug: zod.string(),
+  color: zod.string(),
+  description: zod.string(),
+  source: zod.enum(["manual", "ai"]),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+
+/**
+ * @summary List the tags currently applied to one entity.
+ */
+export const GetTagsForEntityParams = zod.object({
+  entityType: zod.enum([
+    "node",
+    "item",
+    "supplier",
+    "order",
+    "shipment",
+    "scenario",
+    "alert",
+    "blood_lot",
+  ]),
+  entityId: zod.coerce.string(),
+});
+
+export const GetTagsForEntityResponseItem = zod.object({
+  id: zod.number(),
+  tagId: zod.string(),
+  tag: zod.object({
+    id: zod.string(),
+    name: zod.string(),
+    slug: zod.string(),
+    color: zod.string(),
+    description: zod.string(),
+    source: zod.enum(["manual", "ai"]),
+    createdAt: zod.coerce.date(),
+    updatedAt: zod.coerce.date(),
+  }),
+  entityType: zod.enum([
+    "node",
+    "item",
+    "supplier",
+    "order",
+    "shipment",
+    "scenario",
+    "alert",
+    "blood_lot",
+  ]),
+  entityId: zod.string(),
+  appliedBy: zod.enum(["manual", "ai"]),
+  appliedByActor: zod.string().optional(),
+  aiModel: zod.string().nullish(),
+  aiProvider: zod.string().nullish(),
+  rationale: zod.string().nullish(),
+  createdAt: zod.coerce.date(),
+});
+export const GetTagsForEntityResponse = zod.array(GetTagsForEntityResponseItem);
+
+/**
+ * @summary Apply a tag to one entity. Creates the tag on the fly if name is given.
+ */
+export const AddTagToEntityParams = zod.object({
+  entityType: zod.enum([
+    "node",
+    "item",
+    "supplier",
+    "order",
+    "shipment",
+    "scenario",
+    "alert",
+    "blood_lot",
+  ]),
+  entityId: zod.coerce.string(),
+});
+
+export const AddTagToEntityBody = zod.object({
+  tagId: zod.string().optional().describe("Existing tag id."),
+  name: zod.string().optional().describe("Name to create-or-find a tag for."),
+  color: zod.string().optional(),
+  appliedBy: zod.enum(["manual", "ai"]).optional(),
+  aiModel: zod.string().optional(),
+  aiProvider: zod.string().optional(),
+  rationale: zod.string().optional(),
+});
+
+/**
+ * @summary Remove a tag assignment from an entity.
+ */
+export const RemoveTagFromEntityParams = zod.object({
+  entityType: zod.enum([
+    "node",
+    "item",
+    "supplier",
+    "order",
+    "shipment",
+    "scenario",
+    "alert",
+    "blood_lot",
+  ]),
+  entityId: zod.coerce.string(),
+  tagId: zod.coerce.string(),
+});
+
+/**
+ * @summary Ask the AI to suggest 3-7 tags (existing or new) for an entity.
+ */
+export const SuggestTagsBody = zod.object({
+  entityType: zod.enum([
+    "node",
+    "item",
+    "supplier",
+    "order",
+    "shipment",
+    "scenario",
+    "alert",
+    "blood_lot",
+  ]),
+  entityId: zod.string(),
+});
+
+export const SuggestTagsResponse = zod.object({
+  generatedAt: zod.coerce.date(),
+  provider: zod.string(),
+  model: zod.string(),
+  suggestions: zod.array(
+    zod.object({
+      name: zod.string(),
+      slug: zod.string().nullish(),
+      color: zod.string().nullish(),
+      isNew: zod.boolean(),
+      rationale: zod.string(),
+      confidence: zod.number(),
+    }),
+  ),
+});
+
+/**
+ * @summary Run a batch AI auto-tag pass over recent or untagged records of one entity type.
+ */
+export const autoTagBatchBodyLimitDefault = 10;
+export const autoTagBatchBodyLimitMax = 25;
+
+export const AutoTagBatchBody = zod.object({
+  entityType: zod.enum([
+    "node",
+    "item",
+    "supplier",
+    "order",
+    "shipment",
+    "scenario",
+    "alert",
+    "blood_lot",
+  ]),
+  scope: zod.enum(["recent", "untagged"]),
+  limit: zod
+    .number()
+    .max(autoTagBatchBodyLimitMax)
+    .default(autoTagBatchBodyLimitDefault),
+});
+
+export const AutoTagBatchResponse = zod.object({
+  generatedAt: zod.coerce.date(),
+  provider: zod.string(),
+  model: zod.string(),
+  processed: zod.number(),
+  applied: zod.number(),
+  results: zod.array(
+    zod.object({
+      entityId: zod.string(),
+      label: zod.string(),
+      applied: zod.array(zod.string()),
+      error: zod.string().nullish(),
+    }),
+  ),
+});

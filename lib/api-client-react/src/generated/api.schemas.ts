@@ -1678,6 +1678,199 @@ export interface AiOverviewBrief {
   rawText?: string | null;
 }
 
+export type TagEntityType = (typeof TagEntityType)[keyof typeof TagEntityType];
+
+export const TagEntityType = {
+  node: "node",
+  item: "item",
+  supplier: "supplier",
+  order: "order",
+  shipment: "shipment",
+  scenario: "scenario",
+  alert: "alert",
+  blood_lot: "blood_lot",
+} as const;
+
+export interface TagMergeInput {
+  intoSlug: string;
+}
+
+export type TagAssignInputAppliedBy =
+  (typeof TagAssignInputAppliedBy)[keyof typeof TagAssignInputAppliedBy];
+
+export const TagAssignInputAppliedBy = {
+  manual: "manual",
+  ai: "ai",
+} as const;
+
+export interface TagAssignInput {
+  /** Existing tag id. */
+  tagId?: string;
+  /** Name to create-or-find a tag for. */
+  name?: string;
+  color?: string;
+  appliedBy?: TagAssignInputAppliedBy;
+  aiModel?: string;
+  aiProvider?: string;
+  rationale?: string;
+}
+
+export interface TagSuggestInput {
+  entityType: TagEntityType;
+  entityId: string;
+}
+
+export type TagAutoTagInputScope =
+  (typeof TagAutoTagInputScope)[keyof typeof TagAutoTagInputScope];
+
+export const TagAutoTagInputScope = {
+  recent: "recent",
+  untagged: "untagged",
+} as const;
+
+export interface TagAutoTagInput {
+  entityType: TagEntityType;
+  scope: TagAutoTagInputScope;
+  /** @maximum 25 */
+  limit?: number;
+}
+
+export type TagSource = (typeof TagSource)[keyof typeof TagSource];
+
+export const TagSource = {
+  manual: "manual",
+  ai: "ai",
+} as const;
+
+export interface Tag {
+  id: string;
+  name: string;
+  slug: string;
+  color: string;
+  description: string;
+  source: TagSource;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type TagSummary = Tag & {
+  usageCount: number;
+};
+
+export type TagCreateInputSource =
+  (typeof TagCreateInputSource)[keyof typeof TagCreateInputSource];
+
+export const TagCreateInputSource = {
+  manual: "manual",
+  ai: "ai",
+} as const;
+
+export interface TagCreateInput {
+  name: string;
+  color?: string;
+  description?: string;
+  source?: TagCreateInputSource;
+}
+
+export interface TagUpdateInput {
+  name?: string;
+  color?: string;
+  description?: string;
+}
+
+export type TagAssignmentViewAppliedBy =
+  (typeof TagAssignmentViewAppliedBy)[keyof typeof TagAssignmentViewAppliedBy];
+
+export const TagAssignmentViewAppliedBy = {
+  manual: "manual",
+  ai: "ai",
+} as const;
+
+export interface TagAssignmentView {
+  id: number;
+  tagId: string;
+  tag: Tag;
+  entityType: TagEntityType;
+  entityId: string;
+  appliedBy: TagAssignmentViewAppliedBy;
+  appliedByActor?: string;
+  /** @nullable */
+  aiModel?: string | null;
+  /** @nullable */
+  aiProvider?: string | null;
+  /** @nullable */
+  rationale?: string | null;
+  createdAt: string;
+}
+
+export type TagDetailEntityRefAppliedBy =
+  (typeof TagDetailEntityRefAppliedBy)[keyof typeof TagDetailEntityRefAppliedBy];
+
+export const TagDetailEntityRefAppliedBy = {
+  manual: "manual",
+  ai: "ai",
+} as const;
+
+export interface TagDetailEntityRef {
+  entityType: TagEntityType;
+  entityId: string;
+  label: string;
+  /** @nullable */
+  sublabel?: string | null;
+  /** @nullable */
+  deeplink?: string | null;
+  appliedBy?: TagDetailEntityRefAppliedBy;
+  /** @nullable */
+  rationale?: string | null;
+  createdAt?: string;
+}
+
+export type TagDetailByEntityTypeItem = {
+  entityType: TagEntityType;
+  entries: TagDetailEntityRef[];
+};
+
+export interface TagDetail {
+  tag: Tag;
+  usageCount: number;
+  byEntityType: TagDetailByEntityTypeItem[];
+}
+
+export interface TagSuggestion {
+  name: string;
+  /** @nullable */
+  slug?: string | null;
+  /** @nullable */
+  color?: string | null;
+  isNew: boolean;
+  rationale: string;
+  confidence: number;
+}
+
+export interface TagSuggestionResponse {
+  generatedAt: string;
+  provider: string;
+  model: string;
+  suggestions: TagSuggestion[];
+}
+
+export type AutoTagBatchResultResultsItem = {
+  entityId: string;
+  label: string;
+  applied: string[];
+  /** @nullable */
+  error?: string | null;
+};
+
+export interface AutoTagBatchResult {
+  generatedAt: string;
+  provider: string;
+  model: string;
+  processed: number;
+  applied: number;
+  results: AutoTagBatchResultResultsItem[];
+}
+
 export type ListCatalogItemsParams = {
   search?: string;
   limit?: number;
@@ -1733,4 +1926,11 @@ export type GetOverviewAiBriefParams = {
    * When "true", bypass the server-side cache and force regeneration.
    */
   refresh?: boolean;
+};
+
+export type ListTagsParams = {
+  /**
+   * Optional search filter by name or slug.
+   */
+  q?: string;
 };

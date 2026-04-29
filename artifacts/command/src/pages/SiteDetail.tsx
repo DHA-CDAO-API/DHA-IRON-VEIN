@@ -42,6 +42,7 @@ import { orderStatusBadgeClass, orderStatusLabel } from '@/lib/orderStatus';
 import { BloodReadinessTab } from '@/components/site/blood/BloodReadinessTab';
 import { NewOrderDialog } from '@/components/orders/NewOrderDialog';
 import { Plus } from 'lucide-react';
+import { TagEditor } from '@/components/tags/TagEditor';
 
 type DosRow = DaysOfSupplyEntry & {
   category: ItemCategoryKey;
@@ -375,6 +376,9 @@ export default function SiteDetail() {
             <MapPin className="h-4 w-4" />
             <span>{node.latitude.toFixed(4)}, {node.longitude.toFixed(4)}</span>
             {node.countryCode && <span>• {node.countryCode}</span>}
+          </div>
+          <div className="mt-2">
+            <TagEditor entityType="node" entityId={node.id} />
           </div>
         </div>
       </div>

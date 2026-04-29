@@ -21,6 +21,8 @@ import Settings from "@/pages/Settings";
 import Profile from "@/pages/Profile";
 import Locations from "@/pages/Locations";
 import Suppliers from "@/pages/Suppliers";
+import TagsAdmin from "@/pages/TagsAdmin";
+import TagDetailPage from "@/pages/TagDetail";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -54,6 +56,8 @@ function Router() {
             <Route path="/orders" component={OrdersBoard} />
             <Route path="/orders/:id" component={OrderDetail} />
             <Route path="/scenarios" component={Scenarios} />
+            <Route path="/tags" component={TagsAdmin} />
+            <Route path="/tags/:slug" component={TagDetailPage} />
             <Route path="/copilot" component={Copilot} />
             <Route path="/data" component={DataAdmin} />
             <Route path="/settings" component={Settings} />

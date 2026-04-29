@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { SortableTable } from '@/components/ui/sortable-table';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Box, Network, AlertTriangle, MapPin } from 'lucide-react';
+import { TagEditor } from '@/components/tags/TagEditor';
 import {
   formatPercent,
   formatDays,
@@ -84,6 +85,9 @@ export default function ItemDetail() {
             {(item as { leadTimeDays?: number }).leadTimeDays !== undefined && (
               <span>Lead time: {formatDays((item as { leadTimeDays?: number }).leadTimeDays)}</span>
             )}
+          </div>
+          <div className="mt-2">
+            <TagEditor entityType="item" entityId={item.id} />
           </div>
         </div>
       </div>

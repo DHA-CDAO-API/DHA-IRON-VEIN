@@ -24,6 +24,7 @@ tags:
   - name: admin
   - name: activity
   - name: blood
+  - name: tags
 
 paths:
   /healthz:
@@ -823,6 +824,222 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/AiOverviewBrief" }
+
+  /tags:
+    get:
+      operationId: listTags
+      tags: [tags]
+      summary: List all tags with usage counts.
+      parameters:
+        - in: query
+          name: q
+          schema: { type: string }
+          description: Optional search filter by name or slug.
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/TagSummary" }
+    post:
+      operationId: createTag
+      tags: [tags]
+      summary: Create a new tag.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TagCreateInput" }
+      responses:
+        "201":
+          description: created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Tag" }
+        "409":
+          description: conflict (slug already exists)
+
+  /tags/{slug}:
+    get:
+      operationId: getTagBySlug
+      tags: [tags]
+      summary: Get a tag with all of its assignments grouped by entity type.
+      parameters:
+        - in: path
+          name: slug
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TagDetail" }
+        "404":
+          description: not found
+    patch:
+      operationId: updateTag
+      tags: [tags]
+      summary: Update tag fields (name, color, description). Renames also re-slug.
+      parameters:
+        - in: path
+          name: slug
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TagUpdateInput" }
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Tag" }
+        "404":
+          description: not found
+    delete:
+      operationId: deleteTag
+      tags: [tags]
+      summary: Delete a tag and all of its assignments.
+      parameters:
+        - in: path
+          name: slug
+          required: true
+          schema: { type: string }
+      responses:
+        "204":
+          description: deleted
+
+  /tags/{slug}/merge:
+    post:
+      operationId: mergeTag
+      tags: [tags]
+      summary: Merge this tag into another. Re-points all assignments and deletes the source tag.
+      parameters:
+        - in: path
+          name: slug
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TagMergeInput" }
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Tag" }
+        "404":
+          description: source or target tag not found
+
+  /tags/for/{entityType}/{entityId}:
+    get:
+      operationId: getTagsForEntity
+      tags: [tags]
+      summary: List the tags currently applied to one entity.
+      parameters:
+        - in: path
+          name: entityType
+          required: true
+          schema: { $ref: "#/components/schemas/TagEntityType" }
+        - in: path
+          name: entityId
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/TagAssignmentView" }
+    post:
+      operationId: addTagToEntity
+      tags: [tags]
+      summary: Apply a tag to one entity. Creates the tag on the fly if name is given.
+      parameters:
+        - in: path
+          name: entityType
+          required: true
+          schema: { $ref: "#/components/schemas/TagEntityType" }
+        - in: path
+          name: entityId
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TagAssignInput" }
+      responses:
+        "201":
+          description: created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TagAssignmentView" }
+
+  /tags/for/{entityType}/{entityId}/{tagId}:
+    delete:
+      operationId: removeTagFromEntity
+      tags: [tags]
+      summary: Remove a tag assignment from an entity.
+      parameters:
+        - in: path
+          name: entityType
+          required: true
+          schema: { $ref: "#/components/schemas/TagEntityType" }
+        - in: path
+          name: entityId
+          required: true
+          schema: { type: string }
+        - in: path
+          name: tagId
+          required: true
+          schema: { type: string }
+      responses:
+        "204":
+          description: deleted
+
+  /tags/suggest:
+    post:
+      operationId: suggestTags
+      tags: [tags]
+      summary: Ask the AI to suggest 3-7 tags (existing or new) for an entity.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TagSuggestInput" }
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TagSuggestionResponse" }
+
+  /tags/auto-tag:
+    post:
+      operationId: autoTagBatch
+      tags: [tags]
+      summary: Run a batch AI auto-tag pass over recent or untagged records of one entity type.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TagAutoTagInput" }
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AutoTagBatchResult" }
 
 components:
   schemas:
@@ -2465,3 +2682,166 @@ components:
         rawText:
           type: ["string", "null"]
           description: Raw model response text (null when fallback was used).
+
+    TagEntityType:
+      type: string
+      enum: [node, item, supplier, order, shipment, scenario, alert, blood_lot]
+
+    TagMergeInput:
+      type: object
+      required: [intoSlug]
+      properties:
+        intoSlug: { type: string }
+
+    TagAssignInput:
+      type: object
+      properties:
+        tagId: { type: string, description: "Existing tag id." }
+        name: { type: string, description: "Name to create-or-find a tag for." }
+        color: { type: string }
+        appliedBy: { type: string, enum: [manual, ai] }
+        aiModel: { type: string }
+        aiProvider: { type: string }
+        rationale: { type: string }
+
+    TagSuggestInput:
+      type: object
+      required: [entityType, entityId]
+      properties:
+        entityType: { $ref: "#/components/schemas/TagEntityType" }
+        entityId: { type: string }
+
+    TagAutoTagInput:
+      type: object
+      required: [entityType, scope]
+      properties:
+        entityType: { $ref: "#/components/schemas/TagEntityType" }
+        scope: { type: string, enum: [recent, untagged] }
+        limit: { type: integer, default: 10, maximum: 25 }
+
+    Tag:
+      type: object
+      required: [id, name, slug, color, description, source, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        slug: { type: string }
+        color: { type: string }
+        description: { type: string }
+        source: { type: string, enum: [manual, ai] }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    TagSummary:
+      allOf:
+        - $ref: "#/components/schemas/Tag"
+        - type: object
+          required: [usageCount]
+          properties:
+            usageCount: { type: integer }
+
+    TagCreateInput:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+        color: { type: string }
+        description: { type: string }
+        source: { type: string, enum: [manual, ai], default: manual }
+
+    TagUpdateInput:
+      type: object
+      properties:
+        name: { type: string }
+        color: { type: string }
+        description: { type: string }
+
+    TagAssignmentView:
+      type: object
+      required: [id, tagId, tag, entityType, entityId, appliedBy, createdAt]
+      properties:
+        id: { type: integer }
+        tagId: { type: string }
+        tag: { $ref: "#/components/schemas/Tag" }
+        entityType: { $ref: "#/components/schemas/TagEntityType" }
+        entityId: { type: string }
+        appliedBy: { type: string, enum: [manual, ai] }
+        appliedByActor: { type: string }
+        aiModel: { type: ["string", "null"] }
+        aiProvider: { type: ["string", "null"] }
+        rationale: { type: ["string", "null"] }
+        createdAt: { type: string, format: date-time }
+
+    TagDetailEntityRef:
+      type: object
+      required: [entityType, entityId, label]
+      properties:
+        entityType: { $ref: "#/components/schemas/TagEntityType" }
+        entityId: { type: string }
+        label: { type: string }
+        sublabel: { type: ["string", "null"] }
+        deeplink: { type: ["string", "null"] }
+        appliedBy: { type: string, enum: [manual, ai] }
+        rationale: { type: ["string", "null"] }
+        createdAt: { type: string, format: date-time }
+
+    TagDetail:
+      type: object
+      required: [tag, usageCount, byEntityType]
+      properties:
+        tag: { $ref: "#/components/schemas/Tag" }
+        usageCount: { type: integer }
+        byEntityType:
+          type: array
+          items:
+            type: object
+            required: [entityType, entries]
+            properties:
+              entityType: { $ref: "#/components/schemas/TagEntityType" }
+              entries:
+                type: array
+                items: { $ref: "#/components/schemas/TagDetailEntityRef" }
+
+    TagSuggestion:
+      type: object
+      required: [name, isNew, rationale, confidence]
+      properties:
+        name: { type: string }
+        slug: { type: ["string", "null"] }
+        color: { type: ["string", "null"] }
+        isNew: { type: boolean }
+        rationale: { type: string }
+        confidence: { type: number }
+
+    TagSuggestionResponse:
+      type: object
+      required: [generatedAt, provider, model, suggestions]
+      properties:
+        generatedAt: { type: string, format: date-time }
+        provider: { type: string }
+        model: { type: string }
+        suggestions:
+          type: array
+          items: { $ref: "#/components/schemas/TagSuggestion" }
+
+    AutoTagBatchResult:
+      type: object
+      required: [generatedAt, provider, model, processed, applied, results]
+      properties:
+        generatedAt: { type: string, format: date-time }
+        provider: { type: string }
+        model: { type: string }
+        processed: { type: integer }
+        applied: { type: integer }
+        results:
+          type: array
+          items:
+            type: object
+            required: [entityId, label, applied]
+            properties:
+              entityId: { type: string }
+              label: { type: string }
+              applied:
+                type: array
+                items: { type: string }
+              error: { type: ["string", "null"] }

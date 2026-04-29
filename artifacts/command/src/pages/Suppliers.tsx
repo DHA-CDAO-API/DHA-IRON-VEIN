@@ -16,6 +16,7 @@ import { SortableTable } from "@/components/ui/sortable-table";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Truck, Package, Activity, Globe2 } from "lucide-react";
+import { TagEditor } from "@/components/tags/TagEditor";
 import { formatPercent, formatNumber, formatDays, categoryLabel } from "@/lib/format";
 
 type SupplierAggregate = {
@@ -361,6 +362,13 @@ function SupplierDetailSheet({
                   {record.supplier.notes}
                 </div>
               )}
+
+              <div>
+                <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1.5">
+                  Tags
+                </div>
+                <TagEditor entityType="supplier" entityId={record.supplier.id} />
+              </div>
 
               <div>
                 <div className="text-xs uppercase tracking-wider text-muted-foreground mb-2">Items Supplied</div>

@@ -62,6 +62,7 @@ import {
   formatShortDateTime,
 } from "@/lib/format";
 import { orderStatusPillClass } from "@/lib/orderStatus";
+import { TagEditor } from "@/components/tags/TagEditor";
 
 type EnrichedOrder = Order & {
   toNodeName?: string | null;
@@ -409,6 +410,9 @@ export default function OrderDetail() {
               </div>
               <div className="mt-2 text-sm text-muted-foreground">
                 Created {formatShortDateTime(order.createdAt)}
+              </div>
+              <div className="mt-3">
+                <TagEditor entityType="order" entityId={order.id} />
               </div>
             </div>
             <div className="text-right">

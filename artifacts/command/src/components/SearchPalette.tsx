@@ -13,10 +13,13 @@ import {
   useListNodes,
   useListItems,
   useListSuppliers,
+  useListTags,
   getListNodesQueryKey,
   getListItemsQueryKey,
   getListSuppliersQueryKey,
+  getListTagsQueryKey,
 } from "@workspace/api-client-react";
+import { tagColorClasses } from "@/components/tags/tag-colors";
 import {
   LayoutDashboard,
   Map as MapIcon,
@@ -29,6 +32,7 @@ import {
   Package,
   Activity,
   ScrollText,
+  Tag as TagIcon,
 } from "lucide-react";
 
 // Page entries are static — every operator can navigate to these
@@ -44,6 +48,7 @@ const PAGES: Array<{ label: string; href: string; icon: React.ReactNode }> = [
   { label: "Suppliers", href: "/suppliers", icon: <Truck className="h-4 w-4" /> },
   { label: "Orders", href: "/orders", icon: <ScrollText className="h-4 w-4" /> },
   { label: "Scenarios", href: "/scenarios", icon: <Activity className="h-4 w-4" /> },
+  { label: "Tags", href: "/tags", icon: <TagIcon className="h-4 w-4" /> },
   { label: "Copilot", href: "/copilot", icon: <MessageSquare className="h-4 w-4" /> },
   { label: "Data Admin", href: "/data", icon: <Database className="h-4 w-4" /> },
   { label: "Settings", href: "/settings", icon: <Settings className="h-4 w-4" /> },
@@ -72,6 +77,9 @@ export function SearchPalette({
   });
   const { data: suppliers = [] } = useListSuppliers({
     query: { queryKey: getListSuppliersQueryKey(), enabled: open },
+  });
+  const { data: tags = [] } = useListTags(undefined, {
+    query: { queryKey: getListTagsQueryKey(), enabled: open },
   });
 
   const go = (href: string) => {
@@ -154,6 +162,31 @@ export function SearchPalette({
               </span>
             </CommandItem>
           ))}
+        </CommandGroup>
+
+        <CommandSeparator />
+
+        <CommandGroup heading="Tags">
+          {(tags as any[]).slice(0, 50).map((t: any) => {
+            const c = tagColorClasses(t.color);
+            return (
+              <CommandItem
+                key={`tag-${t.id}`}
+                value={`tag ${t.name} ${t.slug} ${t.description ?? ""}`}
+                onSelect={() => go(`/tags/${t.slug}`)}
+                className="cursor-pointer"
+              >
+                <span className={`h-2 w-2 rounded-full mr-2 ${c.dot}`} aria-hidden />
+                <span className="flex-1">{t.name}</span>
+                <span className="text-[10px] tabular-nums text-muted-foreground mr-2">
+                  {t.usageCount}
+                </span>
+                <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                  tag
+                </span>
+              </CommandItem>
+            );
+          })}
         </CommandGroup>
       </CommandList>
     </CommandDialog>

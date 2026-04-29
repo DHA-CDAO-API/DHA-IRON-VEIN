@@ -16,3 +16,4 @@ export * from "./theater_zones";
 export * from "./blood";
 export * from "./snapshots";
 export * from "./supply_demo_v2";
+export * from "./tags";

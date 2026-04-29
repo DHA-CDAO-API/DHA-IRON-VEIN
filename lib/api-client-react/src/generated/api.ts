@@ -22,6 +22,7 @@ import type {
   AiOverviewBrief,
   Alert,
   AppSettings,
+  AutoTagBatchResult,
   CascadeAnalysis,
   CatalogPage,
   ColdChainPulse,
@@ -48,6 +49,7 @@ import type {
   ListCatalogItemsParams,
   ListInventoryBalancesParams,
   ListOrdersParams,
+  ListTagsParams,
   MissionRiskMatrix,
   NetworkSnapshot,
   Node,
@@ -73,6 +75,18 @@ import type {
   Supplier,
   SupplyImportStatus,
   TableHealthList,
+  Tag,
+  TagAssignInput,
+  TagAssignmentView,
+  TagAutoTagInput,
+  TagCreateInput,
+  TagDetail,
+  TagEntityType,
+  TagMergeInput,
+  TagSuggestInput,
+  TagSuggestionResponse,
+  TagSummary,
+  TagUpdateInput,
   TheaterBloodReadiness,
   TheaterZone,
   UpdateOrderStatusInput,
@@ -4352,3 +4366,1012 @@ export function useGetOverviewAiBrief<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * @summary List all tags with usage counts.
+ */
+export const getListTagsUrl = (params?: ListTagsParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/tags?${stringifiedParams}`
+    : `/api/tags`;
+};
+
+export const listTags = async (
+  params?: ListTagsParams,
+  options?: RequestInit,
+): Promise<TagSummary[]> => {
+  return customFetch<TagSummary[]>(getListTagsUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListTagsQueryKey = (params?: ListTagsParams) => {
+  return [`/api/tags`, ...(params ? [params] : [])] as const;
+};
+
+export const getListTagsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listTags>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListTagsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listTags>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListTagsQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listTags>>> = ({
+    signal,
+  }) => listTags(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listTags>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListTagsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listTags>>
+>;
+export type ListTagsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List all tags with usage counts.
+ */
+
+export function useListTags<
+  TData = Awaited<ReturnType<typeof listTags>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListTagsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listTags>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListTagsQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Create a new tag.
+ */
+export const getCreateTagUrl = () => {
+  return `/api/tags`;
+};
+
+export const createTag = async (
+  tagCreateInput: TagCreateInput,
+  options?: RequestInit,
+): Promise<Tag> => {
+  return customFetch<Tag>(getCreateTagUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(tagCreateInput),
+  });
+};
+
+export const getCreateTagMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createTag>>,
+    TError,
+    { data: BodyType<TagCreateInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createTag>>,
+  TError,
+  { data: BodyType<TagCreateInput> },
+  TContext
+> => {
+  const mutationKey = ["createTag"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createTag>>,
+    { data: BodyType<TagCreateInput> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createTag(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateTagMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createTag>>
+>;
+export type CreateTagMutationBody = BodyType<TagCreateInput>;
+export type CreateTagMutationError = ErrorType<void>;
+
+/**
+ * @summary Create a new tag.
+ */
+export const useCreateTag = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createTag>>,
+    TError,
+    { data: BodyType<TagCreateInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createTag>>,
+  TError,
+  { data: BodyType<TagCreateInput> },
+  TContext
+> => {
+  return useMutation(getCreateTagMutationOptions(options));
+};
+
+/**
+ * @summary Get a tag with all of its assignments grouped by entity type.
+ */
+export const getGetTagBySlugUrl = (slug: string) => {
+  return `/api/tags/${slug}`;
+};
+
+export const getTagBySlug = async (
+  slug: string,
+  options?: RequestInit,
+): Promise<TagDetail> => {
+  return customFetch<TagDetail>(getGetTagBySlugUrl(slug), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetTagBySlugQueryKey = (slug: string) => {
+  return [`/api/tags/${slug}`] as const;
+};
+
+export const getGetTagBySlugQueryOptions = <
+  TData = Awaited<ReturnType<typeof getTagBySlug>>,
+  TError = ErrorType<void>,
+>(
+  slug: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getTagBySlug>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetTagBySlugQueryKey(slug);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getTagBySlug>>> = ({
+    signal,
+  }) => getTagBySlug(slug, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!slug,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getTagBySlug>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetTagBySlugQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getTagBySlug>>
+>;
+export type GetTagBySlugQueryError = ErrorType<void>;
+
+/**
+ * @summary Get a tag with all of its assignments grouped by entity type.
+ */
+
+export function useGetTagBySlug<
+  TData = Awaited<ReturnType<typeof getTagBySlug>>,
+  TError = ErrorType<void>,
+>(
+  slug: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getTagBySlug>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetTagBySlugQueryOptions(slug, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Update tag fields (name, color, description). Renames also re-slug.
+ */
+export const getUpdateTagUrl = (slug: string) => {
+  return `/api/tags/${slug}`;
+};
+
+export const updateTag = async (
+  slug: string,
+  tagUpdateInput: TagUpdateInput,
+  options?: RequestInit,
+): Promise<Tag> => {
+  return customFetch<Tag>(getUpdateTagUrl(slug), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(tagUpdateInput),
+  });
+};
+
+export const getUpdateTagMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateTag>>,
+    TError,
+    { slug: string; data: BodyType<TagUpdateInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateTag>>,
+  TError,
+  { slug: string; data: BodyType<TagUpdateInput> },
+  TContext
+> => {
+  const mutationKey = ["updateTag"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateTag>>,
+    { slug: string; data: BodyType<TagUpdateInput> }
+  > = (props) => {
+    const { slug, data } = props ?? {};
+
+    return updateTag(slug, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateTagMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateTag>>
+>;
+export type UpdateTagMutationBody = BodyType<TagUpdateInput>;
+export type UpdateTagMutationError = ErrorType<void>;
+
+/**
+ * @summary Update tag fields (name, color, description). Renames also re-slug.
+ */
+export const useUpdateTag = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateTag>>,
+    TError,
+    { slug: string; data: BodyType<TagUpdateInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateTag>>,
+  TError,
+  { slug: string; data: BodyType<TagUpdateInput> },
+  TContext
+> => {
+  return useMutation(getUpdateTagMutationOptions(options));
+};
+
+/**
+ * @summary Delete a tag and all of its assignments.
+ */
+export const getDeleteTagUrl = (slug: string) => {
+  return `/api/tags/${slug}`;
+};
+
+export const deleteTag = async (
+  slug: string,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getDeleteTagUrl(slug), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDeleteTagMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteTag>>,
+    TError,
+    { slug: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteTag>>,
+  TError,
+  { slug: string },
+  TContext
+> => {
+  const mutationKey = ["deleteTag"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteTag>>,
+    { slug: string }
+  > = (props) => {
+    const { slug } = props ?? {};
+
+    return deleteTag(slug, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteTagMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteTag>>
+>;
+
+export type DeleteTagMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Delete a tag and all of its assignments.
+ */
+export const useDeleteTag = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteTag>>,
+    TError,
+    { slug: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteTag>>,
+  TError,
+  { slug: string },
+  TContext
+> => {
+  return useMutation(getDeleteTagMutationOptions(options));
+};
+
+/**
+ * @summary Merge this tag into another. Re-points all assignments and deletes the source tag.
+ */
+export const getMergeTagUrl = (slug: string) => {
+  return `/api/tags/${slug}/merge`;
+};
+
+export const mergeTag = async (
+  slug: string,
+  tagMergeInput: TagMergeInput,
+  options?: RequestInit,
+): Promise<Tag> => {
+  return customFetch<Tag>(getMergeTagUrl(slug), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(tagMergeInput),
+  });
+};
+
+export const getMergeTagMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof mergeTag>>,
+    TError,
+    { slug: string; data: BodyType<TagMergeInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof mergeTag>>,
+  TError,
+  { slug: string; data: BodyType<TagMergeInput> },
+  TContext
+> => {
+  const mutationKey = ["mergeTag"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof mergeTag>>,
+    { slug: string; data: BodyType<TagMergeInput> }
+  > = (props) => {
+    const { slug, data } = props ?? {};
+
+    return mergeTag(slug, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type MergeTagMutationResult = NonNullable<
+  Awaited<ReturnType<typeof mergeTag>>
+>;
+export type MergeTagMutationBody = BodyType<TagMergeInput>;
+export type MergeTagMutationError = ErrorType<void>;
+
+/**
+ * @summary Merge this tag into another. Re-points all assignments and deletes the source tag.
+ */
+export const useMergeTag = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof mergeTag>>,
+    TError,
+    { slug: string; data: BodyType<TagMergeInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof mergeTag>>,
+  TError,
+  { slug: string; data: BodyType<TagMergeInput> },
+  TContext
+> => {
+  return useMutation(getMergeTagMutationOptions(options));
+};
+
+/**
+ * @summary List the tags currently applied to one entity.
+ */
+export const getGetTagsForEntityUrl = (
+  entityType: TagEntityType,
+  entityId: string,
+) => {
+  return `/api/tags/for/${entityType}/${entityId}`;
+};
+
+export const getTagsForEntity = async (
+  entityType: TagEntityType,
+  entityId: string,
+  options?: RequestInit,
+): Promise<TagAssignmentView[]> => {
+  return customFetch<TagAssignmentView[]>(
+    getGetTagsForEntityUrl(entityType, entityId),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetTagsForEntityQueryKey = (
+  entityType: TagEntityType,
+  entityId: string,
+) => {
+  return [`/api/tags/for/${entityType}/${entityId}`] as const;
+};
+
+export const getGetTagsForEntityQueryOptions = <
+  TData = Awaited<ReturnType<typeof getTagsForEntity>>,
+  TError = ErrorType<unknown>,
+>(
+  entityType: TagEntityType,
+  entityId: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getTagsForEntity>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetTagsForEntityQueryKey(entityType, entityId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getTagsForEntity>>
+  > = ({ signal }) =>
+    getTagsForEntity(entityType, entityId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!(entityType && entityId),
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getTagsForEntity>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetTagsForEntityQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getTagsForEntity>>
+>;
+export type GetTagsForEntityQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List the tags currently applied to one entity.
+ */
+
+export function useGetTagsForEntity<
+  TData = Awaited<ReturnType<typeof getTagsForEntity>>,
+  TError = ErrorType<unknown>,
+>(
+  entityType: TagEntityType,
+  entityId: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getTagsForEntity>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetTagsForEntityQueryOptions(
+    entityType,
+    entityId,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Apply a tag to one entity. Creates the tag on the fly if name is given.
+ */
+export const getAddTagToEntityUrl = (
+  entityType: TagEntityType,
+  entityId: string,
+) => {
+  return `/api/tags/for/${entityType}/${entityId}`;
+};
+
+export const addTagToEntity = async (
+  entityType: TagEntityType,
+  entityId: string,
+  tagAssignInput: TagAssignInput,
+  options?: RequestInit,
+): Promise<TagAssignmentView> => {
+  return customFetch<TagAssignmentView>(
+    getAddTagToEntityUrl(entityType, entityId),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(tagAssignInput),
+    },
+  );
+};
+
+export const getAddTagToEntityMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof addTagToEntity>>,
+    TError,
+    {
+      entityType: TagEntityType;
+      entityId: string;
+      data: BodyType<TagAssignInput>;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof addTagToEntity>>,
+  TError,
+  {
+    entityType: TagEntityType;
+    entityId: string;
+    data: BodyType<TagAssignInput>;
+  },
+  TContext
+> => {
+  const mutationKey = ["addTagToEntity"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof addTagToEntity>>,
+    {
+      entityType: TagEntityType;
+      entityId: string;
+      data: BodyType<TagAssignInput>;
+    }
+  > = (props) => {
+    const { entityType, entityId, data } = props ?? {};
+
+    return addTagToEntity(entityType, entityId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type AddTagToEntityMutationResult = NonNullable<
+  Awaited<ReturnType<typeof addTagToEntity>>
+>;
+export type AddTagToEntityMutationBody = BodyType<TagAssignInput>;
+export type AddTagToEntityMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Apply a tag to one entity. Creates the tag on the fly if name is given.
+ */
+export const useAddTagToEntity = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof addTagToEntity>>,
+    TError,
+    {
+      entityType: TagEntityType;
+      entityId: string;
+      data: BodyType<TagAssignInput>;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof addTagToEntity>>,
+  TError,
+  {
+    entityType: TagEntityType;
+    entityId: string;
+    data: BodyType<TagAssignInput>;
+  },
+  TContext
+> => {
+  return useMutation(getAddTagToEntityMutationOptions(options));
+};
+
+/**
+ * @summary Remove a tag assignment from an entity.
+ */
+export const getRemoveTagFromEntityUrl = (
+  entityType: TagEntityType,
+  entityId: string,
+  tagId: string,
+) => {
+  return `/api/tags/for/${entityType}/${entityId}/${tagId}`;
+};
+
+export const removeTagFromEntity = async (
+  entityType: TagEntityType,
+  entityId: string,
+  tagId: string,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(
+    getRemoveTagFromEntityUrl(entityType, entityId, tagId),
+    {
+      ...options,
+      method: "DELETE",
+    },
+  );
+};
+
+export const getRemoveTagFromEntityMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof removeTagFromEntity>>,
+    TError,
+    { entityType: TagEntityType; entityId: string; tagId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof removeTagFromEntity>>,
+  TError,
+  { entityType: TagEntityType; entityId: string; tagId: string },
+  TContext
+> => {
+  const mutationKey = ["removeTagFromEntity"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof removeTagFromEntity>>,
+    { entityType: TagEntityType; entityId: string; tagId: string }
+  > = (props) => {
+    const { entityType, entityId, tagId } = props ?? {};
+
+    return removeTagFromEntity(entityType, entityId, tagId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RemoveTagFromEntityMutationResult = NonNullable<
+  Awaited<ReturnType<typeof removeTagFromEntity>>
+>;
+
+export type RemoveTagFromEntityMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Remove a tag assignment from an entity.
+ */
+export const useRemoveTagFromEntity = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof removeTagFromEntity>>,
+    TError,
+    { entityType: TagEntityType; entityId: string; tagId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof removeTagFromEntity>>,
+  TError,
+  { entityType: TagEntityType; entityId: string; tagId: string },
+  TContext
+> => {
+  return useMutation(getRemoveTagFromEntityMutationOptions(options));
+};
+
+/**
+ * @summary Ask the AI to suggest 3-7 tags (existing or new) for an entity.
+ */
+export const getSuggestTagsUrl = () => {
+  return `/api/tags/suggest`;
+};
+
+export const suggestTags = async (
+  tagSuggestInput: TagSuggestInput,
+  options?: RequestInit,
+): Promise<TagSuggestionResponse> => {
+  return customFetch<TagSuggestionResponse>(getSuggestTagsUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(tagSuggestInput),
+  });
+};
+
+export const getSuggestTagsMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof suggestTags>>,
+    TError,
+    { data: BodyType<TagSuggestInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof suggestTags>>,
+  TError,
+  { data: BodyType<TagSuggestInput> },
+  TContext
+> => {
+  const mutationKey = ["suggestTags"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof suggestTags>>,
+    { data: BodyType<TagSuggestInput> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return suggestTags(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SuggestTagsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof suggestTags>>
+>;
+export type SuggestTagsMutationBody = BodyType<TagSuggestInput>;
+export type SuggestTagsMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Ask the AI to suggest 3-7 tags (existing or new) for an entity.
+ */
+export const useSuggestTags = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof suggestTags>>,
+    TError,
+    { data: BodyType<TagSuggestInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof suggestTags>>,
+  TError,
+  { data: BodyType<TagSuggestInput> },
+  TContext
+> => {
+  return useMutation(getSuggestTagsMutationOptions(options));
+};
+
+/**
+ * @summary Run a batch AI auto-tag pass over recent or untagged records of one entity type.
+ */
+export const getAutoTagBatchUrl = () => {
+  return `/api/tags/auto-tag`;
+};
+
+export const autoTagBatch = async (
+  tagAutoTagInput: TagAutoTagInput,
+  options?: RequestInit,
+): Promise<AutoTagBatchResult> => {
+  return customFetch<AutoTagBatchResult>(getAutoTagBatchUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(tagAutoTagInput),
+  });
+};
+
+export const getAutoTagBatchMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof autoTagBatch>>,
+    TError,
+    { data: BodyType<TagAutoTagInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof autoTagBatch>>,
+  TError,
+  { data: BodyType<TagAutoTagInput> },
+  TContext
+> => {
+  const mutationKey = ["autoTagBatch"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof autoTagBatch>>,
+    { data: BodyType<TagAutoTagInput> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return autoTagBatch(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type AutoTagBatchMutationResult = NonNullable<
+  Awaited<ReturnType<typeof autoTagBatch>>
+>;
+export type AutoTagBatchMutationBody = BodyType<TagAutoTagInput>;
+export type AutoTagBatchMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Run a batch AI auto-tag pass over recent or untagged records of one entity type.
+ */
+export const useAutoTagBatch = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof autoTagBatch>>,
+    TError,
+    { data: BodyType<TagAutoTagInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof autoTagBatch>>,
+  TError,
+  { data: BodyType<TagAutoTagInput> },
+  TContext
+> => {
+  return useMutation(getAutoTagBatchMutationOptions(options));
+};
