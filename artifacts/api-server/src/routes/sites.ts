@@ -16,7 +16,14 @@ import { invalidateSimCache, loadSimContext } from "../lib/ctx";
 import { computeNodeBloodReadiness } from "../lib/blood-readiness";
 import { mapRecommendationToApi } from "../lib/mappers";
 import { mapDbAlertToApi } from "./alerts";
-import { computeDailyDemand, projectDaysOfSupply, statusFromDOS, generateRecommendations } from "@workspace/sim";
+import { buildTlammStockpile } from "./tlamm";
+import {
+  computeDailyDemand,
+  projectDaysOfSupply,
+  statusFromDOS,
+  generateRecommendations,
+  generateTlammSelfReplenishment,
+} from "@workspace/sim";
 
 const router: IRouter = Router();
 
@@ -118,16 +125,15 @@ router.get("/sites/:nodeId", async (req, res, next) => {
       status: b.status,
     }));
 
-    const recs = generateRecommendations({
-      nodes: [nodeRow],
+    // Use the full simulation context so TLAMM-first sourcing can resolve
+    // the upstream TLAMM node + its inventory when generating recs for an
+    // MTF, then filter to recs whose target is this site. For TLAMMs, also
+    // include self-replenishment recs targeting this hub.
+    const allRecs = generateRecommendations({
+      nodes: ctx.ctx.nodes,
       routes: ctx.ctx.routes,
       items: ctx.ctx.items,
-      balances: balanceRows.map((b) => ({
-        nodeId: b.nodeId,
-        itemId: b.itemId,
-        onHand: b.onHand,
-        dueIn: b.dueIn,
-      })),
+      balances: ctx.ctx.balances,
       profiles: ctx.ctx.profiles,
       states: ctx.ctx.states,
       suppliers: ctx.suppliers,
@@ -137,6 +143,22 @@ router.get("/sites/:nodeId", async (req, res, next) => {
       paddingDays: ctx.paddingDays,
       historicalBurnByNode: ctx.historicalBurn,
     });
+    const tlammSelfRecs = nodeRow.isTlamm
+      ? generateTlammSelfReplenishment({
+          nodes: ctx.ctx.nodes,
+          routes: ctx.ctx.routes,
+          items: ctx.ctx.items,
+          balances: ctx.ctx.balances,
+          profiles: ctx.ctx.profiles,
+          states: ctx.ctx.states,
+          suppliers: ctx.suppliers,
+          itemSkew: ctx.ctx.itemSkew,
+          watchDays: ctx.ctx.watchDays,
+          criticalDays: ctx.ctx.criticalDays,
+          paddingDays: ctx.paddingDays,
+        })
+      : [];
+    const recs = [...allRecs, ...tlammSelfRecs].filter((r) => r.nodeId === nodeId);
 
     const supplierRows = await db.select().from(suppliersTable);
     const recLookups = {

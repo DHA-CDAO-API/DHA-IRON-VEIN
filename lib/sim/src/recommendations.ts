@@ -209,6 +209,53 @@ export function rankSuppliersForShortfall(args: {
   return ranked;
 }
 
+// Find the single fastest in-network route between two nodes (direct edge
+// only — we do not multi-hop here). Used to estimate TLAMM→MTF lead time.
+function findRouteBetween(
+  fromId: string,
+  toId: string,
+  routes: SimRoute[],
+): SimRoute | undefined {
+  let best: SimRoute | undefined;
+  for (const r of routes) {
+    if (r.fromNode === fromId && r.toNode === toId) {
+      if (!best || r.days < best.days) best = r;
+    }
+  }
+  return best;
+}
+
+const DEFAULT_TLAMM_PICK_DAYS = 1; // intra-TLAMM pick + pack handle time
+
+// Decide whether a TLAMM can be the primary source for an MTF shortfall,
+// and how much it can ship. Returns null if no TLAMM is configured or the
+// TLAMM has zero on-hand. When the TLAMM has *some* stock we still prefer
+// it for the available quantity (a "split" rec is created elsewhere).
+function evaluateTlammSource(args: {
+  mtfNode: SimNode;
+  itemId: string;
+  shortfallQty: number;
+  tlammNode: SimNode | undefined;
+  tlammOnHand: number;
+  routes: SimRoute[];
+}): {
+  qty: number;
+  etaDays: number;
+  reliability: number;
+  available: boolean;
+} | null {
+  const tlamm = args.tlammNode;
+  if (!tlamm) return null;
+  if (args.tlammOnHand <= 0) return { qty: 0, etaDays: 0, reliability: 0, available: false };
+  const route = findRouteBetween(tlamm.id, args.mtfNode.id, args.routes);
+  // If no direct route exists, the TLAMM cannot deliver this run; fall
+  // back to the MTF's nearest upstream + supplier path.
+  if (!route) return null;
+  const eta = Number((route.days + DEFAULT_TLAMM_PICK_DAYS).toFixed(1));
+  const qty = Math.min(args.shortfallQty, args.tlammOnHand);
+  return { qty, etaDays: eta, reliability: route.reliability, available: true };
+}
+
 export function generateRecommendations(args: {
   nodes: SimNode[];
   routes: SimRoute[];
@@ -336,4 +383,148 @@ export function generateRecommendations(args: {
     }
   }
   return recs.sort((a, b) => b.expectedRiskReduction - a.expectedRiskReduction);
+}
+
+// ---------------------------------------------------------------------------
+// TLAMM self-replenishment: each TLAMM should look at the aggregated
+// downstream burn it serves and keep enough on-hand to satisfy that demand
+// over its own stock-days target. Emits one rec per (TLAMM,item) where the
+// TLAMM's projected days-of-supply is below the watch threshold.
+// ---------------------------------------------------------------------------
+
+export type TlammReplenishmentRecommendation = Recommendation & {
+  // For traceability in the UI: which downstream MTFs are pulling on this
+  // TLAMM and how much each contributes to the aggregate daily burn.
+  downstreamContributions?: Array<{
+    nodeId: string;
+    nodeName: string;
+    dailyBurn: number;
+  }>;
+};
+
+export function generateTlammSelfReplenishment(args: {
+  nodes: SimNode[];
+  routes: SimRoute[];
+  items: SimItem[];
+  balances: SimInventoryBalance[];
+  profiles: Map<string, SimDemandProfile>;
+  states: Map<string, SimOperationalState>;
+  suppliers: SimSupplier[];
+  itemSkew: Record<string, number>;
+  watchDays: number;
+  criticalDays: number;
+  paddingDays: number;
+}): TlammReplenishmentRecommendation[] {
+  const out: TlammReplenishmentRecommendation[] = [];
+  const balanceMap = new Map<string, number>();
+  for (const b of args.balances) {
+    balanceMap.set(`${b.nodeId}:${b.itemId}`, b.onHand);
+  }
+  const tlamms = args.nodes.filter((n) => n.isTlamm === true);
+  if (tlamms.length === 0) return out;
+
+  // Pre-compute per-MTF daily demand once.
+  const mtfDemandByNode = new Map<string, Map<string, number>>();
+  for (const node of args.nodes) {
+    const p = args.profiles.get(node.id);
+    if (!p || p.activeSupportedPopulation === 0) continue;
+    const state = args.states.get(p.operationalState);
+    const dem = computeDailyDemand({
+      profile: p,
+      items: args.items,
+      operationalState: state,
+      itemSkew: args.itemSkew,
+    });
+    mtfDemandByNode.set(
+      node.id,
+      new Map(dem.map((d) => [d.itemId, d.quantity])),
+    );
+  }
+
+  for (const tlamm of tlamms) {
+    // Downstream MTFs = nodes whose primaryTlammNodeId matches AND whose
+    // aor matches (defensive — primaryTlammNodeId already implies it).
+    const downstream = args.nodes.filter(
+      (n) => n.primaryTlammNodeId === tlamm.id && n.id !== tlamm.id,
+    );
+    if (downstream.length === 0) continue;
+
+    // For each item carried by any downstream MTF, sum daily burn and
+    // record contributors.
+    const aggBurn = new Map<string, number>();
+    const contribByItem = new Map<
+      string,
+      Array<{ nodeId: string; nodeName: string; dailyBurn: number }>
+    >();
+    for (const m of downstream) {
+      const burns = mtfDemandByNode.get(m.id);
+      if (!burns) continue;
+      for (const [itemId, q] of burns) {
+        if (q <= 0) continue;
+        aggBurn.set(itemId, (aggBurn.get(itemId) ?? 0) + q);
+        const arr = contribByItem.get(itemId) ?? [];
+        arr.push({ nodeId: m.id, nodeName: m.name, dailyBurn: Number(q.toFixed(2)) });
+        contribByItem.set(itemId, arr);
+      }
+    }
+
+    const upstreamRoute = findUpstreamRoute(tlamm.id, args.routes);
+    for (const [itemId, totalBurn] of aggBurn) {
+      const item = args.items.find((i) => i.id === itemId);
+      if (!item || totalBurn <= 0) continue;
+      const onHand = balanceMap.get(`${tlamm.id}:${itemId}`) ?? 0;
+      const dos = projectDaysOfSupply(onHand, totalBurn);
+      if (dos > args.watchDays) continue;
+      const targetDays = Math.max(
+        tlamm.stockDays,
+        item.leadTimeDays + args.paddingDays,
+      );
+      const suggestedQty = Math.ceil(totalBurn * (targetDays - dos));
+      if (suggestedQty <= 0) continue;
+
+      const ranked = rankSuppliersForShortfall({
+        itemId,
+        suggestedQty,
+        shortfallHorizonDays: Math.max(args.criticalDays, dos),
+        upstreamRouteDays: upstreamRoute?.days ?? 2,
+        suppliers: args.suppliers,
+      });
+      const top = ranked[0];
+      const kind: RecommendationKind =
+        dos <= args.criticalDays ? "ESCALATE" : "REORDER";
+      const expected =
+        Math.min(50, Math.round(((args.watchDays - dos) / args.watchDays) * 60)) +
+        (kind === "ESCALATE" ? 15 : 0);
+      const channelClause = top
+        ? top.channel === "COMMERCIAL"
+          ? " — Buy on market"
+          : top.channel === "HOST_NATION"
+            ? " — Host-nation source"
+            : top.channel === "ALLIED"
+              ? " — Allied partner source"
+              : ""
+        : "";
+      const costClause = top
+        ? ` Est. cost $${top.estimatedTotalCostUsd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}.`
+        : "";
+      out.push({
+        id: `rec-tlamm-${tlamm.id}-${itemId}`,
+        nodeId: tlamm.id,
+        itemId,
+        kind,
+        suggestedQty,
+        reason: `${item.name} at TLAMM ${tlamm.name}: aggregate downstream burn ${totalBurn.toFixed(1)} ${item.unitOfIssue}/d across ${downstream.length} MTFs; projected DOS ${dos.toFixed(1)} d (target ${targetDays} d).${channelClause}${costClause}`,
+        expectedRiskReduction: expected,
+        sourceKind: "SUPPLIER",
+        sourceSupplierId: top?.supplierId,
+        sourceChannel: top?.channel,
+        estimatedUnitCostUsd: top?.estimatedUnitCostUsd,
+        estimatedTotalCostUsd: top?.estimatedTotalCostUsd,
+        etaDays: top ? top.etaDays : 7,
+        alternatives: ranked.slice(0, 4),
+        downstreamContributions: contribByItem.get(itemId) ?? [],
+      });
+    }
+  }
+  return out.sort((a, b) => b.expectedRiskReduction - a.expectedRiskReduction);
 }

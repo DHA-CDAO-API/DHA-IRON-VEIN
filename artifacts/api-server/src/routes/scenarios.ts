@@ -1115,6 +1115,81 @@ type EnrichedRecRow = ScenarioRecRow & {
   splitAllocation?: RecommendationSplitAllocation[];
 };
 
+// Lightweight directed-route lookup. Mirrors the sim package's internal
+// `findRouteBetween` since that helper isn't exported from `@workspace/sim`.
+function findScenarioRouteBetween(
+  fromId: string,
+  toId: string,
+  routes: ScenarioCtxLite["routes"],
+): { days: number; reliability: number } | null {
+  const direct = routes.find((r) => r.fromNode === fromId && r.toNode === toId);
+  if (direct) {
+    return {
+      days: direct.days,
+      reliability: direct.reliability,
+    };
+  }
+  return null;
+}
+
+// Decide whether a TLAMM hub should source a scenario shortfall, with
+// neighbor-AOR fallback if the MTF's primary TLAMM is depleted or its
+// route is broken. Returns `null` when no TLAMM can plausibly source
+// the rec — the caller falls back to outside suppliers.
+function pickScenarioTlammSource(args: {
+  mtfNodeId: string;
+  itemId: string;
+  qty: number;
+  ctx: ScenarioCtxLite;
+}): { tlammNodeId: string; tlammName: string; etaDays: number; isNeighborAor: boolean } | null {
+  const { mtfNodeId, itemId, qty, ctx } = args;
+  const mtf = ctx.nodes.find((n) => n.id === mtfNodeId);
+  if (!mtf || mtf.isTlamm) return null;
+  const tlammStock = (tlammId: string): number =>
+    ctx.balances
+      .filter((b) => b.nodeId === tlammId && b.itemId === itemId)
+      .reduce((sum, b) => sum + b.onHand, 0);
+  const tryTlamm = (tlammId: string): { etaDays: number } | null => {
+    const tlamm = ctx.nodes.find((n) => n.id === tlammId && n.isTlamm);
+    if (!tlamm) return null;
+    if (tlammStock(tlammId) < qty * 0.5) return null;
+    const route = findScenarioRouteBetween(tlammId, mtfNodeId, ctx.routes);
+    if (!route || route.reliability < 0.4) return null;
+    return { etaDays: Math.round(route.days * 10) / 10 };
+  };
+  if (mtf.primaryTlammNodeId) {
+    const primary = tryTlamm(mtf.primaryTlammNodeId);
+    if (primary) {
+      const t = ctx.nodes.find((n) => n.id === mtf.primaryTlammNodeId)!;
+      return {
+        tlammNodeId: t.id,
+        tlammName: t.name,
+        etaDays: primary.etaDays,
+        isNeighborAor: false,
+      };
+    }
+  }
+  // Neighbor-AOR fallback: pick the TLAMM with the most stock + a working
+  // route, even if it serves a different AOR.
+  const candidates = ctx.nodes
+    .filter((n) => n.isTlamm && n.id !== mtf.primaryTlammNodeId)
+    .map((t) => ({ tlamm: t, stock: tlammStock(t.id) }))
+    .filter((c) => c.stock >= qty * 0.5)
+    .sort((a, b) => b.stock - a.stock);
+  for (const c of candidates) {
+    const ok = tryTlamm(c.tlamm.id);
+    if (ok) {
+      return {
+        tlammNodeId: c.tlamm.id,
+        tlammName: c.tlamm.name,
+        etaDays: ok.etaDays,
+        isNeighborAor: true,
+      };
+    }
+  }
+  return null;
+}
+
 function buildScenarioRecommendationRows(args: {
   scenarioId: string;
   result: ReturnType<typeof runScenario>;
@@ -1140,6 +1215,12 @@ function buildScenarioRecommendationRows(args: {
     const node = nodeMap.get(sf.nodeId);
     const item = itemMap.get(sf.itemId);
     if (!node || !item) continue;
+    const tlammPick = pickScenarioTlammSource({
+      mtfNodeId: sf.nodeId,
+      itemId: sf.itemId,
+      qty: sf.suggestedQty,
+      ctx,
+    });
     const upstream = findUpstreamRoute(sf.nodeId, ctx.routes);
     const ranked = rankSuppliersForShortfall({
       itemId: sf.itemId,
@@ -1148,6 +1229,36 @@ function buildScenarioRecommendationRows(args: {
       upstreamRouteDays: upstream?.days ?? 2,
       suppliers,
     });
+    const expectedRiskReduction = Math.min(
+      90,
+      Math.round(((ctx.watchDays - sf.projectedDOS) / Math.max(1, ctx.watchDays)) * 60) +
+        (sf.projectedDOS <= ctx.criticalDays ? 25 : 0),
+    );
+    // Prefer sourcing from a TLAMM hub when one can plausibly cover the
+    // shortfall (primary AOR first, then neighbor-AOR fallback). Encode
+    // the chosen TLAMM in the rec id so the view function can attribute
+    // sourceKind/sourceNode without needing extra DB columns.
+    if (tlammPick) {
+      const aorTag = tlammPick.isNeighborAor ? " (neighbor-AOR)" : "";
+      rows.push({
+        id: `rec-sc-${scenarioId}-${sf.nodeId}-${sf.itemId}-tlamm-${tlammPick.tlammNodeId}`,
+        nodeId: sf.nodeId,
+        itemId: sf.itemId,
+        kind: recKindForDOS(sf.projectedDOS, ctx.criticalDays),
+        suggestedQty: sf.suggestedQty,
+        reason: `Pre-position ${sf.suggestedQty.toLocaleString()} ${item.unitOfIssue} ${item.name} from TLAMM hub ${tlammPick.tlammName}${aorTag} to ${node.name} — projected DOS ${sf.projectedDOS.toFixed(1)} d at ${sf.peakDemandPerDay.toFixed(1)}/d burn; ETA ${tlammPick.etaDays.toFixed(1)} d via theater stockpile.`,
+        expectedRiskReduction,
+        sourceSupplierId: null,
+        sourceChannel: null,
+        estimatedUnitCostUsd: 0,
+        estimatedTotalCostUsd: 0,
+        etaDays: tlammPick.etaDays,
+        status: "OPEN",
+        scenarioId,
+        alternatives: ranked.slice(0, 4),
+      });
+      continue;
+    }
     const top = ranked[0];
     // Identify the would-be primary against baseline values. If the chosen
     // supplier differs and the baseline primary is in the impacted set, we
@@ -1209,11 +1320,6 @@ function buildScenarioRecommendationRows(args: {
     const estimatedTotalCost = top
       ? top.estimatedTotalCostUsd
       : Number((sf.suggestedQty * 1.5).toFixed(2));
-    const expectedRiskReduction = Math.min(
-      90,
-      Math.round(((ctx.watchDays - sf.projectedDOS) / Math.max(1, ctx.watchDays)) * 60) +
-        (sf.projectedDOS <= ctx.criticalDays ? 25 : 0),
-    );
     rows.push({
       id: `rec-sc-${scenarioId}-${sf.nodeId}-${sf.itemId}`,
       nodeId: sf.nodeId,
@@ -1288,6 +1394,11 @@ function buildScenarioRecommendationsView(args: {
       result.perItemShortfall.find(
         (sf) => sf.nodeId === row.nodeId && sf.itemId === row.itemId,
       )?.projectedDOS ?? 999;
+    // TLAMM-sourced rows encode the chosen hub in the rec id
+    // (`...-tlamm-{tlammNodeId}`); decode it here for source attribution.
+    const tlammMatch = /-tlamm-([^-]+(?:-[^-]+)*)$/.exec(row.id);
+    const tlammNode = tlammMatch ? nodeMap.get(tlammMatch[1]) : null;
+    const isTlammSourced = Boolean(tlammNode?.isTlamm);
     return {
       id: row.id,
       kind: row.kind,
@@ -1300,7 +1411,10 @@ function buildScenarioRecommendationsView(args: {
       rationale: row.reason,
       suggestedSupplierId: row.sourceSupplierId ?? null,
       suggestedSupplierName: supplier?.name ?? null,
-      suggestedFromNodeId: supplier?.id ?? null,
+      suggestedFromNodeId: isTlammSourced ? (tlammNode?.id ?? null) : (supplier?.id ?? null),
+      sourceKind: isTlammSourced ? "TLAMM" : row.sourceSupplierId ? "SUPPLIER" : null,
+      sourceNodeId: isTlammSourced ? (tlammNode?.id ?? null) : null,
+      sourceNodeName: isTlammSourced ? (tlammNode?.name ?? null) : null,
       sourceChannel: row.sourceChannel ?? null,
       etaDays: row.etaDays ?? 0,
       estimatedUnitCostUsd: row.estimatedUnitCostUsd ?? 0,

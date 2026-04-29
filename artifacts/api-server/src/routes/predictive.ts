@@ -14,6 +14,7 @@ import { loadSimContext } from "../lib/ctx";
 import {
   computeDailyDemand,
   generateRecommendations,
+  generateTlammSelfReplenishment,
   projectDaysOfSupply,
 } from "@workspace/sim";
 import { invalidateSimCache } from "../lib/ctx";
@@ -99,11 +100,14 @@ router.get("/predictive/recommendations", async (req, res, next) => {
     const nodeId = typeof req.query.nodeId === "string" ? req.query.nodeId : undefined;
     const limit = Math.min(200, Number(req.query.limit ?? 50) || 50);
     const ctx = await loadSimContext();
-    const filteredNodes = nodeId
-      ? ctx.ctx.nodes.filter((n) => n.id === nodeId)
-      : ctx.ctx.nodes;
-    const recs = generateRecommendations({
-      nodes: filteredNodes,
+    // For TLAMM-first sourcing the engine needs the full node + balance
+    // graph (so it can resolve a downstream MTF's primary TLAMM and check
+    // its on-hand). Generate against the full context, then filter to the
+    // caller's nodeId if one was supplied. Also fold in TLAMM
+    // self-replenishment recs ("fix the hub") so commanders see them
+    // alongside spoke recs.
+    const liveRecs = generateRecommendations({
+      nodes: ctx.ctx.nodes,
       routes: ctx.ctx.routes,
       items: ctx.ctx.items,
       balances: ctx.ctx.balances,
@@ -114,7 +118,25 @@ router.get("/predictive/recommendations", async (req, res, next) => {
       watchDays: ctx.ctx.watchDays,
       criticalDays: ctx.ctx.criticalDays,
       paddingDays: ctx.paddingDays,
-    }).slice(0, limit);
+    });
+    const selfReplenishRecs = generateTlammSelfReplenishment({
+      nodes: ctx.ctx.nodes,
+      routes: ctx.ctx.routes,
+      items: ctx.ctx.items,
+      balances: ctx.ctx.balances,
+      profiles: ctx.ctx.profiles,
+      states: ctx.ctx.states,
+      suppliers: ctx.suppliers,
+      itemSkew: ctx.ctx.itemSkew,
+      watchDays: ctx.ctx.watchDays,
+      criticalDays: ctx.ctx.criticalDays,
+      paddingDays: ctx.paddingDays,
+    });
+    const merged = [...liveRecs, ...selfReplenishRecs].sort(
+      (a, b) => b.expectedRiskReduction - a.expectedRiskReduction,
+    );
+    const filteredByNode = nodeId ? merged.filter((r) => r.nodeId === nodeId) : merged;
+    const recs = filteredByNode.slice(0, limit);
 
     const [promoted, itemRows, nodeRows, supplierRows] = await Promise.all([
       db.select().from(recsTable),
