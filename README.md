@@ -2,7 +2,7 @@
 
 End-to-end medical logistics decision-support platform for the **Modern Marine 2026** competition. DHA Iron Vein takes the hub-and-spoke USINDOPACOM Class VIII supply network and makes it *visible, predictable, and actionable* for Commanders, Logisticians, Medical Planners, and Analysts operating in a contested theater.
 
-The platform fuses a real DLA / DMLSS-compatible medical-supply catalog and a ~389k-row imported Supply Demo dataset with a deterministic theater simulation, a 30-day predictive sustainment engine, casualty-driven medical readiness, blood-products-first viability tracking, scenario-time supplier degradation, and a provider-agnostic AI orchestrator (OpenAI **gpt-5.4** ↔ Anthropic **claude-sonnet-4-6**, switchable per request) — all surfaced through a live operations console, a scenario console, a leadership opener deck, and a full scenario brief.
+The platform fuses a real DLA / DMLSS-compatible medical-supply catalog and a ~389k-row imported Supply Demo dataset with a deterministic theater simulation, a 30-day predictive sustainment engine, casualty-driven medical readiness, blood-products-first viability tracking, scenario-time supplier degradation, and a provider-agnostic AI orchestrator (OpenAI **gpt-5.4** ↔ Google **gemini-2.5-pro**, switchable per request) — all surfaced through a live operations console, a scenario console, a leadership opener deck, and a full scenario brief.
 
 > **Operational date in the demo:** 27 April 2026
 > **AOR:** USINDOPACOM theater — TLAMM hubs, regional MTFs, BAS / clinic spokes, supplier mix across DLA / DOD / commercial / host-nation / allied channels
@@ -47,7 +47,7 @@ workspace/
 │   ├── api-zod/            Generated Zod schemas (server validation)
 │   ├── db/                 Drizzle ORM schema + seed/ingest scripts
 │   ├── sim/                Pure-TS theater simulation, cascades, recommendations
-│   ├── ai-orchestrator/    Provider-agnostic LLM router (OpenAI + Anthropic)
+│   ├── ai-orchestrator/    Provider-agnostic LLM router (OpenAI + Gemini)
 │   ├── replit-auth-web/    Replit OIDC client for the web app
 │   ├── exports/            CSV/XLSX export helpers
 │   └── integrations-*      Replit AI integrations proxies (no third-party keys)
@@ -78,7 +78,7 @@ The DHA Iron Vein operations app. USMC scarlet-and-gold dark theme on a deep neu
 - **Procedures** (`/procedures`) — Procedure library with Primary / Secondary / Tertiary supply tiers and Role-of-care filter.
 - **Suppliers** (`/suppliers`) — Catalog coverage per supplier, lead time, reliability, channel.
 - **Scenarios** (`/scenarios`) — Preset events (war / contested first, weather last) and custom builder with affected nodes, theater zones, and impacted-supplier degradation; live `ScenarioResult` panel with AI brief, per-node and per-item impact tables, recommendations, cascade story, supplier alternatives.
-- **Copilot** (`/copilot`) — Streaming chat strictly grounded in solution data (refuses out-of-scope questions); provider toggle (OpenAI / Anthropic).
+- **Copilot** (`/copilot`) — Streaming chat strictly grounded in solution data (refuses out-of-scope questions); provider toggle (OpenAI / Gemini).
 - **Tags** (`/tags`) — Global tag taxonomy with usage counts, AI auto-tag batches, tag detail view with cross-entity rollup.
 - **Data Admin** (`/data`) — DB health, table row counts, seed status, Supply Demo import / reconcile / activate / rollback, AI provider status.
 - **Settings** (`/settings`) — AI provider toggle, alert thresholds, theme.
@@ -149,8 +149,8 @@ The preview pane routes automatically. The operations app loads at `/`, the lead
         ┌──────────────────┐         ┌────────────────────────────┐
         │  lib/sim         │         │  lib/ai-orchestrator       │
         │  forecast        │         │  OpenAI gpt-5.4   │ swap   │
-        │  recommendations │         │  Anthropic        │ at     │
-        │  cascades        │         │  claude-sonnet-4-6│ runtime│
+        │  recommendations │         │  Google           │ at     │
+        │  cascades        │         │  gemini-2.5-pro   │ runtime│
         │  supplierImpact  │         │  prompts · tag-suggester   │
         │  staffing        │         │  Replit AI proxies         │
         │  casualty        │         │                            │
@@ -227,7 +227,7 @@ Documents (purchase orders, exports) are formatted to be drop-in compatible with
 
 - **TypeScript end-to-end**, single source of truth: OpenAPI → orval → typed React Query hooks for the client and Zod schemas for server validation. Drift between client and server is impossible — it would fail typecheck.
 - **Pure-function sim** (`lib/sim`) — fully unit-testable, no I/O, no LLM dependence. The AI is additive, never load-bearing.
-- **Provider-agnostic AI** — every AI call goes through `lib/ai-orchestrator` with a `provider` field; both OpenAI and Anthropic are reached through Replit's AI Integrations proxy (no third-party keys, no PII leaving the perimeter).
+- **Provider-agnostic AI** — every AI call goes through `lib/ai-orchestrator` with a `provider` field; both OpenAI and Google Gemini are reached through Replit's AI Integrations proxy (no third-party keys, no PII leaving the perimeter).
 - **Deterministic seed** — the same `pnpm seed` produces the same demo state each run; the Supply Demo import is reversible via a single rollback endpoint.
 - **No emojis**, anywhere — military-professional visual register.
 - **Reduced-motion aware** — every animated surface (map pulses, trip particles, leaderboard reorder, activity stream, sparklines, scenario cascade reveal) honors `prefers-reduced-motion` and the per-user map-animation toggle.
@@ -257,7 +257,7 @@ An analyst has the full **Data Admin**, the AI provider toggle, the recommendati
 The platform reaches "seconds, not hours" by stacking five technical levers, each delivered by a specific module:
 
 1. **Deterministic in-process projection** — `lib/sim` is a pure-TypeScript theater simulator (`forecast.ts`, `recommendations.ts`, `cascades.ts`, `supplierImpact.ts`, `staffing.ts`, `casualty.ts`). It runs in the API process with no external service hop and no LLM dependence; a 30-day projection across the network resolves in tens of milliseconds. Recommendations exist with or without the model.
-2. **Provider-agnostic LLM rationale on top of structured output** — `lib/ai-orchestrator` is a strategy-pattern router (`provider.ts`, `prompts.ts`, `tag-suggester.ts`). It receives the sim's structured output as context and returns natural-language rationale, AI briefs, and tag suggestions. Provider is a per-request field (`openai` / `anthropic`); both are reached through the Replit AI Integrations proxies (`lib/integrations-openai-ai-server`, `lib/integrations-anthropic-ai`) with no third-party keys. The Copilot is locked to in-scope solution data and refuses everything else, so latency is spent answering, not hedging.
+2. **Provider-agnostic LLM rationale on top of structured output** — `lib/ai-orchestrator` is a strategy-pattern router (`provider.ts`, `prompts.ts`, `tag-suggester.ts`). It receives the sim's structured output as context and returns natural-language rationale, AI briefs, and tag suggestions. Provider is a per-request field (`openai` / `gemini`); both are reached through the Replit AI Integrations proxies (`lib/integrations-openai-ai-server`, `lib/integrations-gemini-ai`) with no third-party keys. The Copilot is locked to in-scope solution data and refuses everything else, so latency is spent answering, not hedging.
 3. **Single typed contract eliminating drift** — `lib/api-spec/openapi.yaml` is the source of truth; `orval.config.ts` generates a typed React Query client (`lib/api-client-react`) and Zod schemas (`lib/api-zod`) used by the server for runtime validation. Adding a field is a one-place change; removing one fails typecheck on both sides. There is no glue layer to keep in sync.
 4. **Pre-computed rollups with mutation-driven invalidation** — `artifacts/command` consumes the snapshot and overview endpoints exposed by `artifacts/api-server`. Rollups (theater Vital Signs, Time-to-Fail Leaderboard, Mission-Risk Matrix, Cold-Chain Pulse, Walking-Blood-Bank-by-ABO) are computed server-side, and the React Query client invalidates dependent queries as mutations land — so a promote-to-PO or a PAR edit refreshes the affected widgets in place rather than triggering a wholesale poll. The first paint draws skeletons; subsequent updates replace values without scroll jump.
 5. **Persistent DMLSS-compatible data backbone with an isolated import lane** — `lib/db` carries the operational schema, the medical / blood / casualty extensions, the security tables, and the isolated `supply_demo_v2_*` staging schema. The Supply Demo importer (`artifacts/api-server/src/lib/supply-import/`) parses, dedups, reconciles, and activates ~389k rows without touching the operational tables until activation, and a single rollback endpoint reverses it cleanly.
@@ -302,9 +302,9 @@ For every module: **Objective → What it does → How it works in the software 
 
 **Objective.** Provide a provider-agnostic LLM bridge that adds rationale, narrative, and natural-language Q&A on top of structured solution data, without ever leaving the Replit perimeter for keys.
 
-**What it does.** Routes every AI call to OpenAI **gpt-5.4** or Anthropic **claude-sonnet-4-6** via a per-request `provider` field. Hosts the Copilot system prompt (locked to in-scope solution data), the smart-tag suggester, the AI Brief generator, and the scenario narrative generator.
+**What it does.** Routes every AI call to OpenAI **gpt-5.4** or Google **gemini-2.5-pro** via a per-request `provider` field. Hosts the Copilot system prompt (locked to in-scope solution data), the smart-tag suggester, the AI Brief generator, and the scenario narrative generator.
 
-**How it works in the software.** `lib/ai-orchestrator/src/provider.ts` exposes `streamChat` and `completeChat` against both providers via `lib/integrations-openai-ai-server` and `lib/integrations-anthropic-ai`. `prompts.ts` carries the strict-grounding system prompt: in-scope is nodes, items, suppliers, orders, shipments, alerts, recommendations, scenarios, forecasts, risk/DOS, activity, theater state — everything else gets a one-sentence polite refusal plus 2–3 example in-scope prompts. `tag-suggester.ts` takes a structured entity record plus the existing tag library and returns strict JSON `{ tag, isNew, rationale, confidence }`. `types.ts` carries `DEFAULT_OPENAI_MODEL = "gpt-5.4"` and `DEFAULT_ANTHROPIC_MODEL = "claude-sonnet-4-6"`. The Copilot endpoint is `artifacts/api-server/src/routes/copilot.ts`; tag endpoints are in `routes/tags.ts`; the AI Brief endpoint is `routes/overview.ts` (`/overview/ai-brief`).
+**How it works in the software.** `lib/ai-orchestrator/src/provider.ts` exposes `streamChat` and `completeChat` against both providers via `lib/integrations-openai-ai-server` and `lib/integrations-gemini-ai`. `prompts.ts` carries the strict-grounding system prompt: in-scope is nodes, items, suppliers, orders, shipments, alerts, recommendations, scenarios, forecasts, risk/DOS, activity, theater state — everything else gets a one-sentence polite refusal plus 2–3 example in-scope prompts. `tag-suggester.ts` takes a structured entity record plus the existing tag library and returns strict JSON `{ tag, isNew, rationale, confidence }`. `types.ts` carries `DEFAULT_OPENAI_MODEL = "gpt-5.4"` and `DEFAULT_GEMINI_MODEL = "gemini-2.5-pro"`. The Copilot endpoint is `artifacts/api-server/src/routes/copilot.ts`; tag endpoints are in `routes/tags.ts`; the AI Brief endpoint is `routes/overview.ts` (`/overview/ai-brief`).
 
 **AI involvement.** This module *is* the AI. Inputs are always structured (a recommendation envelope, a tag-target summary, a scenario result, the current snapshot). Outputs are short, cited, and stripped of model self-reference. The Copilot is rate-limited and audit-logged.
 
