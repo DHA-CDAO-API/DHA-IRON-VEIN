@@ -24,7 +24,8 @@ The platform fuses a real DLA / DMLSS-compatible medical-supply catalog and a ~3
 9. [How decision support becomes near-instantaneous](#how-decision-support-becomes-near-instantaneous)
 10. [Module operating manual](#module-operating-manual)
 11. [Security posture](#security-posture)
-12. [License & status](#license--status)
+12. [DoW IL5 deployment posture](#dow-il5-deployment-posture)
+13. [License & status](#license--status)
 
 ---
 
@@ -456,6 +457,32 @@ For every module: **Objective → What it does → How it works in the software 
 ## Security posture
 
 Replit OIDC sign-in plus mandatory Microsoft Authenticator (TOTP) MFA on every fresh session, lockout after 5 failures in 5 minutes, audit log of every MFA event. Per-user profile binding with remembered role. Role-based PO permissions (`POST /orders` / `PATCH /orders/:orderId` / promote-to-PO require `commander` or `logistician`; analyst and medical planner sessions return `403`). Sensitive columns (profile email, contact info, settings secrets, scenario narratives, order shipping/contact, MFA secret) encrypted at rest with AES-256 via `pgcrypto` and the `DATA_ENCRYPTION_KEY` Replit Secret. HSTS, strict CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy. Rate limits on auth and write endpoints. CORS locked to the deployed origin with `credentials: true`. Double-submit CSRF on cookie-authenticated mutations. Structured pino audit log of every write (who, what, when, from where). 12-hour absolute session lifetime with no idle timeout (so demos do not get bounced). Verified by `pnpm run security:verify`. Full threat model and key-rotation procedure in `SECURITY.md`.
+
+---
+
+## DoW IL5 deployment posture
+
+A standalone analysis lives at **[`docs/il5-deployment-impact-analysis.md`](docs/il5-deployment-impact-analysis.md)** covering what it would take to move DHA Iron Vein off Replit and into a Department of War **Impact Level 5 (IL5)** environment — STIG enumeration per component, RMF / ATO walk, hosting comparison (Cloud One AWS GovCloud (DoD) vs. Azure Government IL5 vs. an inherited Advana / DHA platform-as-a-service tenancy), dependency swap (drop-in vs. requires-replacement vs. requires-build), personnel model with cleared-FTE counts, ROM costs (one-time + annual + 3- and 5-year TCO), milestone timeline through IATT and full ATO, risk register, assumptions / exclusions, and an IL6 delta.
+
+The analysis is scoped as a **minimum viable product (MVP) profile**:
+
+- **Cleared-team cap:** 2–3 FTEs for the duration (1 cleared full-stack lead, 1 cleared SecOps / RMF lead, 0.5–1 fractional Authorizing Official liaison) — not a full program-of-record build-out.
+- **Sunk-cost assumptions:** the DISA login + PKI / CAC issuance ATO is treated as already in place (no PKI standup priced).
+- **Inherited hosting:** baseline assumes platform-tenant inheritance from **Advana** or a **DHA**-owned IL5 enclave (Cloud One AWS GovCloud (DoD) is priced as the standalone alternative for comparison).
+- **Scope cuts to MVP:** Bedrock-only GenAI surface, static map-tile pack instead of MapLibre tile services, Platform One CI/CD, narrower SCA scope, single-region.
+
+**Bottom line for the MVP profile:**
+
+| Metric | MVP value | Where it lives |
+| ------ | --------- | -------------- |
+| One-time stand-up | **~$1.5 M** | §7 Personnel + §8 ROM |
+| Annual run rate | **~$1.0 M / yr** | §8 ROM, hosting + tooling + cleared team |
+| 3-year TCO | **~$4.5 M** | §8.4 |
+| 5-year TCO | **~$6.5 M** | §8.4 |
+| Time to **IATT** | **Month 8** | §9 timeline |
+| Time to full **ATO** | **Month 14** | §9 timeline |
+
+Section **§10.4** in the analysis carries the explicit MVP-vs-program-of-record comparison so leadership can see the trade-off in one table. The doc also includes citations to the controlling DoD policy (DoDI 8510.01 RMF, DoD CC SRG IL5/IL6, DISA STIGs, NIST SP 800-53/171/172) and to the platforms inherited (Advana, DHA, Platform One, Cloud One).
 
 ---
 
