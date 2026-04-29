@@ -525,23 +525,6 @@ export default function NetworkGLMap(props: NetworkMapProps) {
     return activeRouteEndpoints.has(`${r.fromNode}::${r.toNode}`);
   };
 
-  // Per-node tier lookup so routes can inherit the worst tier of their two
-  // endpoints. Built from `riskByNodeMap` (the same source `decoratedNodes`
-  // uses) so the route palette is always coherent with the node palette —
-  // a corridor between two nominal hubs paints nominal, a corridor that
-  // touches a heightened or critical site picks up that warmer color.
-  const nodeTierMap = useMemo(() => {
-    const m = new Map<string, ThreatTier>();
-    for (const n of nodes as any[]) {
-      const r: any = riskByNodeMap.get(n.id);
-      const tier: ThreatTier =
-        (r?.tier as ThreatTier) ??
-        tierForRisk(r?.riskScore ?? 0, r?.openAlerts ?? 0);
-      m.set(n.id, tier);
-    }
-    return m;
-  }, [nodes, riskByNodeMap]);
-
   // Pre-compute curved waypoints for every route once
   const routePaths = useMemo(() => {
     const out: Array<{
@@ -552,23 +535,11 @@ export default function NetworkGLMap(props: NetworkMapProps) {
       categories: string[];
       reliability: number;
       active: boolean;
-      fromTier: ThreatTier;
-      toTier: ThreatTier;
-      worstTier: ThreatTier;
     }> = [];
-    const tierRank: Record<ThreatTier, number> = {
-      nominal: 0,
-      heightened: 1,
-      critical: 2,
-    };
     for (const r of routes) {
       const a: any = nodeIndex.get(r.fromNode);
       const b: any = nodeIndex.get(r.toNode);
       if (!a || !b) continue;
-      const fromTier = nodeTierMap.get(r.fromNode) ?? 'nominal';
-      const toTier = nodeTierMap.get(r.toNode) ?? 'nominal';
-      const worstTier: ThreatTier =
-        tierRank[fromTier] >= tierRank[toTier] ? fromTier : toTier;
       out.push({
         id: r.id ?? `${r.fromNode}->${r.toNode}`,
         from: [a.longitude, a.latitude],
@@ -577,14 +548,11 @@ export default function NetworkGLMap(props: NetworkMapProps) {
         categories: r.categories ?? [],
         reliability: r.reliability ?? 0.9,
         active: routeMatchesFilter(r),
-        fromTier,
-        toTier,
-        worstTier,
       });
     }
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [routes, nodeIndex, nodeTierMap, allLayersActive, selectedCategories, layerSelection, activeRouteEndpoints, bareCategorySelections]);
+  }, [routes, nodeIndex, allLayersActive, selectedCategories, layerSelection, activeRouteEndpoints, bareCategorySelections]);
 
   // Build animated shipment trips. Each trip is a real shipment row, so the
   // particle the operator sees is clickable and surfaces the underlying
@@ -764,39 +732,17 @@ export default function NetworkGLMap(props: NetworkMapProps) {
         id: 'route-network',
         data: allLayersActive ? routePaths : routePaths.filter((r) => r.active),
         getPath: (d: any) => d.path,
-        getColor: (d: any) => {
-          if (d.id === hoveredRouteId) return [255, 255, 255, 230];
-          if (!d.active) return ROUTE_DIM_COLOR;
-          // Inherit the worst-tier color of the two endpoints so the
-          // route palette tracks node health: nominal corridors stay
-          // cool slate-teal; corridors touching a heightened or
-          // critical site warm to amber / crimson respectively. Low
-          // route reliability further drops alpha so a degraded
-          // corridor reads as faded rather than confidently green.
-          const tier = (d.worstTier ?? 'nominal') as ThreatTier;
-          const base =
-            tier === 'nominal' ? ROUTE_BASE_COLOR : TIER_COLOR[tier];
-          const reliability = typeof d.reliability === 'number' ? d.reliability : 0.9;
-          // Scale alpha 0.6x..1.0x by reliability in [0.5, 1.0].
-          const t = Math.max(0, Math.min(1, (reliability - 0.5) / 0.5));
-          const baseAlpha = tier === 'nominal' ? 90 : 200;
-          const alpha = Math.round(baseAlpha * (0.6 + 0.4 * t));
-          return [base[0], base[1], base[2], alpha];
-        },
+        getColor: (d: any) =>
+          d.id === hoveredRouteId
+            ? [255, 255, 255, 230]
+            : d.active
+              ? ROUTE_BASE_COLOR
+              : ROUTE_DIM_COLOR,
         // Real hover-thickening: the hovered route swells from ~2 px to
         // ~4 px so the operator gets unmistakable feedback that the line
         // they're aiming at is the one that will be acted on. Width is in
-        // pixels so it's stable across zoom levels. Active routes that
-        // touch an unhealthy site also draw slightly thicker so the eye
-        // tracks the warm color naturally.
-        getWidth: (d: any) => {
-          if (d.id === hoveredRouteId) return 4.5;
-          if (!d.active) return 2.2;
-          const tier = (d.worstTier ?? 'nominal') as ThreatTier;
-          if (tier === 'critical') return 3.2;
-          if (tier === 'heightened') return 2.8;
-          return 2.2;
-        },
+        // pixels so it's stable across zoom levels.
+        getWidth: (d: any) => (d.id === hoveredRouteId ? 4.5 : 2.2),
         widthUnits: 'pixels',
         widthMinPixels: 2,
         capRounded: true,
@@ -816,10 +762,8 @@ export default function NetworkGLMap(props: NetworkMapProps) {
             Array.from(effectiveCategories).join(','),
             Array.from(effectiveItemIds).join(','),
             hoveredRouteId,
-            nodeTierMap,
           ],
-          getWidth: [hoveredRouteId, nodeTierMap],
-          getDashArray: [allLayersActive],
+          getWidth: [hoveredRouteId],
         },
       }),
     );
