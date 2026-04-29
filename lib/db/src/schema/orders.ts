@@ -24,6 +24,11 @@ export const orders = pgTable("orders", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   requestedDeliveryAt: timestamp("requested_delivery_at", { withTimezone: true }).notNull(),
   totalUsd: doublePrecision("total_usd").notNull().default(0),
+  // DEPRECATED: legacy plaintext column. Kept in the schema (without
+  // .notNull) so drizzle-kit treats it as still-present and does not
+  // ask whether `notes_enc` is a rename of it. New writes go through
+  // notesEnc below.
+  notes: text("notes"),
   // Operator-entered free text (notes/rationale/contact). Encrypted at rest
   // with pgcrypto via the encryption helper.
   notesEnc: bytea("notes_enc"),

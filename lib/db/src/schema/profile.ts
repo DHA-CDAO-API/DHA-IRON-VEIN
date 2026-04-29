@@ -1,4 +1,4 @@
-import { pgTable, text, varchar, customType, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, customType, timestamp, serial } from "drizzle-orm/pg-core";
 import { usersTable } from "./auth";
 
 const bytea = customType<{ data: Buffer; default: false }>({
@@ -8,11 +8,23 @@ const bytea = customType<{ data: Buffer; default: false }>({
 });
 
 export const profiles = pgTable("profiles", {
-  // One profile per authenticated user. Keyed on the Replit user id so
-  // profile state is bound to the logged-in identity, not a shared row.
+  // DEPRECATED: legacy integer surrogate key. Kept in the schema as the
+  // primary key to match the existing database structure and avoid a
+  // destructive ALTER TABLE during db:push. New rows still bind to a
+  // Replit user via `userId` below.
+  id: serial("id").primaryKey(),
+  // One profile per authenticated user. Bound to the Replit user id so
+  // profile state is per-identity. Marked unique so upserts by user_id
+  // remain conflict-safe.
   userId: varchar("user_id")
-    .primaryKey()
+    .unique()
     .references(() => usersTable.id, { onDelete: "cascade" }),
+  // DEPRECATED: legacy plaintext columns. Kept in the schema (without
+  // .notNull) so drizzle-kit treats them as still-present and does not
+  // ask whether the *_enc columns below are renames of these. New
+  // writes go through the encrypted columns.
+  displayName: text("display_name"),
+  contactEmail: text("contact_email"),
   // Encrypted-at-rest with pgcrypto via lib/crypto.encryptedTextWrite.
   displayNameEnc: bytea("display_name_enc"),
   contactEmailEnc: bytea("contact_email_enc"),
