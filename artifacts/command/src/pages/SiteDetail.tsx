@@ -23,6 +23,7 @@ import { Area, AreaChart, ResponsiveContainer, Tooltip as RechartsTooltip, YAxis
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import { CategoryFilterToggle } from '@/components/CategoryFilterToggle';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { SortableTable } from '@/components/ui/sortable-table';
@@ -34,11 +35,13 @@ import {
   CATEGORY_ORDER,
   categoryKey,
   categoryLabel,
+  categoryMatches,
   dosClass,
   formatDOS,
   formatNumber,
   inventoryStatusBadgeClasses,
   inventoryStatusLabel,
+  type CategoryFilter,
   type ItemCategoryKey,
 } from '@/lib/format';
 import { orderStatusBadgeClass, orderStatusLabel } from '@/lib/orderStatus';
@@ -122,6 +125,12 @@ export default function SiteDetail() {
   const { nodeId } = useParams();
   const [activeTab, setActiveTab] = useState('blood');
   const [activeCategory, setActiveCategory] = useState<ItemCategoryKey | 'all'>('all');
+  // Blood / Medical / Both filters for the inventory tab and the
+  // recommendations rail. They're independent so an operator can scan
+  // (say) just-blood inventory while keeping the rec rail showing
+  // everything — that's been the lesson from the casualty-planner toggle.
+  const [inventoryFilter, setInventoryFilter] = useState<CategoryFilter>('both');
+  const [recsFilter, setRecsFilter] = useState<CategoryFilter>('both');
 
   const { data: detail, isLoading } = useGetSiteDetail(nodeId || '', {
     query: {
@@ -223,16 +232,33 @@ export default function SiteDetail() {
     });
   }, [detail, itemMap]);
 
+  // Apply the Blood / Medical / Both toggle before grouping so every
+  // downstream surface (chips, sub-tab headers, totals, table rows) sees
+  // the same filtered set and the chip counts/min-DOS reflect the toggle.
+  const filteredCategorizedDos = useMemo(
+    () => categorizedDos.filter((d) => categoryMatches(inventoryFilter, d.category)),
+    [categorizedDos, inventoryFilter],
+  );
+
   const groupedDos = useMemo(() => {
     const m = new Map<ItemCategoryKey, DosRow[]>();
     for (const k of CATEGORY_ORDER) m.set(k, []);
-    for (const row of categorizedDos) {
+    for (const row of filteredCategorizedDos) {
       const arr = m.get(row.category) ?? [];
       arr.push(row);
       m.set(row.category, arr);
     }
     return m;
-  }, [categorizedDos]);
+  }, [filteredCategorizedDos]);
+
+  // If the active category chip is hidden by the toggle (e.g. user picks
+  // "Blood" while standing on the Supplies chip), snap back to "All" so
+  // the table doesn't go silently empty.
+  useEffect(() => {
+    if (activeCategory === 'all') return;
+    const list = groupedDos.get(activeCategory) ?? [];
+    if (list.length === 0) setActiveCategory('all');
+  }, [inventoryFilter, activeCategory, groupedDos]);
 
   // Forecast horizon: read from `?fcst=7|14|30` so the choice survives refresh.
   const search = useSearch();
@@ -372,6 +398,15 @@ export default function SiteDetail() {
 
   const visibleCategories = CATEGORY_ORDER.filter((k) => (groupedDos.get(k)?.length ?? 0) > 0);
 
+  // Recommendations don't carry a category on the wire, so look up each
+  // rec's item in the catalog (already loaded for the inventory tab) and
+  // filter using the shared Blood / Medical / Both helper. Falling back
+  // to "other" for unknown items keeps the Medical filter inclusive.
+  const filteredRecommendations = recommendations.filter((rec) => {
+    const cat = itemMap.get(rec.itemId)?.category ?? null;
+    return categoryMatches(recsFilter, cat);
+  });
+
   return (
     <div className="h-full flex flex-col p-4 gap-4 overflow-y-auto bg-background text-foreground">
       {/* Header */}
@@ -499,12 +534,12 @@ export default function SiteDetail() {
 
               <TabsContent value="inventory" className="m-0 h-full p-0 flex flex-col">
                 {/* Category sub-tabs */}
-                <div className="border-b border-border/50 bg-muted/10 px-2 py-1.5 flex flex-wrap gap-1 sticky top-0 z-20 backdrop-blur">
+                <div className="border-b border-border/50 bg-muted/10 px-2 py-1.5 flex flex-wrap gap-1 sticky top-0 z-20 backdrop-blur items-center">
                   <CategoryChip
                     label="All"
                     icon={Layers}
                     active={activeCategory === 'all'}
-                    count={categorizedDos.length}
+                    count={filteredCategorizedDos.length}
                     onClick={() => setActiveCategory('all')}
                   />
                   {visibleCategories.map((k) => {
@@ -525,11 +560,23 @@ export default function SiteDetail() {
                       />
                     );
                   })}
+                  <div className="ml-auto pl-2">
+                    <CategoryFilterToggle
+                      value={inventoryFilter}
+                      onChange={setInventoryFilter}
+                      testId="inventory"
+                      size="sm"
+                    />
+                  </div>
                 </div>
 
                 <div className="flex-1 overflow-y-auto">
                   {categorizedDos.length === 0 ? (
                     <div className="p-8 text-center text-sm text-muted-foreground">No inventory tracked at this site</div>
+                  ) : filteredCategorizedDos.length === 0 ? (
+                    <div className="p-8 text-center text-sm text-muted-foreground">
+                      No {inventoryFilter === 'blood' ? 'blood-product' : 'medical'} items tracked at this site.
+                    </div>
                   ) : activeCategory === 'all' ? (
                     <div className="divide-y divide-border/40">
                       {visibleCategories.map((k) => {
@@ -855,7 +902,7 @@ export default function SiteDetail() {
         {/* Right Rail - Recommendations */}
         <div className="flex flex-col gap-4">
           <Card className="bg-card/50 backdrop-blur border-border flex-1 flex flex-col overflow-hidden">
-            <CardHeader className="pb-2 border-b border-border/50 shrink-0">
+            <CardHeader className="pb-2 border-b border-border/50 shrink-0 space-y-2">
               <CardTitle className="text-sm font-medium flex items-center justify-between gap-2 text-primary">
                 <span className="flex items-center gap-2">
                   <Activity className="h-4 w-4" />
@@ -863,10 +910,21 @@ export default function SiteDetail() {
                 </span>
                 <AiBadge />
               </CardTitle>
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] uppercase tracking-wider text-muted-foreground">
+                  {filteredRecommendations.length} of {recommendations.length}
+                </span>
+                <CategoryFilterToggle
+                  value={recsFilter}
+                  onChange={setRecsFilter}
+                  testId="recs"
+                  size="sm"
+                />
+              </div>
             </CardHeader>
             <CardContent className="p-0 overflow-y-auto">
               <div className="divide-y divide-border/50">
-                {recommendations.slice(0, 5).map((rec) => {
+                {filteredRecommendations.slice(0, 5).map((rec) => {
                   const localPromote = promotedById[rec.id];
                   const isPromoted = !!rec.promotedOrderId || !!localPromote;
                   const promotedRef =
@@ -908,9 +966,13 @@ export default function SiteDetail() {
                     </div>
                   );
                 })}
-                {recommendations.length === 0 && (
+                {recommendations.length === 0 ? (
                   <div className="p-6 text-center text-sm text-muted-foreground">No pending recommendations</div>
-                )}
+                ) : filteredRecommendations.length === 0 ? (
+                  <div className="p-6 text-center text-sm text-muted-foreground">
+                    No {recsFilter === 'blood' ? 'blood-product' : 'medical'} recommendations right now.
+                  </div>
+                ) : null}
               </div>
             </CardContent>
           </Card>

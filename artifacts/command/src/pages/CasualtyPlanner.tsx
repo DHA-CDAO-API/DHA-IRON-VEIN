@@ -23,10 +23,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  ToggleGroup,
-  ToggleGroupItem,
-} from "@/components/ui/toggle-group";
+import { CategoryFilterToggle } from "@/components/CategoryFilterToggle";
+import { categoryMatches, type CategoryFilter } from "@/lib/format";
 import {
   Table,
   TableBody,
@@ -49,15 +47,7 @@ import type {
   SufficiencyRow,
 } from "@workspace/api-client-react";
 
-type CategoryFilter = "blood" | "medical" | "both";
-
 type PatientCounts = Record<string, number>;
-
-function categoryMatches(filter: CategoryFilter, category: string): boolean {
-  if (filter === "both") return true;
-  if (filter === "blood") return category === "blood_products";
-  return category !== "blood_products";
-}
 
 export default function CasualtyPlanner() {
   const queryClient = useQueryClient();
@@ -230,23 +220,7 @@ export default function CasualtyPlanner() {
           </p>
         </div>
         <div className="flex items-center gap-3">
-          <ToggleGroup
-            type="single"
-            value={filter}
-            onValueChange={(v) => v && setFilter(v as CategoryFilter)}
-            className="bg-secondary/40 rounded-md"
-            data-testid="toggle-category"
-          >
-            <ToggleGroupItem value="blood" data-testid="toggle-blood">
-              Blood
-            </ToggleGroupItem>
-            <ToggleGroupItem value="medical" data-testid="toggle-medical">
-              Medical
-            </ToggleGroupItem>
-            <ToggleGroupItem value="both" data-testid="toggle-both">
-              Both
-            </ToggleGroupItem>
-          </ToggleGroup>
+          <CategoryFilterToggle value={filter} onChange={setFilter} />
           <Button
             variant="default"
             onClick={handleBulkOrder}

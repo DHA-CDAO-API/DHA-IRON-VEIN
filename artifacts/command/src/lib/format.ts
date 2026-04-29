@@ -72,6 +72,26 @@ export function categoryKey(raw: string | null | undefined): ItemCategoryKey {
 
 export const CATEGORY_ORDER: ItemCategoryKey[] = ["blood_products", "supplies", "ppe", "other"];
 
+/**
+ * The Blood / Medical / Both filter that several inventory-style surfaces
+ * share so operators can focus on whichever supply class matters in the
+ * moment. "blood" matches the `blood_products` category only; "medical"
+ * matches every non-blood category (supplies, PPE, other); "both" turns
+ * the filter off. Use the `categoryMatches` helper rather than open-coding
+ * the comparison so the semantics stay consistent.
+ */
+export type CategoryFilter = "blood" | "medical" | "both";
+
+export function categoryMatches(
+  filter: CategoryFilter,
+  raw: string | null | undefined,
+): boolean {
+  if (filter === "both") return true;
+  const k = categoryKey(raw);
+  if (filter === "blood") return k === "blood_products";
+  return k !== "blood_products";
+}
+
 export function dosClass(dos: number | null | undefined): string {
   if (dos == null || !Number.isFinite(dos)) return "text-muted-foreground";
   if (dos <= 3) return "text-destructive font-bold";
