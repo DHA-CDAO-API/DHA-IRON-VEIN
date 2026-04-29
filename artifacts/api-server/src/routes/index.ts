@@ -20,6 +20,7 @@ import bloodRouter from "./blood";
 import overviewRouter from "./overview";
 import adminSupplyImportRouter from "./admin-supply-import";
 import tagsRouter from "./tags";
+import casualtyRouter from "./casualty";
 
 const router: IRouter = Router();
 
@@ -44,5 +45,6 @@ router.use(bloodRouter);
 router.use(overviewRouter);
 router.use(adminSupplyImportRouter);
 router.use(tagsRouter);
+router.use(casualtyRouter);
 
 export default router;

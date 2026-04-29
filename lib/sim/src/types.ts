@@ -31,6 +31,15 @@ export type SimItem = {
   trigger: string;
   criticality: string;
   leadTimeDays: number;
+  // Optional commodity attributes used by the casualty / multi-class
+  // supply model. Existing blood-only callers can ignore them.
+  category?: string;
+  classOfSupply?: string;
+  commodityType?: string;
+  unspscCommodity?: string;
+  size?: string;
+  productNoun?: string;
+  staffingTag?: string;
 };
 
 export type SimDemandProfile = {

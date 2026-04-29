@@ -1871,6 +1871,158 @@ export interface AutoTagBatchResult {
   results: AutoTagBatchResultResultsItem[];
 }
 
+export type PatientTypeRequirementsItem = {
+  itemId: string;
+  quantityPerPatient: number;
+  notes: string;
+};
+
+export interface PatientType {
+  id: string;
+  name: string;
+  severity: string;
+  careCategory: string;
+  avgClinicianMinutes: number;
+  description: string;
+  requirements: PatientTypeRequirementsItem[];
+}
+
+export type EventTypeDefaultPatientMixItem = {
+  patientTypeId: string;
+  defaultShare: number;
+};
+
+export interface EventType {
+  id: string;
+  name: string;
+  category: string;
+  description: string;
+  defaultArrivalWindowHours: number;
+  defaultPatientMix: EventTypeDefaultPatientMixItem[];
+}
+
+/**
+ * Patient counts keyed by patient_type id.
+ */
+export type CasualtyEvaluateInputPatientCounts = { [key: string]: number };
+
+export interface CasualtyEvaluateInput {
+  /**
+   * Optional. When set, scopes the response to a specific site (adds sufficiency rows + reroute suggestions).
+   * @nullable
+   */
+  siteId?: string | null;
+  /** Patient counts keyed by patient_type id. */
+  patientCounts: CasualtyEvaluateInputPatientCounts;
+  /** Hours over which the casualty load arrives. */
+  arrivalWindowHours: number;
+  /**
+   * Optional operator-entered ETA for next resupply.
+   * @nullable
+   */
+  resupplyEtaHours?: number | null;
+  restrictReroutesToHub?: boolean;
+}
+
+export type CasualtyRequirementRowSource =
+  (typeof CasualtyRequirementRowSource)[keyof typeof CasualtyRequirementRowSource];
+
+export const CasualtyRequirementRowSource = {
+  patient_bom: "patient_bom",
+  ppe_staffing: "ppe_staffing",
+  both: "both",
+} as const;
+
+export interface CasualtyRequirementRow {
+  itemId: string;
+  itemName: string;
+  category: string;
+  classOfSupply: string;
+  unitOfIssue: string;
+  commodityType: string;
+  unspscCommodity: string;
+  size: string;
+  productNoun: string;
+  requiredQty: number;
+  source: CasualtyRequirementRowSource;
+}
+
+export interface SupplierAlternative {
+  supplierId: string;
+  supplierName: string;
+  channel: string;
+  country: string;
+  projectedEta: number;
+  score: number;
+  reliabilityScore?: number;
+  leadTimeDaysMean?: number;
+  /** @nullable */
+  rationale?: string | null;
+}
+
+export type SufficiencyRowVerdict =
+  (typeof SufficiencyRowVerdict)[keyof typeof SufficiencyRowVerdict];
+
+export const SufficiencyRowVerdict = {
+  green: "green",
+  amber: "amber",
+  red: "red",
+} as const;
+
+export type SufficiencyRow = CasualtyRequirementRow & {
+  onHand: number;
+  inboundBeforeWindow: number;
+  shortfallQty: number;
+  verdict: SufficiencyRowVerdict;
+  supplierAlternatives?: SupplierAlternative[];
+};
+
+export interface SufficiencySummary {
+  totalRequiredItems: number;
+  greenCount: number;
+  amberCount: number;
+  redCount: number;
+  verdict: string;
+}
+
+export type PatientRerouteCandidatePosture =
+  (typeof PatientRerouteCandidatePosture)[keyof typeof PatientRerouteCandidatePosture];
+
+export const PatientRerouteCandidatePosture = {
+  viable: "viable",
+  stretched: "stretched",
+  unsuitable: "unsuitable",
+} as const;
+
+export interface PatientRerouteCandidate {
+  nodeId: string;
+  nodeName: string;
+  /** @nullable */
+  countryCode?: string | null;
+  distanceKm: number;
+  estimatedTransitDays: number;
+  posture: PatientRerouteCandidatePosture;
+  supplyCoverage: number;
+  residualCapacity: number;
+  rationale: string;
+}
+
+export type CasualtyEvaluateResultPatientCounts = { [key: string]: number };
+
+export type CasualtyEvaluateResultSufficiency = null | {
+  rows: SufficiencyRow[];
+  summary: SufficiencySummary;
+};
+
+export interface CasualtyEvaluateResult {
+  arrivalWindowHours: number;
+  totalPatients: number;
+  patientCounts: CasualtyEvaluateResultPatientCounts;
+  requiredItems: CasualtyRequirementRow[];
+  sufficiency?: CasualtyEvaluateResultSufficiency;
+  reroutes: PatientRerouteCandidate[];
+}
+
 export type ListCatalogItemsParams = {
   search?: string;
   limit?: number;

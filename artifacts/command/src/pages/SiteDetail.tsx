@@ -381,6 +381,17 @@ export default function SiteDetail() {
             <TagEditor entityType="node" entityId={node.id} />
           </div>
         </div>
+        <div className="flex items-center gap-2">
+          <Link
+            href={`/casualty?siteId=${encodeURIComponent(nodeId ?? '')}`}
+            data-testid="link-casualty-planner"
+          >
+            <Button size="sm" variant="outline" className="gap-2">
+              <Activity className="h-4 w-4" />
+              Casualty Planner
+            </Button>
+          </Link>
+        </div>
       </div>
 
       {/* KPI Strip */}

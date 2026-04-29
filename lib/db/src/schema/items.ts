@@ -14,6 +14,17 @@ export const items = pgTable("items", {
   baseDemandPerEvent: doublePrecision("base_demand_per_event").notNull().default(1),
   wasteAdjustedDemand: doublePrecision("waste_adjusted_demand").notNull().default(1),
   trigger: text("trigger").notNull().default("phlebotomy_event"),
+  // Commodity attributes (extension for the casualty / multi-class supply
+  // model). These let the casualty planner and future consumer-type engines
+  // group required materiel by commodity rather than by hand-curated id.
+  commodityType: text("commodity_type").notNull().default(""),
+  unspscCommodity: text("unspsc_commodity").notNull().default(""),
+  size: text("size").notNull().default(""),
+  productNoun: text("product_noun").notNull().default(""),
+  // Optional structured tag set used by the staffing model to find PPE by
+  // role/material kind (e.g. "ppe:gloves", "ppe:mask:n95"). When empty the
+  // item is treated as a generic consumable.
+  staffingTag: text("staffing_tag").notNull().default(""),
 });
 
 export type Item = typeof items.$inferSelect;

@@ -5,3 +5,5 @@ export * from "./cascades";
 export * from "./scenarios";
 export * from "./recommendations";
 export * from "./risk";
+export * from "./staffing";
+export * from "./casualty";

@@ -30,6 +30,10 @@ import {
   coldChainAssets,
   donorPools,
   temperatureEvents,
+  patientTypes,
+  patientItemRequirements,
+  eventTypes,
+  eventPatientMix,
 } from "@workspace/db";
 import { sql } from "drizzle-orm";
 import { logger } from "../lib/logger";
@@ -80,6 +84,14 @@ function asString(v: unknown, def = ""): string {
 // decide which suppliers can fill a particular shortfall, and the seeded
 // `supplier_items` join table is derived from the same arrays so coverage
 // can be queried from the DB directly.
+// General medical supplies used by the patient bill-of-materials.
+const ITEMS_GENERAL_MED: string[] = [
+  "iv_fluid_ns","iv_fluid_lr","airway_kit","tq_cat","chest_seal","hemo_dressing",
+  "pressure_dressing","burn_dressing","suture_kit","antibiotic_iv","antibiotic_po",
+  "analgesic_morphine","analgesic_ketamine","trauma_dressing","splint_sam","ob_kit",
+  "peds_airway_kit","antiemetic","oral_rehydration",
+];
+
 const ITEMS_FULL_CATALOG: string[] = [
   // blood
   "ltow_pos","ltow_neg","prbc_o","ffp_ab","plasma_a","platelets","cryo","fdp",
@@ -91,6 +103,8 @@ const ITEMS_FULL_CATALOG: string[] = [
   "abo_kit","crossmatch","id_screen",
   // transfusion
   "iv_set","pressure_inf","warmer","transfusion_band",
+  // general medical (casualty bill-of-materials)
+  ...ITEMS_GENERAL_MED,
   // PPE
   "gloves","mask","shield","gown","n95",
   // other
@@ -122,10 +136,10 @@ const SUPPLIER_DEFS: Array<{
   { id: "armed-services-blood", name: "Armed Services Blood Program", channel: "DOD", country: "US", leadTimeDaysMean: 6, reliabilityScore: 0.93, itemsCovered: ITEMS_BLOOD, notes: "ASBP collection / distribution — primary DOD blood channel" },
 
   // ---- Commercial USA backstops (fast, expensive) ----
-  { id: "mckesson", name: "McKesson Distribution", channel: "Commercial", country: "US", leadTimeDaysMean: 4, reliabilityScore: 0.93, itemsCovered: [...ITEMS_PPE, ...ITEMS_COLLECTION, ...ITEMS_TRANSFUSION, ...ITEMS_TESTING, ...ITEMS_COLDCHAIN, "sharps","centrifuge_tube","biohazard_bag"], notes: "Commercial backstop — pharmaceuticals & supplies" },
-  { id: "cardinal", name: "Cardinal Health", channel: "Commercial", country: "US", leadTimeDaysMean: 5, reliabilityScore: 0.92, itemsCovered: [...ITEMS_PPE, ...ITEMS_COLLECTION, ...ITEMS_TRANSFUSION, "sharps"], notes: "Commercial backstop — exam/surgical gloves" },
-  { id: "henryschein", name: "Henry Schein", channel: "Commercial", country: "US", leadTimeDaysMean: 6, reliabilityScore: 0.9, itemsCovered: [...ITEMS_PPE, ...ITEMS_COLLECTION, ...ITEMS_TESTING, "iv_set","transfusion_band","cooler","coolant"], notes: "Commercial backstop — phlebotomy & lab" },
-  { id: "owensminor", name: "Owens & Minor", channel: "Commercial", country: "US", leadTimeDaysMean: 6, reliabilityScore: 0.89, itemsCovered: [...ITEMS_PPE, ...ITEMS_TRANSFUSION, ...ITEMS_COLLECTION, "sharps","centrifuge_tube","biohazard_bag"], notes: "Commercial backstop — surgical kits" },
+  { id: "mckesson", name: "McKesson Distribution", channel: "Commercial", country: "US", leadTimeDaysMean: 4, reliabilityScore: 0.93, itemsCovered: [...ITEMS_PPE, ...ITEMS_COLLECTION, ...ITEMS_TRANSFUSION, ...ITEMS_TESTING, ...ITEMS_COLDCHAIN, ...ITEMS_GENERAL_MED, "sharps","centrifuge_tube","biohazard_bag"], notes: "Commercial backstop — pharmaceuticals & supplies" },
+  { id: "cardinal", name: "Cardinal Health", channel: "Commercial", country: "US", leadTimeDaysMean: 5, reliabilityScore: 0.92, itemsCovered: [...ITEMS_PPE, ...ITEMS_COLLECTION, ...ITEMS_TRANSFUSION, ...ITEMS_GENERAL_MED, "sharps"], notes: "Commercial backstop — exam/surgical gloves & trauma supplies" },
+  { id: "henryschein", name: "Henry Schein", channel: "Commercial", country: "US", leadTimeDaysMean: 6, reliabilityScore: 0.9, itemsCovered: [...ITEMS_PPE, ...ITEMS_COLLECTION, ...ITEMS_TESTING, "iv_set","transfusion_band","cooler","coolant","iv_fluid_ns","iv_fluid_lr","suture_kit","airway_kit","peds_airway_kit","ob_kit","splint_sam","antiemetic","oral_rehydration"], notes: "Commercial backstop — phlebotomy, lab & ambulatory" },
+  { id: "owensminor", name: "Owens & Minor", channel: "Commercial", country: "US", leadTimeDaysMean: 6, reliabilityScore: 0.89, itemsCovered: [...ITEMS_PPE, ...ITEMS_TRANSFUSION, ...ITEMS_COLLECTION, "sharps","centrifuge_tube","biohazard_bag","trauma_dressing","burn_dressing","pressure_dressing","hemo_dressing","tq_cat","chest_seal"], notes: "Commercial backstop — surgical kits & trauma dressings" },
   { id: "vitalant-pacific", name: "Vitalant — Pacific Region", channel: "Commercial", country: "US", leadTimeDaysMean: 3, reliabilityScore: 0.9, itemsCovered: ["prbc_o","ffp_ab","plasma_a","platelets","cryo"], notes: "Commercial blood center — Pacific NW & HI distribution" },
   { id: "abbott-coldchain", name: "Abbott Cold-Chain Solutions", channel: "Commercial", country: "US", leadTimeDaysMean: 5, reliabilityScore: 0.91, itemsCovered: [...ITEMS_COLDCHAIN, "warmer"], notes: "Commercial cold-chain hardware (Helmer/Helmer-equivalent)" },
   { id: "ortho-diag", name: "Ortho Clinical Diagnostics", channel: "Commercial", country: "US", leadTimeDaysMean: 6, reliabilityScore: 0.92, itemsCovered: ITEMS_TESTING, notes: "Commercial reagent supplier (ABO/Rh, ID screen)" },
@@ -463,7 +477,9 @@ export async function runSeed(opts: SeedOptions = {}): Promise<void> {
     await db.execute(sql`TRUNCATE TABLE
       activity_entries, conversation_messages, conversations, scenarios, recommendations,
       shipments, order_lines, orders, alerts, inventory_balances, demand_profiles,
-      item_skew_factors, preset_events, operational_states, supplier_items, suppliers, items,
+      item_skew_factors, preset_events, operational_states, supplier_items,
+      event_patient_mix, event_types, patient_item_requirements, patient_types,
+      suppliers, items,
       routes, nodes, catalog_entries, app_settings, profiles,
       blood_lots, cold_chain_assets, donor_pools, temperature_events,
       tag_assignments, tags
@@ -472,6 +488,10 @@ export async function runSeed(opts: SeedOptions = {}): Promise<void> {
 
   // ---- Items (hand-curated, blood-products-first) ----
   // category: blood_products | supplies | ppe | other
+  // commodityType / unspscCommodity / size / productNoun support the
+  // casualty planner's commodity-grouped required-materiel view.
+  // staffingTag links PPE items to the clinician staffing model so PPE
+  // demand isn't bound to hard-coded ids.
   const ITEM_CATALOG: Array<{
     id: string;
     name: string;
@@ -484,55 +504,81 @@ export async function runSeed(opts: SeedOptions = {}): Promise<void> {
     leadTimeDays: number;
     shelfLifeDays: number;
     classOfSupply: string;
+    commodityType: string;
+    unspscCommodity: string;
+    size: string;
+    productNoun: string;
+    staffingTag?: string;
   }> = [
     // ---- Blood products (USMC Walking Blood Bank + frozen/liquid components) ----
-    { id: "ltow_pos",   name: "Whole Blood Low-Titer O Pos",        unit: "units", category: "blood_products", criticality: "critical", baseDemand: 1.0, waste: 1.10, trigger: "transfusion_event", leadTimeDays: 2, shelfLifeDays: 21,  classOfSupply: "VIII" },
-    { id: "ltow_neg",   name: "Whole Blood Low-Titer O Neg",        unit: "units", category: "blood_products", criticality: "critical", baseDemand: 0.5, waste: 1.10, trigger: "transfusion_event", leadTimeDays: 2, shelfLifeDays: 21,  classOfSupply: "VIII" },
-    { id: "prbc_o",     name: "Packed Red Blood Cells (PRBC) O",    unit: "units", category: "blood_products", criticality: "critical", baseDemand: 1.5, waste: 1.08, trigger: "transfusion_event", leadTimeDays: 3, shelfLifeDays: 42,  classOfSupply: "VIII" },
-    { id: "ffp_ab",     name: "Fresh Frozen Plasma AB (Universal)", unit: "units", category: "blood_products", criticality: "critical", baseDemand: 1.0, waste: 1.05, trigger: "transfusion_event", leadTimeDays: 4, shelfLifeDays: 365, classOfSupply: "VIII" },
-    { id: "plasma_a",   name: "Liquid Plasma Group A",              unit: "units", category: "blood_products", criticality: "high",     baseDemand: 0.6, waste: 1.05, trigger: "transfusion_event", leadTimeDays: 3, shelfLifeDays: 26,  classOfSupply: "VIII" },
-    { id: "platelets",  name: "Apheresis Platelets",                unit: "units", category: "blood_products", criticality: "critical", baseDemand: 0.4, waste: 1.20, trigger: "transfusion_event", leadTimeDays: 2, shelfLifeDays: 5,   classOfSupply: "VIII" },
-    { id: "cryo",       name: "Cryoprecipitate",                    unit: "units", category: "blood_products", criticality: "high",     baseDemand: 0.3, waste: 1.10, trigger: "transfusion_event", leadTimeDays: 4, shelfLifeDays: 365, classOfSupply: "VIII" },
-    { id: "fdp",        name: "Freeze-Dried Plasma (FDP)",          unit: "units", category: "blood_products", criticality: "critical", baseDemand: 0.8, waste: 1.02, trigger: "transfusion_event", leadTimeDays: 5, shelfLifeDays: 730, classOfSupply: "VIII" },
+    { id: "ltow_pos",   name: "Whole Blood Low-Titer O Pos",        unit: "units", category: "blood_products", criticality: "critical", baseDemand: 1.0, waste: 1.10, trigger: "transfusion_event", leadTimeDays: 2, shelfLifeDays: 21,  classOfSupply: "VIII", commodityType: "Blood — Whole",   unspscCommodity: "51171800", size: "450 mL", productNoun: "Whole Blood" },
+    { id: "ltow_neg",   name: "Whole Blood Low-Titer O Neg",        unit: "units", category: "blood_products", criticality: "critical", baseDemand: 0.5, waste: 1.10, trigger: "transfusion_event", leadTimeDays: 2, shelfLifeDays: 21,  classOfSupply: "VIII", commodityType: "Blood — Whole",   unspscCommodity: "51171800", size: "450 mL", productNoun: "Whole Blood" },
+    { id: "prbc_o",     name: "Packed Red Blood Cells (PRBC) O",    unit: "units", category: "blood_products", criticality: "critical", baseDemand: 1.5, waste: 1.08, trigger: "transfusion_event", leadTimeDays: 3, shelfLifeDays: 42,  classOfSupply: "VIII", commodityType: "Blood — Component", unspscCommodity: "51171802", size: "300 mL", productNoun: "Red Cells" },
+    { id: "ffp_ab",     name: "Fresh Frozen Plasma AB (Universal)", unit: "units", category: "blood_products", criticality: "critical", baseDemand: 1.0, waste: 1.05, trigger: "transfusion_event", leadTimeDays: 4, shelfLifeDays: 365, classOfSupply: "VIII", commodityType: "Blood — Component", unspscCommodity: "51171803", size: "250 mL", productNoun: "Plasma" },
+    { id: "plasma_a",   name: "Liquid Plasma Group A",              unit: "units", category: "blood_products", criticality: "high",     baseDemand: 0.6, waste: 1.05, trigger: "transfusion_event", leadTimeDays: 3, shelfLifeDays: 26,  classOfSupply: "VIII", commodityType: "Blood — Component", unspscCommodity: "51171803", size: "250 mL", productNoun: "Plasma" },
+    { id: "platelets",  name: "Apheresis Platelets",                unit: "units", category: "blood_products", criticality: "critical", baseDemand: 0.4, waste: 1.20, trigger: "transfusion_event", leadTimeDays: 2, shelfLifeDays: 5,   classOfSupply: "VIII", commodityType: "Blood — Component", unspscCommodity: "51171804", size: "200 mL", productNoun: "Platelets" },
+    { id: "cryo",       name: "Cryoprecipitate",                    unit: "units", category: "blood_products", criticality: "high",     baseDemand: 0.3, waste: 1.10, trigger: "transfusion_event", leadTimeDays: 4, shelfLifeDays: 365, classOfSupply: "VIII", commodityType: "Blood — Component", unspscCommodity: "51171805", size: "20 mL",  productNoun: "Cryoprecipitate" },
+    { id: "fdp",        name: "Freeze-Dried Plasma (FDP)",          unit: "units", category: "blood_products", criticality: "critical", baseDemand: 0.8, waste: 1.02, trigger: "transfusion_event", leadTimeDays: 5, shelfLifeDays: 730, classOfSupply: "VIII", commodityType: "Blood — Component", unspscCommodity: "51171806", size: "200 mL", productNoun: "Plasma (Freeze-Dried)" },
 
     // ---- Collection / phlebotomy supplies (existing IDs preserved) ----
-    { id: "tubes",      name: "Blood Collection Tubes",             unit: "tubes",  category: "supplies", criticality: "high",   baseDemand: 4.0, waste: 1.15, trigger: "phlebotomy_event", leadTimeDays: 7, shelfLifeDays: 730, classOfSupply: "VIII" },
-    { id: "butterfly",  name: "Butterfly Needle Sets",              unit: "sets",   category: "supplies", criticality: "high",   baseDemand: 1.0, waste: 1.10, trigger: "phlebotomy_event", leadTimeDays: 7, shelfLifeDays: 1825, classOfSupply: "VIII" },
-    { id: "alcohol",    name: "Alcohol Prep Pads",                  unit: "pads",   category: "supplies", criticality: "medium", baseDemand: 2.0, waste: 1.20, trigger: "phlebotomy_event", leadTimeDays: 7, shelfLifeDays: 1095, classOfSupply: "VIII" },
-    { id: "gauze",      name: "Gauze Pads",                         unit: "pads",   category: "supplies", criticality: "medium", baseDemand: 2.0, waste: 1.15, trigger: "phlebotomy_event", leadTimeDays: 7, shelfLifeDays: 1825, classOfSupply: "VIII" },
-    { id: "tourniquet", name: "Tourniquets",                        unit: "each",   category: "supplies", criticality: "medium", baseDemand: 0.2, waste: 1.05, trigger: "phlebotomy_event", leadTimeDays: 7, shelfLifeDays: 1825, classOfSupply: "VIII" },
-    { id: "bags",       name: "Specimen Transport Bags",            unit: "bags",   category: "supplies", criticality: "medium", baseDemand: 1.0, waste: 1.10, trigger: "phlebotomy_event", leadTimeDays: 7, shelfLifeDays: 1825, classOfSupply: "VIII" },
-    { id: "labels",     name: "Donor Barcode Labels",               unit: "labels", category: "supplies", criticality: "low",    baseDemand: 4.0, waste: 1.05, trigger: "phlebotomy_event", leadTimeDays: 5, shelfLifeDays: 1825, classOfSupply: "VIII" },
-    { id: "collection_bag", name: "Blood Collection Bag CPD-A1 450mL", unit: "bags", category: "supplies", criticality: "critical", baseDemand: 1.0, waste: 1.05, trigger: "phlebotomy_event", leadTimeDays: 10, shelfLifeDays: 730, classOfSupply: "VIII" },
-    { id: "antiseptic", name: "Skin Antiseptic Chlorhexidine",      unit: "ea",    category: "supplies", criticality: "medium", baseDemand: 1.5, waste: 1.10, trigger: "phlebotomy_event", leadTimeDays: 7, shelfLifeDays: 1095, classOfSupply: "VIII" },
+    { id: "tubes",      name: "Blood Collection Tubes",             unit: "tubes",  category: "supplies", criticality: "high",   baseDemand: 4.0, waste: 1.15, trigger: "phlebotomy_event", leadTimeDays: 7, shelfLifeDays: 730, classOfSupply: "VIII", commodityType: "Phlebotomy",  unspscCommodity: "41104100", size: "10 mL",   productNoun: "Collection Tube" },
+    { id: "butterfly",  name: "Butterfly Needle Sets",              unit: "sets",   category: "supplies", criticality: "high",   baseDemand: 1.0, waste: 1.10, trigger: "phlebotomy_event", leadTimeDays: 7, shelfLifeDays: 1825, classOfSupply: "VIII", commodityType: "Phlebotomy",  unspscCommodity: "41104105", size: "21 G",   productNoun: "Butterfly Needle Set" },
+    { id: "alcohol",    name: "Alcohol Prep Pads",                  unit: "pads",   category: "supplies", criticality: "medium", baseDemand: 2.0, waste: 1.20, trigger: "phlebotomy_event", leadTimeDays: 7, shelfLifeDays: 1095, classOfSupply: "VIII", commodityType: "Antiseptic",  unspscCommodity: "42182203", size: "Single", productNoun: "Alcohol Prep Pad" },
+    { id: "gauze",      name: "Gauze Pads",                         unit: "pads",   category: "supplies", criticality: "medium", baseDemand: 2.0, waste: 1.15, trigger: "phlebotomy_event", leadTimeDays: 7, shelfLifeDays: 1825, classOfSupply: "VIII", commodityType: "Wound Care",  unspscCommodity: "42311500", size: "4x4 in", productNoun: "Gauze Pad" },
+    { id: "tourniquet", name: "Tourniquets",                        unit: "each",   category: "supplies", criticality: "medium", baseDemand: 0.2, waste: 1.05, trigger: "phlebotomy_event", leadTimeDays: 7, shelfLifeDays: 1825, classOfSupply: "VIII", commodityType: "Hemorrhage Control", unspscCommodity: "42312305", size: "1 in",  productNoun: "Tourniquet" },
+    { id: "bags",       name: "Specimen Transport Bags",            unit: "bags",   category: "supplies", criticality: "medium", baseDemand: 1.0, waste: 1.10, trigger: "phlebotomy_event", leadTimeDays: 7, shelfLifeDays: 1825, classOfSupply: "VIII", commodityType: "Specimen Transport", unspscCommodity: "41104111", size: "Small", productNoun: "Specimen Bag" },
+    { id: "labels",     name: "Donor Barcode Labels",               unit: "labels", category: "supplies", criticality: "low",    baseDemand: 4.0, waste: 1.05, trigger: "phlebotomy_event", leadTimeDays: 5, shelfLifeDays: 1825, classOfSupply: "VIII", commodityType: "Lab Admin",   unspscCommodity: "44121804", size: "Roll",   productNoun: "Barcode Label" },
+    { id: "collection_bag", name: "Blood Collection Bag CPD-A1 450mL", unit: "bags", category: "supplies", criticality: "critical", baseDemand: 1.0, waste: 1.05, trigger: "phlebotomy_event", leadTimeDays: 10, shelfLifeDays: 730, classOfSupply: "VIII", commodityType: "Phlebotomy", unspscCommodity: "41104102", size: "450 mL", productNoun: "Collection Bag" },
+    { id: "antiseptic", name: "Skin Antiseptic Chlorhexidine",      unit: "ea",    category: "supplies", criticality: "medium", baseDemand: 1.5, waste: 1.10, trigger: "phlebotomy_event", leadTimeDays: 7, shelfLifeDays: 1095, classOfSupply: "VIII", commodityType: "Antiseptic",  unspscCommodity: "42182203", size: "26 mL", productNoun: "Antiseptic Swab" },
 
     // ---- Storage / cold-chain transport ----
-    { id: "cooler",      name: "Insulated Blood Transport Cooler 24h", unit: "ea", category: "supplies", criticality: "high", baseDemand: 0.05, waste: 1.02, trigger: "shipment_event", leadTimeDays: 21, shelfLifeDays: 3650, classOfSupply: "VIII" },
-    { id: "coolant",     name: "Refrigerator Coolant Pack",            unit: "ea", category: "supplies", criticality: "medium", baseDemand: 0.5, waste: 1.05, trigger: "shipment_event", leadTimeDays: 14, shelfLifeDays: 3650, classOfSupply: "VIII" },
-    { id: "chain_log",   name: "Cold-Chain Temperature Logger",        unit: "ea", category: "supplies", criticality: "high",   baseDemand: 0.1, waste: 1.02, trigger: "shipment_event", leadTimeDays: 21, shelfLifeDays: 1825, classOfSupply: "VIII" },
+    { id: "cooler",      name: "Insulated Blood Transport Cooler 24h", unit: "ea", category: "supplies", criticality: "high", baseDemand: 0.05, waste: 1.02, trigger: "shipment_event", leadTimeDays: 21, shelfLifeDays: 3650, classOfSupply: "VIII", commodityType: "Cold Chain", unspscCommodity: "24112106", size: "30 L", productNoun: "Transport Cooler" },
+    { id: "coolant",     name: "Refrigerator Coolant Pack",            unit: "ea", category: "supplies", criticality: "medium", baseDemand: 0.5, waste: 1.05, trigger: "shipment_event", leadTimeDays: 14, shelfLifeDays: 3650, classOfSupply: "VIII", commodityType: "Cold Chain", unspscCommodity: "24112107", size: "1 L",  productNoun: "Coolant Pack" },
+    { id: "chain_log",   name: "Cold-Chain Temperature Logger",        unit: "ea", category: "supplies", criticality: "high",   baseDemand: 0.1, waste: 1.02, trigger: "shipment_event", leadTimeDays: 21, shelfLifeDays: 1825, classOfSupply: "VIII", commodityType: "Cold Chain", unspscCommodity: "41112209", size: "Single", productNoun: "Temperature Logger" },
 
     // ---- Testing / typing ----
-    { id: "abo_kit",     name: "ABO/Rh Typing Kit",                    unit: "kit", category: "supplies", criticality: "critical", baseDemand: 0.3, waste: 1.05, trigger: "transfusion_event", leadTimeDays: 14, shelfLifeDays: 540, classOfSupply: "VIII" },
-    { id: "crossmatch",  name: "Crossmatch Test Kit",                  unit: "kit", category: "supplies", criticality: "critical", baseDemand: 0.4, waste: 1.05, trigger: "transfusion_event", leadTimeDays: 14, shelfLifeDays: 540, classOfSupply: "VIII" },
-    { id: "id_screen",   name: "Infectious Disease Screen (HIV/HBV/HCV)", unit: "kit", category: "supplies", criticality: "high", baseDemand: 0.2, waste: 1.05, trigger: "phlebotomy_event", leadTimeDays: 14, shelfLifeDays: 540, classOfSupply: "VIII" },
+    { id: "abo_kit",     name: "ABO/Rh Typing Kit",                    unit: "kit", category: "supplies", criticality: "critical", baseDemand: 0.3, waste: 1.05, trigger: "transfusion_event", leadTimeDays: 14, shelfLifeDays: 540, classOfSupply: "VIII", commodityType: "Blood Bank Reagent", unspscCommodity: "41116132", size: "10 tests", productNoun: "Typing Kit" },
+    { id: "crossmatch",  name: "Crossmatch Test Kit",                  unit: "kit", category: "supplies", criticality: "critical", baseDemand: 0.4, waste: 1.05, trigger: "transfusion_event", leadTimeDays: 14, shelfLifeDays: 540, classOfSupply: "VIII", commodityType: "Blood Bank Reagent", unspscCommodity: "41116133", size: "10 tests", productNoun: "Crossmatch Kit" },
+    { id: "id_screen",   name: "Infectious Disease Screen (HIV/HBV/HCV)", unit: "kit", category: "supplies", criticality: "high", baseDemand: 0.2, waste: 1.05, trigger: "phlebotomy_event", leadTimeDays: 14, shelfLifeDays: 540, classOfSupply: "VIII", commodityType: "Diagnostic Reagent", unspscCommodity: "41116135", size: "20 tests", productNoun: "ID Screen Kit" },
 
     // ---- Transfusion administration ----
-    { id: "iv_set",         name: "IV Tubing Set w/ 170μm Blood Filter", unit: "ea", category: "supplies", criticality: "critical", baseDemand: 1.0, waste: 1.10, trigger: "transfusion_event", leadTimeDays: 10, shelfLifeDays: 1825, classOfSupply: "VIII" },
-    { id: "pressure_inf",   name: "Pressure Infusor Bag 500mL",          unit: "ea", category: "supplies", criticality: "high",     baseDemand: 0.4, waste: 1.05, trigger: "transfusion_event", leadTimeDays: 14, shelfLifeDays: 1825, classOfSupply: "VIII" },
-    { id: "warmer",         name: "Single-Use Blood Warmer (Buddy Lite)", unit: "ea", category: "supplies", criticality: "high",    baseDemand: 0.5, waste: 1.10, trigger: "transfusion_event", leadTimeDays: 21, shelfLifeDays: 730,  classOfSupply: "VIII" },
-    { id: "transfusion_band", name: "Transfusion Recipient Wristband",   unit: "ea", category: "supplies", criticality: "medium",   baseDemand: 1.0, waste: 1.05, trigger: "transfusion_event", leadTimeDays: 7, shelfLifeDays: 1825, classOfSupply: "VIII" },
+    { id: "iv_set",         name: "IV Tubing Set w/ 170μm Blood Filter", unit: "ea", category: "supplies", criticality: "critical", baseDemand: 1.0, waste: 1.10, trigger: "transfusion_event", leadTimeDays: 10, shelfLifeDays: 1825, classOfSupply: "VIII", commodityType: "IV Administration", unspscCommodity: "42221501", size: "170 μm", productNoun: "Blood IV Set" },
+    { id: "pressure_inf",   name: "Pressure Infusor Bag 500mL",          unit: "ea", category: "supplies", criticality: "high",     baseDemand: 0.4, waste: 1.05, trigger: "transfusion_event", leadTimeDays: 14, shelfLifeDays: 1825, classOfSupply: "VIII", commodityType: "IV Administration", unspscCommodity: "42221504", size: "500 mL", productNoun: "Pressure Infusor" },
+    { id: "warmer",         name: "Single-Use Blood Warmer (Buddy Lite)", unit: "ea", category: "supplies", criticality: "high",    baseDemand: 0.5, waste: 1.10, trigger: "transfusion_event", leadTimeDays: 21, shelfLifeDays: 730,  classOfSupply: "VIII", commodityType: "IV Administration", unspscCommodity: "42221506", size: "Single", productNoun: "Blood Warmer" },
+    { id: "transfusion_band", name: "Transfusion Recipient Wristband",   unit: "ea", category: "supplies", criticality: "medium",   baseDemand: 1.0, waste: 1.05, trigger: "transfusion_event", leadTimeDays: 7, shelfLifeDays: 1825, classOfSupply: "VIII", commodityType: "Patient ID",      unspscCommodity: "42182013", size: "Adult",  productNoun: "Wristband" },
 
-    // ---- PPE ----
-    { id: "gloves",  name: "Nitrile Exam Gloves",    unit: "pairs", category: "ppe", criticality: "high",   baseDemand: 4.0, waste: 1.15, trigger: "phlebotomy_event", leadTimeDays: 7, shelfLifeDays: 1095, classOfSupply: "VIII" },
-    { id: "mask",    name: "Surgical Mask",          unit: "ea",    category: "ppe", criticality: "medium", baseDemand: 1.5, waste: 1.10, trigger: "phlebotomy_event", leadTimeDays: 7, shelfLifeDays: 1825, classOfSupply: "VIII" },
-    { id: "shield",  name: "Disposable Face Shield", unit: "ea",    category: "ppe", criticality: "medium", baseDemand: 0.5, waste: 1.05, trigger: "phlebotomy_event", leadTimeDays: 14, shelfLifeDays: 1825, classOfSupply: "VIII" },
-    { id: "gown",    name: "Isolation Gown",         unit: "ea",    category: "ppe", criticality: "medium", baseDemand: 0.8, waste: 1.05, trigger: "phlebotomy_event", leadTimeDays: 10, shelfLifeDays: 1825, classOfSupply: "VIII" },
-    { id: "n95",     name: "N95 Respirator",         unit: "ea",    category: "ppe", criticality: "high",   baseDemand: 1.0, waste: 1.10, trigger: "phlebotomy_event", leadTimeDays: 14, shelfLifeDays: 1825, classOfSupply: "VIII" },
+    // ---- General medical supplies (used by the casualty bill-of-materials) ----
+    { id: "iv_fluid_ns",    name: "IV Fluid — Normal Saline 1L",          unit: "bag", category: "supplies", criticality: "critical", baseDemand: 0.0, waste: 1.05, trigger: "encounter", leadTimeDays: 7,  shelfLifeDays: 730,  classOfSupply: "VIII", commodityType: "IV Fluid",          unspscCommodity: "51241600", size: "1 L",   productNoun: "Saline Solution" },
+    { id: "iv_fluid_lr",    name: "IV Fluid — Lactated Ringer's 1L",      unit: "bag", category: "supplies", criticality: "critical", baseDemand: 0.0, waste: 1.05, trigger: "encounter", leadTimeDays: 7,  shelfLifeDays: 730,  classOfSupply: "VIII", commodityType: "IV Fluid",          unspscCommodity: "51241601", size: "1 L",   productNoun: "Lactated Ringer's" },
+    { id: "airway_kit",     name: "Advanced Airway Kit (Cric/ET)",        unit: "kit", category: "supplies", criticality: "critical", baseDemand: 0.0, waste: 1.02, trigger: "encounter", leadTimeDays: 14, shelfLifeDays: 1825, classOfSupply: "VIII", commodityType: "Airway",            unspscCommodity: "42271700", size: "Adult", productNoun: "Airway Kit" },
+    { id: "tq_cat",         name: "Combat Application Tourniquet (CAT-7)", unit: "ea", category: "supplies", criticality: "critical", baseDemand: 0.0, waste: 1.02, trigger: "encounter", leadTimeDays: 7,  shelfLifeDays: 1825, classOfSupply: "VIII", commodityType: "Hemorrhage Control", unspscCommodity: "42312305", size: "Single", productNoun: "Combat Tourniquet" },
+    { id: "chest_seal",     name: "Vented Chest Seal",                    unit: "ea", category: "supplies", criticality: "critical", baseDemand: 0.0, waste: 1.02, trigger: "encounter", leadTimeDays: 14, shelfLifeDays: 1825, classOfSupply: "VIII", commodityType: "Hemorrhage Control", unspscCommodity: "42311900", size: "6 in",  productNoun: "Chest Seal" },
+    { id: "hemo_dressing",  name: "Hemostatic Dressing (Combat Gauze)",   unit: "ea", category: "supplies", criticality: "critical", baseDemand: 0.0, waste: 1.05, trigger: "encounter", leadTimeDays: 14, shelfLifeDays: 1825, classOfSupply: "VIII", commodityType: "Wound Care",        unspscCommodity: "42311501", size: "3 in",  productNoun: "Hemostatic Gauze" },
+    { id: "pressure_dressing", name: "Pressure Dressing (Israeli Bandage)", unit: "ea", category: "supplies", criticality: "high", baseDemand: 0.0, waste: 1.05, trigger: "encounter", leadTimeDays: 14, shelfLifeDays: 1825, classOfSupply: "VIII", commodityType: "Wound Care",        unspscCommodity: "42311502", size: "6 in",  productNoun: "Pressure Dressing" },
+    { id: "burn_dressing",  name: "Burn Dressing (Sterile, 4x4 in)",      unit: "ea", category: "supplies", criticality: "high",     baseDemand: 0.0, waste: 1.05, trigger: "encounter", leadTimeDays: 14, shelfLifeDays: 1825, classOfSupply: "VIII", commodityType: "Wound Care",        unspscCommodity: "42311550", size: "4x4 in", productNoun: "Burn Dressing" },
+    { id: "suture_kit",     name: "Suture Kit (3-0 Nylon, Curved)",       unit: "kit", category: "supplies", criticality: "high",   baseDemand: 0.0, waste: 1.05, trigger: "encounter", leadTimeDays: 14, shelfLifeDays: 1825, classOfSupply: "VIII", commodityType: "Surgical Suture",   unspscCommodity: "42291611", size: "3-0",   productNoun: "Suture Kit" },
+    { id: "antibiotic_iv",  name: "Antibiotic — Ceftriaxone 1g IV",       unit: "vial", category: "supplies", criticality: "critical", baseDemand: 0.0, waste: 1.05, trigger: "encounter", leadTimeDays: 21, shelfLifeDays: 730, classOfSupply: "VIII", commodityType: "Pharmaceutical — Antibiotic", unspscCommodity: "51101707", size: "1 g", productNoun: "Ceftriaxone" },
+    { id: "antibiotic_po",  name: "Antibiotic — Doxycycline 100mg PO",    unit: "tab", category: "supplies", criticality: "high",   baseDemand: 0.0, waste: 1.05, trigger: "encounter", leadTimeDays: 21, shelfLifeDays: 1095, classOfSupply: "VIII", commodityType: "Pharmaceutical — Antibiotic", unspscCommodity: "51101708", size: "100 mg", productNoun: "Doxycycline" },
+    { id: "analgesic_morphine", name: "Analgesic — Morphine 10mg/mL IV",  unit: "vial", category: "supplies", criticality: "critical", baseDemand: 0.0, waste: 1.05, trigger: "encounter", leadTimeDays: 21, shelfLifeDays: 730, classOfSupply: "VIII", commodityType: "Pharmaceutical — Analgesic", unspscCommodity: "51141604", size: "10 mg", productNoun: "Morphine" },
+    { id: "analgesic_ketamine", name: "Analgesic — Ketamine 50mg/mL IV",  unit: "vial", category: "supplies", criticality: "high",     baseDemand: 0.0, waste: 1.05, trigger: "encounter", leadTimeDays: 21, shelfLifeDays: 730, classOfSupply: "VIII", commodityType: "Pharmaceutical — Analgesic", unspscCommodity: "51141605", size: "50 mg", productNoun: "Ketamine" },
+    { id: "trauma_dressing", name: "Trauma Dressing (Abdominal Pad)",     unit: "ea", category: "supplies", criticality: "high",     baseDemand: 0.0, waste: 1.05, trigger: "encounter", leadTimeDays: 14, shelfLifeDays: 1825, classOfSupply: "VIII", commodityType: "Wound Care",        unspscCommodity: "42311503", size: "5x9 in", productNoun: "Trauma Dressing" },
+    { id: "splint_sam",     name: "SAM Splint (Universal)",               unit: "ea", category: "supplies", criticality: "medium",   baseDemand: 0.0, waste: 1.02, trigger: "encounter", leadTimeDays: 21, shelfLifeDays: 3650, classOfSupply: "VIII", commodityType: "Orthopedic",        unspscCommodity: "42241801", size: "36 in", productNoun: "Splint" },
+    { id: "ob_kit",         name: "Emergency OB Delivery Kit",            unit: "kit", category: "supplies", criticality: "high",    baseDemand: 0.0, waste: 1.02, trigger: "encounter", leadTimeDays: 21, shelfLifeDays: 1825, classOfSupply: "VIII", commodityType: "OB/GYN",            unspscCommodity: "42141701", size: "Single", productNoun: "OB Kit" },
+    { id: "peds_airway_kit", name: "Pediatric Airway Kit",                unit: "kit", category: "supplies", criticality: "critical", baseDemand: 0.0, waste: 1.02, trigger: "encounter", leadTimeDays: 14, shelfLifeDays: 1825, classOfSupply: "VIII", commodityType: "Airway",            unspscCommodity: "42271710", size: "Pediatric", productNoun: "Pediatric Airway" },
+    { id: "antiemetic",     name: "Antiemetic — Ondansetron 4mg IV",      unit: "vial", category: "supplies", criticality: "medium",  baseDemand: 0.0, waste: 1.05, trigger: "encounter", leadTimeDays: 21, shelfLifeDays: 1095, classOfSupply: "VIII", commodityType: "Pharmaceutical — Antiemetic", unspscCommodity: "51141900", size: "4 mg", productNoun: "Ondansetron" },
+    { id: "oral_rehydration", name: "Oral Rehydration Salts",             unit: "packet", category: "supplies", criticality: "medium", baseDemand: 0.0, waste: 1.02, trigger: "encounter", leadTimeDays: 21, shelfLifeDays: 1825, classOfSupply: "VIII", commodityType: "Pharmaceutical — Hydration", unspscCommodity: "51241700", size: "1 L mix", productNoun: "ORS Packet" },
+
+    // ---- PPE (staffing tags wire these into the clinician PPE model) ----
+    { id: "gloves",  name: "Nitrile Exam Gloves",    unit: "pairs", category: "ppe", criticality: "high",   baseDemand: 4.0, waste: 1.15, trigger: "phlebotomy_event", leadTimeDays: 7, shelfLifeDays: 1095, classOfSupply: "VIII", commodityType: "PPE — Hand",  unspscCommodity: "42132205", size: "M",     productNoun: "Exam Gloves",   staffingTag: "ppe:gloves" },
+    { id: "mask",    name: "Surgical Mask",          unit: "ea",    category: "ppe", criticality: "medium", baseDemand: 1.5, waste: 1.10, trigger: "phlebotomy_event", leadTimeDays: 7, shelfLifeDays: 1825, classOfSupply: "VIII", commodityType: "PPE — Face",  unspscCommodity: "42131601", size: "Single", productNoun: "Surgical Mask",  staffingTag: "ppe:mask" },
+    { id: "shield",  name: "Disposable Face Shield", unit: "ea",    category: "ppe", criticality: "medium", baseDemand: 0.5, waste: 1.05, trigger: "phlebotomy_event", leadTimeDays: 14, shelfLifeDays: 1825, classOfSupply: "VIII", commodityType: "PPE — Eye",   unspscCommodity: "42131602", size: "Single", productNoun: "Face Shield",   staffingTag: "ppe:eye" },
+    { id: "gown",    name: "Isolation Gown",         unit: "ea",    category: "ppe", criticality: "medium", baseDemand: 0.8, waste: 1.05, trigger: "phlebotomy_event", leadTimeDays: 10, shelfLifeDays: 1825, classOfSupply: "VIII", commodityType: "PPE — Body",  unspscCommodity: "42131603", size: "L",     productNoun: "Isolation Gown",  staffingTag: "ppe:gown" },
+    { id: "n95",     name: "N95 Respirator",         unit: "ea",    category: "ppe", criticality: "high",   baseDemand: 1.0, waste: 1.10, trigger: "phlebotomy_event", leadTimeDays: 14, shelfLifeDays: 1825, classOfSupply: "VIII", commodityType: "PPE — Face",  unspscCommodity: "42131604", size: "Single", productNoun: "N95 Respirator", staffingTag: "ppe:mask" },
 
     // ---- Other lab consumables / admin ----
-    { id: "sharps",          name: "Sharps Container 2L",         unit: "ea", category: "other", criticality: "medium", baseDemand: 0.1, waste: 1.05, trigger: "phlebotomy_event", leadTimeDays: 14, shelfLifeDays: 3650, classOfSupply: "VIII" },
-    { id: "centrifuge_tube", name: "Lab Centrifuge Tubes 15mL",   unit: "ea", category: "other", criticality: "low",    baseDemand: 1.0, waste: 1.05, trigger: "phlebotomy_event", leadTimeDays: 14, shelfLifeDays: 1825, classOfSupply: "VIII" },
-    { id: "biohazard_bag",   name: "Biohazard Disposal Bags",     unit: "ea", category: "other", criticality: "low",    baseDemand: 0.6, waste: 1.05, trigger: "phlebotomy_event", leadTimeDays: 14, shelfLifeDays: 1825, classOfSupply: "VIII" },
+    { id: "sharps",          name: "Sharps Container 2L",         unit: "ea", category: "other", criticality: "medium", baseDemand: 0.1, waste: 1.05, trigger: "phlebotomy_event", leadTimeDays: 14, shelfLifeDays: 3650, classOfSupply: "VIII", commodityType: "Waste Disposal", unspscCommodity: "47131830", size: "2 L", productNoun: "Sharps Container" },
+    { id: "centrifuge_tube", name: "Lab Centrifuge Tubes 15mL",   unit: "ea", category: "other", criticality: "low",    baseDemand: 1.0, waste: 1.05, trigger: "phlebotomy_event", leadTimeDays: 14, shelfLifeDays: 1825, classOfSupply: "VIII", commodityType: "Lab Consumable", unspscCommodity: "41121706", size: "15 mL", productNoun: "Centrifuge Tube" },
+    { id: "biohazard_bag",   name: "Biohazard Disposal Bags",     unit: "ea", category: "other", criticality: "low",    baseDemand: 0.6, waste: 1.05, trigger: "phlebotomy_event", leadTimeDays: 14, shelfLifeDays: 1825, classOfSupply: "VIII", commodityType: "Waste Disposal", unspscCommodity: "47131831", size: "Medium", productNoun: "Biohazard Bag" },
   ];
   await db.insert(items).values(
     ITEM_CATALOG.map((r) => ({
@@ -549,6 +595,233 @@ export async function runSeed(opts: SeedOptions = {}): Promise<void> {
       baseDemandPerEvent: r.baseDemand,
       wasteAdjustedDemand: r.baseDemand * r.waste,
       trigger: r.trigger,
+      commodityType: r.commodityType,
+      unspscCommodity: r.unspscCommodity,
+      size: r.size,
+      productNoun: r.productNoun,
+      staffingTag: r.staffingTag ?? "",
+    })),
+  );
+
+  // ---- Patient types + per-patient bill-of-materials ----
+  // Severities follow standard MASCAL triage (immediate/delayed/minor)
+  // plus a "routine" steady-state archetype. Item quantities are
+  // intentionally rounded — the casualty engine will Math.ceil totals
+  // so fractional values still produce sensible whole-unit demand.
+  const PATIENT_TYPES: Array<{
+    id: string;
+    name: string;
+    severity: "critical" | "severe" | "moderate" | "minor" | "routine";
+    careCategory: "surgical" | "medical" | "mixed";
+    avgClinicianMinutes: number;
+    description: string;
+  }> = [
+    { id: "trauma_critical",   name: "Critical Trauma (T1 Immediate)",  severity: "critical", careCategory: "surgical", avgClinicianMinutes: 240, description: "Polytrauma with massive transfusion protocol activation; surgical airway risk." },
+    { id: "trauma_severe",     name: "Severe Trauma (T2 Delayed)",      severity: "severe",   careCategory: "surgical", avgClinicianMinutes: 150, description: "Significant hemorrhage, fractures, or penetrating injury requiring surgical intervention." },
+    { id: "trauma_moderate",   name: "Moderate Trauma (T3 Minor)",      severity: "moderate", careCategory: "surgical", avgClinicianMinutes: 60,  description: "Walking wounded — lacerations, simple fractures, soft-tissue injuries." },
+    { id: "burn_severe",       name: "Severe Burn (>20% TBSA)",         severity: "critical", careCategory: "mixed",    avgClinicianMinutes: 200, description: "Large body-surface burns; aggressive fluid resuscitation + airway risk." },
+    { id: "medical_acute",     name: "Acute Medical (Sepsis/MI)",       severity: "severe",   careCategory: "medical",  avgClinicianMinutes: 120, description: "Sepsis, MI, stroke, severe pneumonia. Antibiotics + IV fluids." },
+    { id: "medical_chronic",   name: "Chronic Medical Exacerbation",    severity: "moderate", careCategory: "medical",  avgClinicianMinutes: 45,  description: "COPD, CHF, diabetic ketoacidosis. Stabilize and admit." },
+    { id: "obstetric",         name: "Obstetric Emergency",             severity: "severe",   careCategory: "mixed",    avgClinicianMinutes: 150, description: "Active labor, hemorrhage, eclampsia." },
+    { id: "pediatric_trauma",  name: "Pediatric Trauma",                severity: "severe",   careCategory: "surgical", avgClinicianMinutes: 180, description: "Pediatric patient — smaller fluid volumes, pediatric airway." },
+    { id: "minor_outpatient",  name: "Minor Outpatient",                severity: "minor",    careCategory: "medical",  avgClinicianMinutes: 20,  description: "Sick call, minor wound care, prescription refills." },
+  ];
+  await db.insert(patientTypes).values(PATIENT_TYPES);
+
+  // Per-patient bill-of-materials. Quantities are *per patient* over
+  // their initial 24-48h of care.
+  const REQS: Array<[string, string, number]> = [
+    // critical trauma
+    ["trauma_critical","prbc_o",4],
+    ["trauma_critical","ffp_ab",2],
+    ["trauma_critical","ltow_pos",2],
+    ["trauma_critical","platelets",1],
+    ["trauma_critical","cryo",1],
+    ["trauma_critical","iv_fluid_lr",4],
+    ["trauma_critical","iv_fluid_ns",2],
+    ["trauma_critical","iv_set",3],
+    ["trauma_critical","airway_kit",1],
+    ["trauma_critical","tq_cat",2],
+    ["trauma_critical","chest_seal",1],
+    ["trauma_critical","hemo_dressing",2],
+    ["trauma_critical","trauma_dressing",4],
+    ["trauma_critical","pressure_dressing",2],
+    ["trauma_critical","suture_kit",2],
+    ["trauma_critical","antibiotic_iv",2],
+    ["trauma_critical","analgesic_morphine",4],
+    ["trauma_critical","analgesic_ketamine",1],
+    ["trauma_critical","antiemetic",2],
+    ["trauma_critical","abo_kit",1],
+    ["trauma_critical","crossmatch",1],
+    ["trauma_critical","warmer",1],
+    ["trauma_critical","pressure_inf",1],
+    // severe trauma
+    ["trauma_severe","prbc_o",2],
+    ["trauma_severe","ffp_ab",1],
+    ["trauma_severe","ltow_pos",1],
+    ["trauma_severe","iv_fluid_lr",3],
+    ["trauma_severe","iv_set",2],
+    ["trauma_severe","tq_cat",1],
+    ["trauma_severe","hemo_dressing",1],
+    ["trauma_severe","pressure_dressing",2],
+    ["trauma_severe","trauma_dressing",2],
+    ["trauma_severe","suture_kit",1],
+    ["trauma_severe","antibiotic_iv",2],
+    ["trauma_severe","analgesic_morphine",2],
+    ["trauma_severe","antiemetic",1],
+    ["trauma_severe","splint_sam",1],
+    ["trauma_severe","abo_kit",1],
+    ["trauma_severe","crossmatch",1],
+    // moderate trauma
+    ["trauma_moderate","iv_fluid_ns",1],
+    ["trauma_moderate","iv_set",1],
+    ["trauma_moderate","gauze",6],
+    ["trauma_moderate","pressure_dressing",1],
+    ["trauma_moderate","suture_kit",1],
+    ["trauma_moderate","antibiotic_po",6],
+    ["trauma_moderate","analgesic_morphine",1],
+    ["trauma_moderate","splint_sam",1],
+    // severe burn
+    ["burn_severe","iv_fluid_lr",8],
+    ["burn_severe","iv_set",3],
+    ["burn_severe","airway_kit",1],
+    ["burn_severe","burn_dressing",10],
+    ["burn_severe","trauma_dressing",4],
+    ["burn_severe","suture_kit",1],
+    ["burn_severe","antibiotic_iv",4],
+    ["burn_severe","analgesic_morphine",6],
+    ["burn_severe","analgesic_ketamine",2],
+    ["burn_severe","antiemetic",2],
+    ["burn_severe","prbc_o",1],
+    ["burn_severe","ffp_ab",1],
+    // acute medical
+    ["medical_acute","iv_fluid_ns",3],
+    ["medical_acute","iv_set",2],
+    ["medical_acute","antibiotic_iv",4],
+    ["medical_acute","antiemetic",2],
+    ["medical_acute","analgesic_morphine",1],
+    ["medical_acute","oral_rehydration",2],
+    // chronic medical
+    ["medical_chronic","iv_fluid_ns",1],
+    ["medical_chronic","iv_set",1],
+    ["medical_chronic","antibiotic_po",10],
+    ["medical_chronic","oral_rehydration",2],
+    ["medical_chronic","antiemetic",1],
+    // obstetric
+    ["obstetric","ob_kit",1],
+    ["obstetric","iv_fluid_lr",3],
+    ["obstetric","iv_set",2],
+    ["obstetric","prbc_o",2],
+    ["obstetric","ffp_ab",1],
+    ["obstetric","suture_kit",2],
+    ["obstetric","antibiotic_iv",2],
+    ["obstetric","analgesic_morphine",2],
+    ["obstetric","abo_kit",1],
+    ["obstetric","crossmatch",1],
+    // pediatric trauma
+    ["pediatric_trauma","prbc_o",1],
+    ["pediatric_trauma","ffp_ab",1],
+    ["pediatric_trauma","iv_fluid_lr",2],
+    ["pediatric_trauma","iv_set",2],
+    ["pediatric_trauma","peds_airway_kit",1],
+    ["pediatric_trauma","hemo_dressing",1],
+    ["pediatric_trauma","pressure_dressing",2],
+    ["pediatric_trauma","trauma_dressing",2],
+    ["pediatric_trauma","suture_kit",1],
+    ["pediatric_trauma","antibiotic_iv",2],
+    ["pediatric_trauma","analgesic_ketamine",1],
+    ["pediatric_trauma","antiemetic",1],
+    ["pediatric_trauma","abo_kit",1],
+    ["pediatric_trauma","crossmatch",1],
+    // minor outpatient
+    ["minor_outpatient","gauze",2],
+    ["minor_outpatient","alcohol",2],
+    ["minor_outpatient","antibiotic_po",6],
+    ["minor_outpatient","oral_rehydration",1],
+  ];
+  await db.insert(patientItemRequirements).values(
+    REQS.map(([patientTypeId, itemId, qty]) => ({
+      patientTypeId,
+      itemId,
+      quantityPerPatient: qty,
+      notes: "",
+    })),
+  );
+
+  // ---- Event types + default patient mixes ----
+  const EVENT_TYPES: Array<{
+    id: string;
+    name: string;
+    category: "natural-disaster" | "conflict" | "other";
+    description: string;
+    defaultArrivalWindowHours: number;
+  }> = [
+    { id: "earthquake_m7",        name: "Major Earthquake (M7+)",            category: "natural-disaster", defaultArrivalWindowHours: 48, description: "Crush injuries, fractures, lacerations, displaced civilian population." },
+    { id: "typhoon_landfall",     name: "Typhoon Landfall",                  category: "natural-disaster", defaultArrivalWindowHours: 72, description: "Storm-surge drownings, debris injuries, secondary infections from contaminated water." },
+    { id: "tsunami",              name: "Tsunami / Coastal Flooding",        category: "natural-disaster", defaultArrivalWindowHours: 36, description: "Drowning, hypothermia, blunt trauma, crush." },
+    { id: "volcanic_eruption",    name: "Volcanic Eruption / Ashfall",       category: "natural-disaster", defaultArrivalWindowHours: 96, description: "Burns, respiratory injury, displaced population." },
+    { id: "major_combat",         name: "Major Combat Operations",           category: "conflict",         defaultArrivalWindowHours: 24, description: "High-volume penetrating trauma, blast injury, burns." },
+    { id: "missile_strike_base",  name: "Missile Strike on Base",            category: "conflict",         defaultArrivalWindowHours: 12, description: "Concentrated mass-casualty event with blast and burn injuries." },
+    { id: "humanitarian_response", name: "Humanitarian Assistance / DR",     category: "other",            defaultArrivalWindowHours: 96, description: "Mixed civilian medical load, infectious disease, OB, peds." },
+    { id: "small_unit_engagement", name: "Small Unit Engagement",            category: "conflict",         defaultArrivalWindowHours: 24, description: "Squad/platoon engagement — limited casualties, mostly trauma." },
+  ];
+  await db.insert(eventTypes).values(EVENT_TYPES);
+
+  const MIX: Array<[string, string, number]> = [
+    // earthquake — civilian-heavy crush/fracture
+    ["earthquake_m7","trauma_critical",0.10],
+    ["earthquake_m7","trauma_severe",0.20],
+    ["earthquake_m7","trauma_moderate",0.40],
+    ["earthquake_m7","pediatric_trauma",0.10],
+    ["earthquake_m7","obstetric",0.05],
+    ["earthquake_m7","medical_chronic",0.15],
+    // typhoon
+    ["typhoon_landfall","trauma_severe",0.15],
+    ["typhoon_landfall","trauma_moderate",0.35],
+    ["typhoon_landfall","medical_acute",0.15],
+    ["typhoon_landfall","medical_chronic",0.20],
+    ["typhoon_landfall","pediatric_trauma",0.05],
+    ["typhoon_landfall","minor_outpatient",0.10],
+    // tsunami
+    ["tsunami","trauma_critical",0.10],
+    ["tsunami","trauma_severe",0.25],
+    ["tsunami","trauma_moderate",0.30],
+    ["tsunami","medical_acute",0.20],
+    ["tsunami","pediatric_trauma",0.10],
+    ["tsunami","obstetric",0.05],
+    // volcanic
+    ["volcanic_eruption","burn_severe",0.20],
+    ["volcanic_eruption","trauma_moderate",0.20],
+    ["volcanic_eruption","medical_acute",0.30],
+    ["volcanic_eruption","medical_chronic",0.20],
+    ["volcanic_eruption","minor_outpatient",0.10],
+    // major combat
+    ["major_combat","trauma_critical",0.30],
+    ["major_combat","trauma_severe",0.40],
+    ["major_combat","trauma_moderate",0.20],
+    ["major_combat","burn_severe",0.10],
+    // missile strike
+    ["missile_strike_base","trauma_critical",0.40],
+    ["missile_strike_base","trauma_severe",0.30],
+    ["missile_strike_base","burn_severe",0.20],
+    ["missile_strike_base","trauma_moderate",0.10],
+    // humanitarian
+    ["humanitarian_response","trauma_moderate",0.20],
+    ["humanitarian_response","medical_acute",0.20],
+    ["humanitarian_response","medical_chronic",0.25],
+    ["humanitarian_response","pediatric_trauma",0.10],
+    ["humanitarian_response","obstetric",0.10],
+    ["humanitarian_response","minor_outpatient",0.15],
+    // small unit
+    ["small_unit_engagement","trauma_critical",0.20],
+    ["small_unit_engagement","trauma_severe",0.40],
+    ["small_unit_engagement","trauma_moderate",0.40],
+  ];
+  await db.insert(eventPatientMix).values(
+    MIX.map(([eventTypeId, patientTypeId, defaultShare]) => ({
+      eventTypeId,
+      patientTypeId,
+      defaultShare,
     })),
   );
 

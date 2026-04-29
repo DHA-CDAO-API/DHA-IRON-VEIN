@@ -24,6 +24,8 @@ import type {
   AppSettings,
   AutoTagBatchResult,
   CascadeAnalysis,
+  CasualtyEvaluateInput,
+  CasualtyEvaluateResult,
   CatalogPage,
   ColdChainPulse,
   Conversation,
@@ -33,6 +35,7 @@ import type {
   CreateTheaterZoneInput,
   DashboardOverview,
   DatabaseHealthList,
+  EventType,
   ForecastInput,
   ForecastResult,
   GetOverviewActivityStreamParams,
@@ -57,6 +60,7 @@ import type {
   Order,
   OrderDetail,
   OverviewActivityStream,
+  PatientType,
   PresetEvent,
   Profile,
   PromoteRecommendationOverrides,
@@ -5374,4 +5378,221 @@ export const useAutoTagBatch = <
   TContext
 > => {
   return useMutation(getAutoTagBatchMutationOptions(options));
+};
+
+export const getListPatientTypesUrl = () => {
+  return `/api/patient-types`;
+};
+
+export const listPatientTypes = async (
+  options?: RequestInit,
+): Promise<PatientType[]> => {
+  return customFetch<PatientType[]>(getListPatientTypesUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListPatientTypesQueryKey = () => {
+  return [`/api/patient-types`] as const;
+};
+
+export const getListPatientTypesQueryOptions = <
+  TData = Awaited<ReturnType<typeof listPatientTypes>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listPatientTypes>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListPatientTypesQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listPatientTypes>>
+  > = ({ signal }) => listPatientTypes({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listPatientTypes>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListPatientTypesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listPatientTypes>>
+>;
+export type ListPatientTypesQueryError = ErrorType<unknown>;
+
+export function useListPatientTypes<
+  TData = Awaited<ReturnType<typeof listPatientTypes>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listPatientTypes>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListPatientTypesQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getListEventTypesUrl = () => {
+  return `/api/event-types`;
+};
+
+export const listEventTypes = async (
+  options?: RequestInit,
+): Promise<EventType[]> => {
+  return customFetch<EventType[]>(getListEventTypesUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListEventTypesQueryKey = () => {
+  return [`/api/event-types`] as const;
+};
+
+export const getListEventTypesQueryOptions = <
+  TData = Awaited<ReturnType<typeof listEventTypes>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listEventTypes>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListEventTypesQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listEventTypes>>> = ({
+    signal,
+  }) => listEventTypes({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listEventTypes>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListEventTypesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listEventTypes>>
+>;
+export type ListEventTypesQueryError = ErrorType<unknown>;
+
+export function useListEventTypes<
+  TData = Awaited<ReturnType<typeof listEventTypes>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listEventTypes>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListEventTypesQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getEvaluateCasualtyDemandUrl = () => {
+  return `/api/casualty/evaluate`;
+};
+
+export const evaluateCasualtyDemand = async (
+  casualtyEvaluateInput: CasualtyEvaluateInput,
+  options?: RequestInit,
+): Promise<CasualtyEvaluateResult> => {
+  return customFetch<CasualtyEvaluateResult>(getEvaluateCasualtyDemandUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(casualtyEvaluateInput),
+  });
+};
+
+export const getEvaluateCasualtyDemandMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof evaluateCasualtyDemand>>,
+    TError,
+    { data: BodyType<CasualtyEvaluateInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof evaluateCasualtyDemand>>,
+  TError,
+  { data: BodyType<CasualtyEvaluateInput> },
+  TContext
+> => {
+  const mutationKey = ["evaluateCasualtyDemand"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof evaluateCasualtyDemand>>,
+    { data: BodyType<CasualtyEvaluateInput> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return evaluateCasualtyDemand(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type EvaluateCasualtyDemandMutationResult = NonNullable<
+  Awaited<ReturnType<typeof evaluateCasualtyDemand>>
+>;
+export type EvaluateCasualtyDemandMutationBody =
+  BodyType<CasualtyEvaluateInput>;
+export type EvaluateCasualtyDemandMutationError = ErrorType<unknown>;
+
+export const useEvaluateCasualtyDemand = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof evaluateCasualtyDemand>>,
+    TError,
+    { data: BodyType<CasualtyEvaluateInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof evaluateCasualtyDemand>>,
+  TError,
+  { data: BodyType<CasualtyEvaluateInput> },
+  TContext
+> => {
+  return useMutation(getEvaluateCasualtyDemandMutationOptions(options));
 };

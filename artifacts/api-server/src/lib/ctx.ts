@@ -95,6 +95,13 @@ export async function loadSimContext(force = false): Promise<{
     trigger: i.trigger,
     criticality: i.criticality,
     leadTimeDays: i.leadTimeDays,
+    category: i.category,
+    classOfSupply: i.classOfSupply,
+    commodityType: i.commodityType,
+    unspscCommodity: i.unspscCommodity,
+    size: i.size,
+    productNoun: i.productNoun,
+    staffingTag: i.staffingTag,
   }));
   const profiles = new Map<string, SimDemandProfile>(
     profilesRows.map((p) => [p.nodeId, { ...p }]),

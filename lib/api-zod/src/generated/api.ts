@@ -3030,3 +3030,146 @@ export const AutoTagBatchResponse = zod.object({
     }),
   ),
 });
+
+export const ListPatientTypesResponseItem = zod.object({
+  id: zod.string(),
+  name: zod.string(),
+  severity: zod.string(),
+  careCategory: zod.string(),
+  avgClinicianMinutes: zod.number(),
+  description: zod.string(),
+  requirements: zod.array(
+    zod.object({
+      itemId: zod.string(),
+      quantityPerPatient: zod.number(),
+      notes: zod.string(),
+    }),
+  ),
+});
+export const ListPatientTypesResponse = zod.array(ListPatientTypesResponseItem);
+
+export const ListEventTypesResponseItem = zod.object({
+  id: zod.string(),
+  name: zod.string(),
+  category: zod.string(),
+  description: zod.string(),
+  defaultArrivalWindowHours: zod.number(),
+  defaultPatientMix: zod.array(
+    zod.object({
+      patientTypeId: zod.string(),
+      defaultShare: zod.number(),
+    }),
+  ),
+});
+export const ListEventTypesResponse = zod.array(ListEventTypesResponseItem);
+
+export const evaluateCasualtyDemandBodyRestrictReroutesToHubDefault = false;
+
+export const EvaluateCasualtyDemandBody = zod.object({
+  siteId: zod
+    .string()
+    .nullish()
+    .describe(
+      "Optional. When set, scopes the response to a specific site (adds sufficiency rows + reroute suggestions).",
+    ),
+  patientCounts: zod
+    .record(zod.string(), zod.number())
+    .describe("Patient counts keyed by patient_type id."),
+  arrivalWindowHours: zod
+    .number()
+    .describe("Hours over which the casualty load arrives."),
+  resupplyEtaHours: zod
+    .number()
+    .nullish()
+    .describe("Optional operator-entered ETA for next resupply."),
+  restrictReroutesToHub: zod
+    .boolean()
+    .default(evaluateCasualtyDemandBodyRestrictReroutesToHubDefault),
+});
+
+export const EvaluateCasualtyDemandResponse = zod.object({
+  arrivalWindowHours: zod.number(),
+  totalPatients: zod.number(),
+  patientCounts: zod.record(zod.string(), zod.number()),
+  requiredItems: zod.array(
+    zod.object({
+      itemId: zod.string(),
+      itemName: zod.string(),
+      category: zod.string(),
+      classOfSupply: zod.string(),
+      unitOfIssue: zod.string(),
+      commodityType: zod.string(),
+      unspscCommodity: zod.string(),
+      size: zod.string(),
+      productNoun: zod.string(),
+      requiredQty: zod.number(),
+      source: zod.enum(["patient_bom", "ppe_staffing", "both"]),
+    }),
+  ),
+  sufficiency: zod
+    .union([
+      zod.null(),
+      zod.object({
+        rows: zod.array(
+          zod
+            .object({
+              itemId: zod.string(),
+              itemName: zod.string(),
+              category: zod.string(),
+              classOfSupply: zod.string(),
+              unitOfIssue: zod.string(),
+              commodityType: zod.string(),
+              unspscCommodity: zod.string(),
+              size: zod.string(),
+              productNoun: zod.string(),
+              requiredQty: zod.number(),
+              source: zod.enum(["patient_bom", "ppe_staffing", "both"]),
+            })
+            .and(
+              zod.object({
+                onHand: zod.number(),
+                inboundBeforeWindow: zod.number(),
+                shortfallQty: zod.number(),
+                verdict: zod.enum(["green", "amber", "red"]),
+                supplierAlternatives: zod
+                  .array(
+                    zod.object({
+                      supplierId: zod.string(),
+                      supplierName: zod.string(),
+                      channel: zod.string(),
+                      country: zod.string(),
+                      projectedEta: zod.number(),
+                      score: zod.number(),
+                      reliabilityScore: zod.number().optional(),
+                      leadTimeDaysMean: zod.number().optional(),
+                      rationale: zod.string().nullish(),
+                    }),
+                  )
+                  .optional(),
+              }),
+            ),
+        ),
+        summary: zod.object({
+          totalRequiredItems: zod.number(),
+          greenCount: zod.number(),
+          amberCount: zod.number(),
+          redCount: zod.number(),
+          verdict: zod.string(),
+        }),
+      }),
+    ])
+    .optional(),
+  reroutes: zod.array(
+    zod.object({
+      nodeId: zod.string(),
+      nodeName: zod.string(),
+      countryCode: zod.string().nullish(),
+      distanceKm: zod.number(),
+      estimatedTransitDays: zod.number(),
+      posture: zod.enum(["viable", "stretched", "unsuitable"]),
+      supplyCoverage: zod.number(),
+      residualCapacity: zod.number(),
+      rationale: zod.string(),
+    }),
+  ),
+});
