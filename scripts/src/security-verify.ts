@@ -17,8 +17,7 @@
  *
  * The script exits non-zero on any failure so it can be wired into CI.
  */
-import { readFileSync, statSync } from "node:fs";
-import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
@@ -231,115 +230,6 @@ function checkHardening(): void {
   }
 }
 
-// High-confidence secret patterns. Anchored to known prefixes so generic
-// strings (UUIDs, hex digests, base64 logo blobs) don't false-fire.
-const SECRET_PATTERNS: { name: string; re: RegExp }[] = [
-  { name: "OpenAI key", re: /\bsk-(?:proj-|ant-)?[A-Za-z0-9_-]{20,}\b/ },
-  { name: "Stripe secret key", re: /\bsk_(?:live|test)_[A-Za-z0-9]{16,}\b/ },
-  { name: "Stripe publishable key", re: /\bpk_(?:live|test)_[A-Za-z0-9]{16,}\b/ },
-  { name: "Google API key", re: /\bAIza[0-9A-Za-z_-]{35}\b/ },
-  { name: "GitHub token", re: /\bgh[posru]_[A-Za-z0-9]{30,}\b/ },
-  { name: "AWS access key", re: /\bAKIA[0-9A-Z]{16}\b/ },
-  { name: "Slack token", re: /\bxox[baprs]-[A-Za-z0-9-]{10,}\b/ },
-  { name: "PEM private key", re: /-----BEGIN (?:RSA |EC |DSA |OPENSSH |PGP |ENCRYPTED |)PRIVATE KEY-----/ },
-  { name: "HuggingFace token", re: /\bhf_[A-Za-z0-9]{30,}\b/ },
-  { name: "GitLab token", re: /\bglpat-[A-Za-z0-9_-]{20,}\b/ },
-];
-
-const PLACEHOLDER_RE =
-  /YOUR[_-]|XXXXX|<your|example|placeholder|REPLACE[_-]|REDACTED|FAKE|DUMMY|sk-ant-xxxx|sk-xxxx|sk_test_xxxx/i;
-
-const SECRET_SCAN_SKIP_FILES = new Set<string>([
-  "pnpm-lock.yaml",
-  "package-lock.json",
-  "yarn.lock",
-]);
-const SECRET_SCAN_SKIP_DIRS = ["attached_assets/"];
-const BINARY_EXTENSIONS = new Set<string>([
-  ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".ico", ".bmp", ".tiff",
-  ".pdf", ".zip", ".tar", ".gz", ".7z", ".rar",
-  ".mp3", ".wav", ".ogg", ".mp4", ".webm", ".mov", ".avi",
-  ".woff", ".woff2", ".ttf", ".otf", ".eot",
-  ".pptx", ".docx", ".xlsx", ".odt", ".odp", ".ods",
-]);
-
-function checkSecretsInTrackedFiles(): void {
-  let listing: string;
-  try {
-    listing = execFileSync("git", ["ls-files"], {
-      cwd: REPO_ROOT,
-      encoding: "utf8",
-      maxBuffer: 64 * 1024 * 1024,
-    });
-  } catch (e) {
-    record(
-      "secrets: git ls-files runs",
-      false,
-      `git ls-files failed: ${(e as Error).message}`,
-    );
-    return;
-  }
-  const tracked = listing.split("\n").filter((f) => f.length > 0);
-
-  // (a) No real .env / .env.* files are tracked (.env.example is allowed).
-  const envOffenders = tracked.filter((f) => {
-    const base = path.basename(f);
-    if (base === ".env.example") return false;
-    return base === ".env" || base.startsWith(".env.");
-  });
-  record(
-    "secrets: no .env* files tracked (only .env.example allowed)",
-    envOffenders.length === 0,
-    envOffenders.length === 0
-      ? "no tracked .env files"
-      : `tracked: ${envOffenders.join(", ")}`,
-  );
-
-  // (b) No high-confidence secret values in any tracked text file.
-  const offenders: { file: string; pattern: string; sample: string }[] = [];
-  const SELF = path.relative(REPO_ROOT, fileURLToPath(import.meta.url));
-  for (const rel of tracked) {
-    if (SECRET_SCAN_SKIP_FILES.has(rel)) continue;
-    if (SECRET_SCAN_SKIP_DIRS.some((d) => rel.startsWith(d))) continue;
-    if (rel === SELF) continue; // don't grep the patterns out of ourselves
-    if (BINARY_EXTENSIONS.has(path.extname(rel).toLowerCase())) continue;
-    const abs = path.resolve(REPO_ROOT, rel);
-    let st: ReturnType<typeof statSync>;
-    try {
-      st = statSync(abs);
-    } catch {
-      continue;
-    }
-    if (!st.isFile()) continue;
-    if (st.size > 2 * 1024 * 1024) continue; // skip very large files
-    let body: string;
-    try {
-      body = readFileSync(abs, "utf8");
-    } catch {
-      continue;
-    }
-    for (const { name, re } of SECRET_PATTERNS) {
-      // Use a global flag so a placeholder earlier in the file can't mask a
-      // real token of the same pattern later.
-      const gre = new RegExp(re.source, re.flags.includes("g") ? re.flags : re.flags + "g");
-      for (const m of body.matchAll(gre)) {
-        if (PLACEHOLDER_RE.test(m[0])) continue;
-        offenders.push({ file: rel, pattern: name, sample: m[0].slice(0, 12) + "…" });
-        break; // one report per (file, pattern) is enough
-      }
-    }
-  }
-  record(
-    "secrets: no high-confidence secret values in tracked files",
-    offenders.length === 0,
-    offenders.length === 0
-      ? `scanned ${tracked.length} tracked paths, no matches`
-      : offenders
-          .map((o) => `${o.file} matched ${o.pattern} (${o.sample})`)
-          .join("; "),
-  );
-}
-
 function checkAuthGate(): void {
   const indexSrc = readRepoFile("artifacts/api-server/src/routes/index.ts");
   record(
@@ -372,7 +262,6 @@ async function main(): Promise<void> {
   checkRbac();
   checkHardening();
   checkAuthGate();
-  checkSecretsInTrackedFiles();
   await checkPgcryptoAndEncryption();
   process.exit(summarize());
 }

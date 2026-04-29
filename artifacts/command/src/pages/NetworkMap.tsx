@@ -1294,8 +1294,6 @@ export default function NetworkMapPage() {
           aorBoundary={(snapshot as any)?.aorBoundary}
           zones={zones as TheaterZone[]}
           showZones={showZones}
-          enableScrollZoom
-
           drawMode={drawMode}
           onZoneDrawn={handleZoneDrawn}
           onDraftChange={(v) => setDraftVertexCount(v.length)}

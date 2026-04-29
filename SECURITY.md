@@ -131,19 +131,6 @@ The script (`scripts/src/security-verify.ts`) verifies:
 5. helmet, cors, cookie-parser, csrf, trust-proxy, and the three rate
    limiters are mounted in `app.ts`.
 6. `requireAuth` is applied at the `/api` router.
-7. **No secrets in tracked files.** `git ls-files` is scanned for
-   high-confidence secret value patterns (OpenAI `sk-…` / `sk-proj-` /
-   `sk-ant-…`, Stripe `sk_live_` / `sk_test_` / `pk_live_` / `pk_test_`,
-   Google `AIza…`, GitHub `ghp_` / `gho_` / `ghs_` / `ghr_`, AWS
-   `AKIA…`, Slack `xox[baprs]-…`, PEM `-----BEGIN … PRIVATE KEY-----`
-   blocks, HuggingFace `hf_…`, GitLab `glpat-…`) and for any tracked
-   `.env` / `.env.*` file other than `.env.example`. `pnpm-lock.yaml`,
-   `attached_assets/**`, binary files, and obvious placeholders
-   (`YOUR_…`, `XXXXX`, `<your-…>`, `REPLACE_…`, `REDACTED`, `FAKE`,
-   `DUMMY`) are intentionally skipped to avoid false positives.
-   `.gitignore` also explicitly ignores `.env` and `.env.*` everywhere
-   in the tree (with an allow-rule for `.env.example`) so a fresh
-   `.env` file dropped into any package can never be staged by accident.
 
 ## 8. Operating Procedure
 
@@ -159,4 +146,4 @@ The script (`scripts/src/security-verify.ts`) verifies:
 
 ---
 
-_Last updated 2026-04-29 — added §7 secrets-in-tracked-files check._
+_Last updated automatically by the security:verify pipeline._

@@ -24,7 +24,6 @@ import adminSupplyImportRouter from "./admin-supply-import";
 import tagsRouter from "./tags";
 import casualtyRouter from "./casualty";
 import proceduresRouter from "./procedures";
-import testAuthRouter, { testAuthEnabled } from "./test-auth";
 import { requireAuth, requireMfa } from "../middlewares/authMiddleware";
 
 const router: IRouter = Router();
@@ -35,12 +34,6 @@ router.use(authRouter);
 // MFA endpoints handle their own auth/mfa gating internally so the user
 // can enroll/verify before any other API works.
 router.use(mfaRouter);
-// Test-only auth bypass. Only mounted when E2E_TEST_HOOKS=1 and we're
-// not in production. The router itself also gates every endpoint, so a
-// rogue mount is still safe.
-if (testAuthEnabled()) {
-  router.use(testAuthRouter);
-}
 
 /**
  * Everything below the gate requires (1) a valid session and (2) a

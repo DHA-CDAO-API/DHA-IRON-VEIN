@@ -479,228 +479,22 @@ function roleForNodeType(nodeType: string): string | null {
   return null;
 }
 
-// =============================================================================
-// Curated steady-state stress profile
-// =============================================================================
-// The default seed needs to read like a real network: most sites quietly
-// nominal, a clear handful of "interesting" problem sites that drive the
-// demo story (alerts, recommendations, scenarios). The previous behavior
-// scaled *every* site's inventory down to active-operations levels, which
-// painted the entire map red and erased any useful signal.
-//
-// Two knobs replace the old broad stress scale:
-//
-//   1. `BASELINE_STOCK_SCALE_BY_TYPE` — a per-node-type multiplier applied
-//      to the seeded sheet quantity at every non-curated node. Sized so
-//      every category of supply lands comfortably above the 14-day WATCH
-//      threshold for that site type, regardless of optempo. Tuning these
-//      up makes the map quieter; tuning down makes more sites slide into
-//      the watch band naturally.
-//
-//   2. `CURATED_PROBLEM_SITES` — a small, deterministic set of nodes that
-//      are *intentionally* stressed in specific ways so the operator has
-//      real problems to solve. Each entry documents the demo story and
-//      lists per-item shortage scales (multiplied against the baseline
-//      sheet quantity). Anything not listed inherits the healthy
-//      baseline. Order is not significant; reseeds are deterministic.
-//
-// To tune the steady state, edit either constant — the seeder, the alert
-// generator, and the snapshot all derive their behavior from these.
-const BASELINE_STOCK_SCALE_BY_TYPE: Record<string, number> = {
-  // Supplier / prime vendor stocks aren't pulled into demand math, so
-  // these multipliers mostly affect "how many units are visible at the
-  // origin of a route" rather than DOS. Kept generous.
-  Supplier: 2.0,
-  "Prime vendor": 2.0,
-  // Hubs (theater + regional) hold deep wholesale stock — keep them well
-  // above the 14-day band so the rollup doesn't flag the spine of the
-  // network on noise.
-  "Theater hub": 2.4,
-  "Regional hub": 2.4,
-  // MTFs sit a tier shallower than hubs but still need a comfortable
-  // buffer so a single optempo-driven swing doesn't make them blink.
-  "Large MTF": 2.6,
-  "Standard MTF": 2.6,
-  Clinic: 2.4,
-  // BAS / forward nodes have small absolute stocks; we scale up more so
-  // their handful of items still clear the 14-day floor.
-  BAS: 3.0,
-  "Forward node": 3.0,
-};
-const DEFAULT_BASELINE_STOCK_SCALE = 2.4;
-
-type CuratedProblemSite = {
-  /** Free-text description of the demo arc this site drives. */
-  description: string;
-  /**
-   * Per-item shortage scale. Anything in this map replaces the healthy
-   * baseline for the listed item; everything else stays nominal. Values
-   * are multipliers against the seeded sheet quantity (or, for items
-   * synthesized via `stockTargetByItem`, against the stockTarget * depth
-   * baseline) — small numbers (~0.05) push the site to <3 DOS, mid
-   * numbers (~0.3) drag it into the watch band.
-   */
-  shortageScaleByItem: Record<string, number>;
-};
-const CURATED_PROBLEM_SITES: Record<string, CuratedProblemSite> = {
-  // ----- CRITICAL forward-edge sites -----
-  // The First Island Chain BAS / clinic line is supposed to read RED on
-  // the map at scenario open: contested SLOCs + Walking Blood Bank gap
-  // means the FLOT is the canonical "blood crisis" driver. Without
-  // multiple critical anchors the map looks unhealthily quiet and
-  // operators can't tell the threat tier system is working.
-  basIron: {
-    description:
-      "Forward BAS Iron short on whole blood — Walking Blood Bank gap drives the FLOT-blood demo arc.",
-    shortageScaleByItem: {
-      ltow_pos: 0.04,
-      ltow_neg: 0.04,
-      fdp: 0.05,
-      ffp_ab: 0.06,
-      plasma_a: 0.08,
-      prbc_o: 0.08,
-    },
-  },
-  basCopper: {
-    description:
-      "Forward BAS Copper — whole blood and FDP gap mirroring the Iron site, contested resupply.",
-    shortageScaleByItem: {
-      ltow_pos: 0.05,
-      ltow_neg: 0.05,
-      fdp: 0.06,
-      prbc_o: 0.08,
-      plasma_a: 0.08,
-    },
-  },
-  basZinc: {
-    description:
-      "Forward BAS Zinc — combined Class VIII and IV shortage from intermittent airlift.",
-    shortageScaleByItem: {
-      ltow_pos: 0.05,
-      prbc_o: 0.07,
-      ffp_ab: 0.07,
-      iv_set: 0.08,
-    },
-  },
-  basSteel: {
-    description:
-      "Forward BAS Steel — multi-day blood gap with cold-chain consumables short.",
-    shortageScaleByItem: {
-      ltow_pos: 0.04,
-      prbc_o: 0.06,
-      cooler: 0.08,
-      coolant: 0.08,
-    },
-  },
-  clinicAmber: {
-    description:
-      "Clinic Amber — small-footprint forward clinic with critical PRBC shortage.",
-    shortageScaleByItem: {
-      prbc_o: 0.05,
-      ffp_ab: 0.07,
-      ltow_pos: 0.06,
-    },
-  },
-  clinicBronze: {
-    description:
-      "Clinic Bronze — typing reagents and platelets short ahead of next surge.",
-    shortageScaleByItem: {
-      platelets: 0.05,
-      abo_kit: 0.07,
-      crossmatch: 0.06,
-    },
-  },
-  // ----- CRITICAL hub / large MTF -----
-  // Large MTF caught by a cold-chain failure — liquid components are
-  // condemned and the cold-chain consumables fall to <3 DOS. This is the
-  // anchor for the cold-chain story (Yokosuka Cold-Storage Strike preset
-  // event uses the same node ids).
-  mtfHotel: {
-    description:
-      "MTF Hotel cold-chain failure — liquid blood condemned, cold-chain consumables short.",
-    shortageScaleByItem: {
-      prbc_o: 0.06,
-      plasma_a: 0.06,
-      platelets: 0.04,
-      cooler: 0.08,
-      coolant: 0.08,
-      chain_log: 0.07,
-    },
-  },
-  mtfFoxtrot: {
-    description:
-      "MTF Foxtrot — heavy trauma optempo has burned through PRBC and FFP buffers.",
-    shortageScaleByItem: {
-      prbc_o: 0.07,
-      ffp_ab: 0.07,
-      ltow_pos: 0.08,
-    },
-  },
-  // ----- HEIGHTENED warning tier -----
-  // These sites carry shortages that drag minDoS into the watch band
-  // (~5-10 days) without falling all the way to critical, so they
-  // surface as amber on the map and exercise the warning state of the
-  // tier system.
-  mtfDelta: {
-    description:
-      "MTF Delta — Class VIII watch band, blood inventory hovering above the critical floor.",
-    shortageScaleByItem: {
-      prbc_o: 0.18,
-      ltow_pos: 0.18,
-      platelets: 0.16,
-    },
-  },
-  mtfKilo: {
-    description:
-      "MTF Kilo — IV sets and crossmatch reagents in the watch band.",
-    shortageScaleByItem: {
-      iv_set: 0.18,
-      crossmatch: 0.18,
-      abo_kit: 0.20,
-    },
-  },
-  mtfRomeo: {
-    description:
-      "MTF Romeo — surge-driven PRBC drawdown without an open shortfall yet.",
-    shortageScaleByItem: {
-      prbc_o: 0.20,
-      ffp_ab: 0.20,
-    },
-  },
-  // Regional hub running into a sole-source reagent backorder — the
-  // typing/screen pipeline feeding everything downstream is at risk.
-  // This is a "cascading" problem site so heightened ripples to the
-  // MTFs in its corridor in the alerts and recommendations.
-  centralHub: {
-    description:
-      "Regional Hub Central reagent backorder — cascading typing/screen risk for downstream MTFs.",
-    shortageScaleByItem: {
-      abo_kit: 0.07,
-      crossmatch: 0.05,
-      id_screen: 0.05,
-    },
-  },
-};
-
-/**
- * Returns the inventory multiplier to apply to (`nodeId`, `itemId`) when
- * computing on-hand from the baseline target. Curated problem sites
- * override on a per-item basis; everything else falls through to the
- * type-based healthy baseline.
- */
-function inventoryScale(
-  nodeId: string,
-  itemId: string,
-  nodeType: string,
-): number {
-  const curated = CURATED_PROBLEM_SITES[nodeId];
-  if (curated) {
-    const override = curated.shortageScaleByItem[itemId];
-    if (override !== undefined) return override;
+function operationalStressScale(nodeType: string, optempo: string): number {
+  const t = nodeType.toLowerCase();
+  if (t.includes("supplier") || t.includes("prime")) return 1;
+  if (t.includes("theater") || t.includes("hub")) {
+    return optempo === "active_operations" ? 0.32 : 0.45;
   }
-  return (
-    BASELINE_STOCK_SCALE_BY_TYPE[nodeType] ?? DEFAULT_BASELINE_STOCK_SCALE
-  );
+  if (t.includes("large mtf")) {
+    return optempo === "active_operations" ? 0.18 : 0.28;
+  }
+  if (t.includes("standard mtf") || t.includes("clinic")) {
+    return optempo === "active_operations" ? 0.13 : 0.2;
+  }
+  if (t.includes("bas")) {
+    return optempo === "active_operations" ? 0.05 : 0.09;
+  }
+  return 0.25;
 }
 
 function deterministicJitter(seed: string): number {
@@ -1323,7 +1117,7 @@ export async function runSeed(opts: SeedOptions = {}): Promise<void> {
     const itemId = asString(r.item_id);
     const meta = nodeMetaForBalance.get(nodeId) ?? { type: "Site", optempo: "garrison" };
     const baseQty = asNumber(r.quantity_on_hand);
-    const scale = inventoryScale(nodeId, itemId, meta.type);
+    const scale = operationalStressScale(meta.type, meta.optempo);
     const jitter = deterministicJitter(`${nodeId}:${itemId}`);
     const onHand = Math.max(0, Math.round(baseQty * scale * jitter));
     return {
@@ -1357,17 +1151,13 @@ export async function runSeed(opts: SeedOptions = {}): Promise<void> {
   for (const node of nodeRows) {
     const nodeId = asString(node.id);
     const type = asString(node.type, "Site");
+    const optempo = asString(node.optempo, "garrison");
     const depth = depthByType[type] ?? 1;
+    const stress = operationalStressScale(type, optempo);
     for (const [itemId, base] of Object.entries(stockTargetByItem)) {
       if (sheetItemIds.has(itemId)) continue; // already covered by sheet
-      // Inventory scale comes from the curated stress profile: most
-      // sites get the type-based healthy baseline; the handful of
-      // curated problem sites get per-item shortage overrides so the
-      // demo arc (forward blood gap, cold-chain failure, reagent
-      // backorder) shows up as real critical-DOS items.
-      const scale = inventoryScale(nodeId, itemId, type);
       const jitter = deterministicJitter(`${nodeId}:${itemId}`);
-      const onHand = Math.max(0, Math.round(base * depth * scale * jitter));
+      const onHand = Math.max(0, Math.round(base * depth * stress * jitter));
       newBalances.push({ nodeId, itemId, onHand, dueIn: 0, dueOut: 0, allocated: 0 });
     }
   }
