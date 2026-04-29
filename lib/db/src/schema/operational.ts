@@ -11,6 +11,10 @@ export const operationalStates = pgTable("operational_states", {
 export const demandProfiles = pgTable("demand_profiles", {
   nodeId: text("node_id").primaryKey(),
   activeSupportedPopulation: integer("active_supported_population").notNull().default(0),
+  // Snapshot of the originally-seeded PAR value so an operator-edited PAR can
+  // be reverted to the baseline without remembering the original number.
+  // Populated by the seeder; mirrors `activeSupportedPopulation` on insert.
+  seededActiveSupportedPopulation: integer("seeded_active_supported_population").notNull().default(0),
   dailyEncounterRate: doublePrecision("daily_encounter_rate").notNull().default(0),
   phlebotomyProbability: doublePrecision("phlebotomy_probability").notNull().default(0),
   specimensPerPhlebotomy: doublePrecision("specimens_per_phlebotomy").notNull().default(1),

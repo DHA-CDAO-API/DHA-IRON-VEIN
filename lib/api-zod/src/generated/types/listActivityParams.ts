@@ -8,4 +8,12 @@
 
 export type ListActivityParams = {
   limit?: number;
+  /**
+   * Filter to entries scoped to a single site/node.
+   */
+  nodeId?: string;
+  /**
+   * Filter to a single activity kind (e.g. PAR_CHANGED).
+   */
+  kind?: string;
 };

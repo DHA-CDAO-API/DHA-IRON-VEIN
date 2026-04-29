@@ -454,7 +454,17 @@ export const GetSiteDetailResponse = zod.object({
   }),
   demandProfile: zod.object({
     nodeId: zod.string(),
-    activeSupportedPopulation: zod.number(),
+    activeSupportedPopulation: zod
+      .number()
+      .describe(
+        "Current Population at Risk for the site. Drives daily encounters,\nphlebotomy events, transfusion volume, and population-triggered\nitem demand. Editable by operators on the Site Detail page.\n",
+      ),
+    seededActiveSupportedPopulation: zod
+      .number()
+      .optional()
+      .describe(
+        'Snapshot of the originally-seeded PAR for this site. Used by the\nUI to offer a \"reset to seeded value\" affordance after an\noperator-driven edit.\n',
+      ),
     dailyEncounterRate: zod.number(),
     phlebotomyProbability: zod.number(),
     specimensPerPhlebotomy: zod.number(),
@@ -760,6 +770,52 @@ export const GetSiteDetailResponse = zod.object({
     .describe(
       "Per-site blood-products roll-up. Null when the node holds no blood\n(e.g. suppliers \/ prime vendors).\n",
     ),
+});
+
+/**
+ * Persists a new PAR value on the site's `demand_profiles` row, writes a
+`PAR_CHANGED` activity entry capturing the old value, the new value,
+the actor, and an optional note, and returns the updated demand
+profile so callers can refresh derived metrics (DOS, days-to-fail,
+recommendations, alerts).
+
+ * @summary Update the Population at Risk (active supported population) for a site.
+ */
+export const UpdateSitePopulationParams = zod.object({
+  nodeId: zod.coerce.string(),
+});
+
+export const updateSitePopulationBodyActiveSupportedPopulationMin = 0;
+
+export const UpdateSitePopulationBody = zod.object({
+  activeSupportedPopulation: zod
+    .number()
+    .min(updateSitePopulationBodyActiveSupportedPopulationMin)
+    .describe("New Population at Risk for the site."),
+  note: zod
+    .string()
+    .optional()
+    .describe("Optional short rationale stored on the activity entry."),
+});
+
+export const UpdateSitePopulationResponse = zod.object({
+  nodeId: zod.string(),
+  activeSupportedPopulation: zod
+    .number()
+    .describe(
+      "Current Population at Risk for the site. Drives daily encounters,\nphlebotomy events, transfusion volume, and population-triggered\nitem demand. Editable by operators on the Site Detail page.\n",
+    ),
+  seededActiveSupportedPopulation: zod
+    .number()
+    .optional()
+    .describe(
+      'Snapshot of the originally-seeded PAR for this site. Used by the\nUI to offer a \"reset to seeded value\" affordance after an\noperator-driven edit.\n',
+    ),
+  dailyEncounterRate: zod.number(),
+  phlebotomyProbability: zod.number(),
+  specimensPerPhlebotomy: zod.number(),
+  operationalState: zod.string(),
+  wasteFactor: zod.number(),
 });
 
 export const ListItemsResponseItem = zod.object({
@@ -3069,6 +3125,14 @@ export const listActivityQueryLimitDefault = 30;
 
 export const ListActivityQueryParams = zod.object({
   limit: zod.coerce.number().default(listActivityQueryLimitDefault),
+  nodeId: zod.coerce
+    .string()
+    .optional()
+    .describe("Filter to entries scoped to a single site\/node."),
+  kind: zod.coerce
+    .string()
+    .optional()
+    .describe("Filter to a single activity kind (e.g. PAR_CHANGED)."),
 });
 
 export const ListActivityResponseItem = zod.object({

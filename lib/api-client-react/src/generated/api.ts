@@ -35,6 +35,7 @@ import type {
   CreateTheaterZoneInput,
   DashboardOverview,
   DatabaseHealthList,
+  DemandProfile,
   EventType,
   ForecastInput,
   ForecastResult,
@@ -97,6 +98,7 @@ import type {
   UpdateProfileInput,
   UpdateScenarioInput,
   UpdateSettingsInput,
+  UpdateSitePopulationInput,
 } from "./api.schemas";
 
 import { customFetch } from "../custom-fetch";
@@ -1192,6 +1194,100 @@ export function useGetSiteDetail<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * Persists a new PAR value on the site's `demand_profiles` row, writes a
+`PAR_CHANGED` activity entry capturing the old value, the new value,
+the actor, and an optional note, and returns the updated demand
+profile so callers can refresh derived metrics (DOS, days-to-fail,
+recommendations, alerts).
+
+ * @summary Update the Population at Risk (active supported population) for a site.
+ */
+export const getUpdateSitePopulationUrl = (nodeId: string) => {
+  return `/api/sites/${nodeId}/par`;
+};
+
+export const updateSitePopulation = async (
+  nodeId: string,
+  updateSitePopulationInput: UpdateSitePopulationInput,
+  options?: RequestInit,
+): Promise<DemandProfile> => {
+  return customFetch<DemandProfile>(getUpdateSitePopulationUrl(nodeId), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updateSitePopulationInput),
+  });
+};
+
+export const getUpdateSitePopulationMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateSitePopulation>>,
+    TError,
+    { nodeId: string; data: BodyType<UpdateSitePopulationInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateSitePopulation>>,
+  TError,
+  { nodeId: string; data: BodyType<UpdateSitePopulationInput> },
+  TContext
+> => {
+  const mutationKey = ["updateSitePopulation"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateSitePopulation>>,
+    { nodeId: string; data: BodyType<UpdateSitePopulationInput> }
+  > = (props) => {
+    const { nodeId, data } = props ?? {};
+
+    return updateSitePopulation(nodeId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateSitePopulationMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateSitePopulation>>
+>;
+export type UpdateSitePopulationMutationBody =
+  BodyType<UpdateSitePopulationInput>;
+export type UpdateSitePopulationMutationError = ErrorType<void>;
+
+/**
+ * @summary Update the Population at Risk (active supported population) for a site.
+ */
+export const useUpdateSitePopulation = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateSitePopulation>>,
+    TError,
+    { nodeId: string; data: BodyType<UpdateSitePopulationInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateSitePopulation>>,
+  TError,
+  { nodeId: string; data: BodyType<UpdateSitePopulationInput> },
+  TContext
+> => {
+  return useMutation(getUpdateSitePopulationMutationOptions(options));
+};
 
 export const getListItemsUrl = () => {
   return `/api/items`;

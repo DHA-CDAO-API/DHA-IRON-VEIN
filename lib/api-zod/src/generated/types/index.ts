@@ -209,4 +209,5 @@ export * from "./updateProfileInput";
 export * from "./updateScenarioInput";
 export * from "./updateSettingsInput";
 export * from "./updateSettingsInputAiProvider";
+export * from "./updateSitePopulationInput";
 export * from "./wbbReadyByType";

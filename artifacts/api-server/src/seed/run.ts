@@ -967,15 +967,21 @@ export async function runSeed(opts: SeedOptions = {}): Promise<void> {
     "waste_factor",
   ]);
   await db.insert(demandProfiles).values(
-    profileRows.map((r) => ({
-      nodeId: asString(r.node_id),
-      activeSupportedPopulation: Math.round(asNumber(r.active_supported_population)),
-      dailyEncounterRate: asNumber(r.daily_encounter_rate),
-      phlebotomyProbability: asNumber(r.phlebotomy_probability),
-      specimensPerPhlebotomy: asNumber(r.specimens_per_phlebotomy, 1),
-      operationalState: asString(r.operational_state, "garrison"),
-      wasteFactor: asNumber(r.waste_factor, 1.1),
-    })),
+    profileRows.map((r) => {
+      const par = Math.round(asNumber(r.active_supported_population));
+      return {
+        nodeId: asString(r.node_id),
+        activeSupportedPopulation: par,
+        // Snapshot the seeded PAR so the UI can offer a "reset to seeded value"
+        // affordance after an operator edits PAR for a site.
+        seededActiveSupportedPopulation: par,
+        dailyEncounterRate: asNumber(r.daily_encounter_rate),
+        phlebotomyProbability: asNumber(r.phlebotomy_probability),
+        specimensPerPhlebotomy: asNumber(r.specimens_per_phlebotomy, 1),
+        operationalState: asString(r.operational_state, "garrison"),
+        wasteFactor: asNumber(r.waste_factor, 1.1),
+      };
+    }),
   );
 
   // ---- Operational states ----

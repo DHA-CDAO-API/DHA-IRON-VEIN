@@ -9,11 +9,14 @@ import {
   usePromoteRecommendationToOrder,
   useListItems,
   useListSuppliers,
+  useListActivity,
+  getListActivityQueryKey,
   getListItemsQueryKey,
   type Item,
   type DaysOfSupplyEntry,
   type Recommendation,
   type HistoryPoint,
+  type ActivityEntry,
 } from '@workspace/api-client-react';
 import { PromoteDialog, type PromoteOverrides } from '@/components/PromoteDialog';
 import { Area, AreaChart, ResponsiveContainer, Tooltip as RechartsTooltip, YAxis } from 'recharts';
@@ -40,6 +43,7 @@ import {
 } from '@/lib/format';
 import { orderStatusBadgeClass, orderStatusLabel } from '@/lib/orderStatus';
 import { BloodReadinessTab } from '@/components/site/blood/BloodReadinessTab';
+import { SitePopulationEditor } from '@/components/site/SitePopulationEditor';
 import { NewOrderDialog } from '@/components/orders/NewOrderDialog';
 import { Plus } from 'lucide-react';
 import { TagEditor } from '@/components/tags/TagEditor';
@@ -260,6 +264,8 @@ export default function SiteDetail() {
     setOptempoOverride(null);
   }, [nodeId]);
 
+  const livePar = detail?.demandProfile?.activeSupportedPopulation ?? null;
+
   useEffect(() => {
     if (!detail || !nodeId) return;
     const itemIds = detail.dosByItem.map((d) => d.itemId).slice(0, 50);
@@ -273,7 +279,16 @@ export default function SiteDetail() {
       },
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nodeId, detail?.node?.id, forecastHorizon, effectiveOptempo]);
+  }, [nodeId, detail?.node?.id, forecastHorizon, effectiveOptempo, livePar]);
+
+  const siteActivityParams = { nodeId: nodeId ?? '', limit: 50 };
+  const siteActivity = useListActivity(siteActivityParams, {
+    query: {
+      enabled: !!nodeId,
+      queryKey: getListActivityQueryKey(siteActivityParams),
+    },
+  });
+  const siteActivityEntries: ActivityEntry[] = siteActivity.data ?? [];
 
   const forecastShortages = useMemo(() => {
     if (forecastSeries.length === 0) {
@@ -377,6 +392,16 @@ export default function SiteDetail() {
             <span>{node.latitude.toFixed(4)}, {node.longitude.toFixed(4)}</span>
             {node.countryCode && <span>• {node.countryCode}</span>}
           </div>
+          {detail.demandProfile && (
+            <div className="mt-2">
+              <SitePopulationEditor
+                nodeId={node.id}
+                nodeName={node.name}
+                activeSupportedPopulation={detail.demandProfile.activeSupportedPopulation}
+                seededActiveSupportedPopulation={detail.demandProfile.seededActiveSupportedPopulation ?? null}
+              />
+            </div>
+          )}
           <div className="mt-2">
             <TagEditor entityType="node" entityId={node.id} />
           </div>
@@ -609,35 +634,79 @@ export default function SiteDetail() {
               </TabsContent>
 
               <TabsContent value="activity" className="m-0 p-4">
-                <div className="space-y-2">
-                  {recentOrders.map((order) => (
-                    <Link
-                      key={order.id}
-                      href={`/orders/${order.id}`}
-                      className="flex justify-between items-center p-3 border border-border/40 rounded-md hover:bg-muted/20 transition-colors"
-                    >
-                      <div>
-                        <div className="font-medium text-sm">
-                          {order.orderNumber} · {order.itemName ?? order.itemId}
-                        </div>
-                        <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
-                          <Badge
-                            variant="outline"
-                            className={`text-[10px] px-1.5 py-0 h-4 uppercase tracking-wider ${orderStatusBadgeClass(order.status)}`}
-                          >
-                            {orderStatusLabel(order.status)}
-                          </Badge>
-                          <span>· Priority: {order.priority}</span>
-                        </div>
+                <div className="space-y-4" data-testid="site-activity-tab">
+                  {siteActivityEntries.length > 0 && (
+                    <div className="space-y-2" data-testid="site-activity-entries">
+                      <div className="text-xs uppercase tracking-wider text-muted-foreground">
+                        Site activity
                       </div>
-                      <div className="text-right">
-                        <div className="font-mono text-sm">Qty: {formatNumber(order.quantity)}</div>
-                        <div className="text-xs text-muted-foreground">{new Date(order.createdAt).toLocaleDateString()}</div>
-                      </div>
-                    </Link>
-                  ))}
-                  {recentOrders.length === 0 && (
-                    <div className="text-center py-12 text-sm text-muted-foreground">No recent orders for this site</div>
+                      {siteActivityEntries.map((entry) => (
+                        <div
+                          key={entry.id}
+                          className="flex items-start justify-between gap-3 p-3 border border-border/40 rounded-md"
+                          data-testid={`site-activity-entry-${entry.kind}`}
+                        >
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <Badge
+                                variant="outline"
+                                className="text-[10px] px-1.5 py-0 h-4 uppercase tracking-wider"
+                              >
+                                {entry.kind}
+                              </Badge>
+                              {entry.actorRole && (
+                                <span className="text-xs text-muted-foreground">
+                                  · {entry.actorRole}
+                                </span>
+                              )}
+                            </div>
+                            <div className="mt-1 text-sm break-words">{entry.summary}</div>
+                          </div>
+                          <div className="text-xs text-muted-foreground whitespace-nowrap">
+                            {new Date(entry.createdAt).toLocaleString()}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <div className="space-y-2">
+                    <div className="text-xs uppercase tracking-wider text-muted-foreground">
+                      Recent orders
+                    </div>
+                    {recentOrders.map((order) => (
+                      <Link
+                        key={order.id}
+                        href={`/orders/${order.id}`}
+                        className="flex justify-between items-center p-3 border border-border/40 rounded-md hover:bg-muted/20 transition-colors"
+                      >
+                        <div>
+                          <div className="font-medium text-sm">
+                            {order.orderNumber} · {order.itemName ?? order.itemId}
+                          </div>
+                          <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+                            <Badge
+                              variant="outline"
+                              className={`text-[10px] px-1.5 py-0 h-4 uppercase tracking-wider ${orderStatusBadgeClass(order.status)}`}
+                            >
+                              {orderStatusLabel(order.status)}
+                            </Badge>
+                            <span>· Priority: {order.priority}</span>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className="font-mono text-sm">Qty: {formatNumber(order.quantity)}</div>
+                          <div className="text-xs text-muted-foreground">{new Date(order.createdAt).toLocaleDateString()}</div>
+                        </div>
+                      </Link>
+                    ))}
+                    {recentOrders.length === 0 && (
+                      <div className="text-center py-6 text-sm text-muted-foreground">No recent orders for this site</div>
+                    )}
+                  </div>
+
+                  {recentOrders.length === 0 && siteActivityEntries.length === 0 && (
+                    <div className="text-center py-12 text-sm text-muted-foreground">No recent activity for this site</div>
                   )}
                 </div>
               </TabsContent>

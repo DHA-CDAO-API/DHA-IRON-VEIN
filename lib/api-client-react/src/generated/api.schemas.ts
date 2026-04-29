@@ -439,7 +439,16 @@ export interface SiteSummary {
 
 export interface DemandProfile {
   nodeId: string;
+  /** Current Population at Risk for the site. Drives daily encounters,
+phlebotomy events, transfusion volume, and population-triggered
+item demand. Editable by operators on the Site Detail page.
+ */
   activeSupportedPopulation: number;
+  /** Snapshot of the originally-seeded PAR for this site. Used by the
+UI to offer a "reset to seeded value" affordance after an
+operator-driven edit.
+ */
+  seededActiveSupportedPopulation?: number;
   dailyEncounterRate: number;
   phlebotomyProbability: number;
   specimensPerPhlebotomy: number;
@@ -860,6 +869,16 @@ export interface SiteDetail {
 (e.g. suppliers / prime vendors).
  */
   bloodReadiness?: NodeBloodReadiness | null;
+}
+
+export interface UpdateSitePopulationInput {
+  /**
+   * New Population at Risk for the site.
+   * @minimum 0
+   */
+  activeSupportedPopulation: number;
+  /** Optional short rationale stored on the activity entry. */
+  note?: string;
 }
 
 /**
@@ -2171,6 +2190,14 @@ export type GetRecommendationsParams = {
 
 export type ListActivityParams = {
   limit?: number;
+  /**
+   * Filter to entries scoped to a single site/node.
+   */
+  nodeId?: string;
+  /**
+   * Filter to a single activity kind (e.g. PAR_CHANGED).
+   */
+  kind?: string;
 };
 
 export type GetOverviewLeaderboardParams = {

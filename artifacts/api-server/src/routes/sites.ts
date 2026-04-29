@@ -8,10 +8,11 @@ import {
   items as itemsTable,
   suppliers as suppliersTable,
   demandProfiles,
+  activityEntries,
 } from "@workspace/db";
 import { and, desc, eq } from "drizzle-orm";
 import { computeRiskByNode } from "../lib/snapshot";
-import { loadSimContext } from "../lib/ctx";
+import { invalidateSimCache, loadSimContext } from "../lib/ctx";
 import { computeNodeBloodReadiness } from "../lib/blood-readiness";
 import { mapRecommendationToApi } from "../lib/mappers";
 import { mapDbAlertToApi } from "./alerts";
@@ -170,6 +171,82 @@ router.get("/sites/:nodeId", async (req, res, next) => {
       history,
       bloodReadiness,
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.patch("/sites/:nodeId/par", async (req, res, next) => {
+  try {
+    const nodeId = req.params.nodeId;
+    const body = (req.body ?? {}) as {
+      activeSupportedPopulation?: unknown;
+      note?: unknown;
+    };
+    const raw = body.activeSupportedPopulation;
+    const par =
+      typeof raw === "number"
+        ? raw
+        : typeof raw === "string" && raw.trim() !== ""
+          ? Number(raw)
+          : NaN;
+    if (!Number.isFinite(par) || par < 0) {
+      return res
+        .status(400)
+        .json({ error: "activeSupportedPopulation must be a non-negative number" });
+    }
+    const newPar = Math.round(par);
+    const note =
+      typeof body.note === "string" && body.note.trim() !== ""
+        ? body.note.trim().slice(0, 500)
+        : null;
+
+    const [nodeRow] = await db.select().from(nodes).where(eq(nodes.id, nodeId));
+    if (!nodeRow) return res.status(404).json({ error: "node not found" });
+    const [existing] = await db
+      .select()
+      .from(demandProfiles)
+      .where(eq(demandProfiles.nodeId, nodeId));
+    if (!existing) {
+      return res.status(404).json({ error: "demand profile not found for node" });
+    }
+
+    const oldPar = existing.activeSupportedPopulation;
+    const seeded = existing.seededActiveSupportedPopulation;
+
+    if (newPar !== oldPar) {
+      const [updated] = await db
+        .update(demandProfiles)
+        .set({ activeSupportedPopulation: newPar })
+        .where(eq(demandProfiles.nodeId, nodeId))
+        .returning();
+
+      const isReset = newPar === seeded && oldPar !== seeded;
+      const summary = `${nodeRow.name} PAR ${oldPar.toLocaleString()} → ${newPar.toLocaleString()}${
+        isReset ? " (reset to seeded value)" : ""
+      }${note ? ` — ${note}` : ""}`;
+
+      await db.insert(activityEntries).values({
+        kind: "PAR_CHANGED",
+        actor: "operator",
+        message: summary,
+        refType: "node",
+        refId: nodeId,
+        meta: {
+          nodeId,
+          from: oldPar,
+          to: newPar,
+          seededValue: seeded,
+          reset: isReset,
+          note,
+        },
+      });
+
+      invalidateSimCache();
+      return res.json(updated);
+    }
+
+    return res.json(existing);
   } catch (err) {
     next(err);
   }
