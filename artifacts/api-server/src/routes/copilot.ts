@@ -106,12 +106,47 @@ router.get("/copilot/conversations/:conversationId", async (req, res, next) => {
 router.post(
   "/copilot/conversations/:conversationId/messages",
   async (req, res, next) => {
-    try {
-      const convId = req.params.conversationId;
-      const body = req.body as { content: string };
-      const [conv] = await db.select().from(conversations).where(eq(conversations.id, convId));
-      if (!conv) return res.status(404).json({ error: "conversation not found" });
+    const convId = req.params.conversationId;
+    const body = req.body as { content: string };
 
+    // 1. Conversation lookup happens BEFORE any SSE response so a missing
+    //    conversation can surface as a normal 404 with JSON body.
+    let conv;
+    try {
+      [conv] = await db
+        .select()
+        .from(conversations)
+        .where(eq(conversations.id, convId));
+    } catch (err) {
+      return next(err);
+    }
+    if (!conv) return res.status(404).json({ error: "conversation not found" });
+
+    // 2. Commit the SSE response immediately. Once headers are flushed,
+    //    every subsequent failure becomes a `data: {type:"error",...}`
+    //    frame the client already knows how to render — instead of a
+    //    bare HTTP 500 with no detail (which prod's sanitizing error
+    //    handler would otherwise produce). This both improves UX and
+    //    makes prod-only failures debuggable from the browser.
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache, no-transform");
+    res.setHeader("Connection", "keep-alive");
+    res.setHeader("X-Accel-Buffering", "no");
+    res.flushHeaders?.();
+
+    const send = (obj: unknown) => {
+      try {
+        res.write(`data: ${JSON.stringify(obj)}\n\n`);
+      } catch {
+        /* client disconnected — nothing to do */
+      }
+    };
+
+    let assistantBuffer = "";
+    let provider: "openai" | "anthropic" = "openai";
+    let model = "";
+
+    try {
       await db.insert(conversationMessages).values({
         conversationId: convId,
         role: "user",
@@ -142,8 +177,10 @@ router.post(
             .orderBy(desc(ordersTable.createdAt))
             .limit(40),
         ]);
-      const provider = (settings?.aiProvider ?? conv.aiProvider) as "openai" | "anthropic";
-      const model = resolveModel(provider, settings?.aiModel ?? conv.aiModel);
+      provider = (settings?.aiProvider ?? conv.aiProvider) as
+        | "openai"
+        | "anthropic";
+      model = resolveModel(provider, settings?.aiModel ?? conv.aiModel);
 
       const top5 = [...risk.riskByNode]
         .sort((a, b) => b.riskScore - a.riskScore)
@@ -225,37 +262,21 @@ router.post(
         content: m.content,
       }));
 
-      res.setHeader("Content-Type", "text/event-stream");
-      res.setHeader("Cache-Control", "no-cache, no-transform");
-      res.setHeader("Connection", "keep-alive");
-      res.setHeader("X-Accel-Buffering", "no");
-      res.flushHeaders?.();
-
-      const send = (obj: unknown) => {
-        res.write(`data: ${JSON.stringify(obj)}\n\n`);
-      };
-
-      let assistantBuffer = "";
-      try {
-        for await (const chunk of streamChat({
-          provider,
-          model,
-          system: `${COMMANDER_SYSTEM}\n\n${theaterContext}\n\nUser role: ${conv.role}.`,
-          messages,
-          maxOutputTokens: 700,
-        })) {
-          if (chunk.type === "token") {
-            assistantBuffer += chunk.value;
-            send(chunk);
-          } else if (chunk.type === "error") {
-            send(chunk);
-          } else if (chunk.type === "done") {
-            send(chunk);
-          }
+      for await (const chunk of streamChat({
+        provider,
+        model,
+        system: `${COMMANDER_SYSTEM}\n\n${theaterContext}\n\nUser role: ${conv.role}.`,
+        messages,
+        maxOutputTokens: 700,
+      })) {
+        if (chunk.type === "token") {
+          assistantBuffer += chunk.value;
+          send(chunk);
+        } else if (chunk.type === "error") {
+          send(chunk);
+        } else if (chunk.type === "done") {
+          send(chunk);
         }
-      } catch (err) {
-        send({ type: "error", value: err instanceof Error ? err.message : String(err) });
-        send({ type: "done" });
       }
 
       const citations = extractCitations(assistantBuffer);
@@ -277,10 +298,47 @@ router.post(
         refId: convId,
         meta: { provider, model },
       });
-      res.end();
     } catch (err) {
-      req.log?.error({ err }, "copilot stream failed");
-      next(err);
+      // SSE response is already committed (status 200), so we surface the
+      // failure as an in-stream error frame the client renders inline —
+      // not as an HTTP 500 with no detail. Full stack is logged server-side.
+      // We deliberately echo the raw err.message in the SSE frame for this
+      // hackathon demo so prod-only failures stay diagnosable from the
+      // browser; for a hardened deployment, replace with a sanitized
+      // user-safe string + correlation id.
+      req.log?.error(
+        { err, convId, provider, model },
+        "copilot stream failed",
+      );
+      const msg = err instanceof Error ? err.message : String(err);
+      send({ type: "error", value: msg });
+      send({ type: "done" });
+      // Persist an assistant-side error turn so the conversation transcript
+      // stays consistent — otherwise the saved history is left with a
+      // dangling user message and no reply, which corrupts the next turn's
+      // context window. Best-effort: a DB failure here is non-fatal.
+      try {
+        await db.insert(conversationMessages).values({
+          conversationId: convId,
+          role: "assistant",
+          content: `[copilot error] ${msg}`,
+        });
+        await db
+          .update(conversations)
+          .set({ updatedAt: new Date() })
+          .where(eq(conversations.id, convId));
+      } catch (persistErr) {
+        req.log?.error(
+          { err: persistErr, convId },
+          "failed to persist copilot error turn",
+        );
+      }
+    } finally {
+      try {
+        res.end();
+      } catch {
+        /* already ended */
+      }
     }
   },
 );
