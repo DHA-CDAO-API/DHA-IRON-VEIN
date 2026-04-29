@@ -52,7 +52,7 @@ export interface DatabaseHealthList {
 }
 
 /**
- * Heuristic health verdict from row count + scan ratio + analyze recency.
+ * Heuristic verdict: 'empty' if rowCount is 0, 'degraded' if a meaningfully-sized table is dominated by sequential scans, otherwise 'healthy'.
  */
 export type TableHealthStatus =
   (typeof TableHealthStatus)[keyof typeof TableHealthStatus];
@@ -88,7 +88,7 @@ export interface TableHealth {
   lastAnalyze?: string | null;
   /** @nullable */
   lastAutoanalyze?: string | null;
-  /** Heuristic health verdict from row count + scan ratio + analyze recency. */
+  /** Heuristic verdict: 'empty' if rowCount is 0, 'degraded' if a meaningfully-sized table is dominated by sequential scans, otherwise 'healthy'. */
   status: TableHealthStatus;
   /**
    * Human-readable explanation when status is not 'healthy'.
@@ -100,6 +100,58 @@ export interface TableHealth {
 export interface TableHealthList {
   tables: TableHealth[];
   checkedAt: string;
+}
+
+export interface SupplyImportTableCounts {
+  /** Row count of the isolated catalog staging table. */
+  supply_demo_v2_catalog: number;
+  /** Row count of the isolated facility staging table. */
+  supply_demo_v2_facilities: number;
+  /** Row count of the isolated issue staging table. */
+  supply_demo_v2_issues: number;
+  /** Row count of the import-run history table. */
+  supply_demo_v2_imports: number;
+}
+
+export interface SupplyImportRun {
+  id: number;
+  /**
+   * Path to the source spreadsheet, if recorded.
+   * @nullable
+   */
+  sourceFile?: string | null;
+  startedAt: string;
+  /** @nullable */
+  finishedAt?: string | null;
+  /**
+   * Wall-clock duration in milliseconds.
+   * @nullable
+   */
+  durationMs?: number | null;
+  /** @nullable */
+  sourceRowsRead?: number | null;
+  /** @nullable */
+  duplicatesCollapsed?: number | null;
+  /** @nullable */
+  catalogUpserts?: number | null;
+  /** @nullable */
+  facilityUpserts?: number | null;
+  /** @nullable */
+  issueRowsInserted?: number | null;
+  /** @nullable */
+  notes?: string | null;
+}
+
+export interface SupplyImportStatus {
+  checkedAt: string;
+  tableCounts: SupplyImportTableCounts;
+  /** Count of catalog_entries rows produced by the reconciler (source = 'supply_demo_v2'). */
+  reconciledCatalogCount: number;
+  /** Count of supply_demo_v2_facilities rows whose node_id has been populated. */
+  mappedFacilitiesCount: number;
+  /** Count of nodes rows with hidden_from_map = true. */
+  hiddenNodeCount: number;
+  recentImports: SupplyImportRun[];
 }
 
 export interface SeedStatus {

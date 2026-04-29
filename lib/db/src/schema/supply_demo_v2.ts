@@ -44,6 +44,11 @@ export const supplyDemoV2Catalog = pgTable(
   }),
 );
 
+// NOTE: we intentionally do not import `nodes` here to avoid coupling this
+// staging schema to the runtime network schema. The `nodeId` column carries
+// the foreign key id as a plain text reference; the real FK constraint is
+// added via raw SQL in the migration step rather than in the Drizzle table
+// definition, so the staging file can stand alone.
 export const supplyDemoV2Facilities = pgTable("supply_demo_v2_facilities", {
   id: serial("id").primaryKey(),
   code: text("code").notNull().unique(),
@@ -52,6 +57,10 @@ export const supplyDemoV2Facilities = pgTable("supply_demo_v2_facilities", {
   importedAt: timestamp("imported_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
+  // Set by the facility-mapping step to the id of the corresponding row in
+  // `nodes` (always created with `hidden_from_map = true`). Nullable until
+  // the mapping step runs.
+  nodeId: text("node_id"),
 });
 
 export const supplyDemoV2Issues = pgTable(

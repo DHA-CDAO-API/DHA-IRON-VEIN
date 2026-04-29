@@ -11,11 +11,16 @@ import {
 } from "../lib/snapshot";
 import { computeBloodReadinessByNode } from "../lib/blood-readiness";
 
+// Hide supply-demo placeholder nodes from any endpoint that drives the
+// network map. They live in the table so we have a real FK target for
+// supply_demo_v2_facilities.node_id, but they have no real geography.
+const VISIBLE_NODES_FILTER = eq(nodes.hiddenFromMap, false);
+
 const router: IRouter = Router();
 
 router.get("/network/nodes", async (_req, res, next) => {
   try {
-    const rows = await db.select().from(nodes);
+    const rows = await db.select().from(nodes).where(VISIBLE_NODES_FILTER);
     res.json(rows);
   } catch (err) {
     next(err);
@@ -42,7 +47,7 @@ router.get("/network/snapshot", async (_req, res, next) => {
       zoneRows,
       bloodReadinessByNode,
     ] = await Promise.all([
-      db.select().from(nodes),
+      db.select().from(nodes).where(VISIBLE_NODES_FILTER),
       db.select().from(routes),
       computeRiskByNode(),
       computeInFlightShipments(),
@@ -54,12 +59,20 @@ router.get("/network/snapshot", async (_req, res, next) => {
       ...r,
       categories: Array.from(routeCats.get(`${r.fromNode}::${r.toNode}`) ?? []),
     }));
+    // Drop risk entries for hidden nodes so the snapshot's riskByNode array
+    // exactly matches the visible nodes set returned above. computeRiskByNode
+    // iterates every node in the sim context, including the hidden
+    // supplyV2_* placeholders, so we filter at the wire boundary.
+    const visibleNodeIds = new Set(nodeRows.map((n) => n.id));
+    const filteredRisk = risk.riskByNode.filter((r) =>
+      visibleNodeIds.has(r.nodeId),
+    );
     res.json({
       generatedAt: new Date().toISOString(),
       nodes: nodeRows,
       routes: decoratedRoutes,
       shipments,
-      riskByNode: risk.riskByNode,
+      riskByNode: filteredRisk,
       threats: THREATS,
       zones: zoneRows.map((z) => ({
         ...z,

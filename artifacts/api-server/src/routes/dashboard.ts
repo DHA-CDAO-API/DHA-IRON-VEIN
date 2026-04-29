@@ -22,7 +22,9 @@ router.get("/dashboard/overview", async (_req, res, next) => {
         loadSimContext(),
         db.select().from(alerts).where(eq(alerts.status, "OPEN")),
         db.select().from(activityEntries).orderBy(desc(activityEntries.ts)).limit(10),
-        db.select().from(nodes),
+        // Hide supply-demo placeholder nodes from the dashboard map widget;
+        // they have no real geography and are kept invisible by design.
+        db.select().from(nodes).where(eq(nodes.hiddenFromMap, false)),
         db
           .select()
           .from(orders)

@@ -28,6 +28,7 @@ import {
   ArrowUp,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { SupplyImportPanel } from '@/components/admin/SupplyImportPanel';
 
 const DB_REFRESH_INTERVAL_MS = 15_000;
 const TABLES_REFRESH_INTERVAL_MS = 30_000;
@@ -678,6 +679,8 @@ export default function DataAdmin() {
           )}
         </CardContent>
       </Card>
+
+      <SupplyImportPanel />
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { pgTable, text, integer, doublePrecision } from "drizzle-orm/pg-core";
+import { pgTable, text, integer, doublePrecision, boolean } from "drizzle-orm/pg-core";
 
 export const nodes = pgTable("nodes", {
   id: text("id").primaryKey(),
@@ -12,6 +12,11 @@ export const nodes = pgTable("nodes", {
   regionalHub: text("regional_hub"),
   upstreamNode: text("upstream_node"),
   countryCode: text("country_code"),
+  // When true, this node represents a placeholder created by the supply
+  // demo facility import. It carries no real geography and must NOT be
+  // rendered on the network map. The Sites list page still shows it so an
+  // operator can choose to promote it later.
+  hiddenFromMap: boolean("hidden_from_map").notNull().default(false),
 });
 
 export const routes = pgTable("routes", {

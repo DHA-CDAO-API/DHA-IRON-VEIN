@@ -7,7 +7,7 @@
  */
 
 /**
- * Heuristic health verdict from row count + scan ratio + analyze recency.
+ * Heuristic verdict: 'empty' if rowCount is 0, 'degraded' if a meaningfully-sized table is dominated by sequential scans, otherwise 'healthy'.
  */
 export type TableHealthStatus =
   (typeof TableHealthStatus)[keyof typeof TableHealthStatus];

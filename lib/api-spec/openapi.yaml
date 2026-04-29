@@ -82,6 +82,18 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/TableHealthList" }
 
+  /admin/supply-import/status:
+    get:
+      operationId: getSupplyImportStatus
+      tags: [admin]
+      summary: Read-only status of the supply demo import pipeline — staging counts, reconciliation counts, hidden-node counts, and the last 10 import runs.
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SupplyImportStatus" }
+
   /catalog/items:
     get:
       operationId: listCatalogItems
@@ -902,6 +914,60 @@ components:
           type: array
           items: { $ref: "#/components/schemas/TableHealth" }
         checkedAt: { type: string, format: date-time }
+
+    SupplyImportTableCounts:
+      type: object
+      required:
+        - supply_demo_v2_catalog
+        - supply_demo_v2_facilities
+        - supply_demo_v2_issues
+        - supply_demo_v2_imports
+      properties:
+        supply_demo_v2_catalog: { type: integer, description: "Row count of the isolated catalog staging table." }
+        supply_demo_v2_facilities: { type: integer, description: "Row count of the isolated facility staging table." }
+        supply_demo_v2_issues: { type: integer, description: "Row count of the isolated issue staging table." }
+        supply_demo_v2_imports: { type: integer, description: "Row count of the import-run history table." }
+
+    SupplyImportRun:
+      type: object
+      required: [id, startedAt]
+      properties:
+        id: { type: integer }
+        sourceFile: { type: ["string", "null"], description: "Path to the source spreadsheet, if recorded." }
+        startedAt: { type: string, format: date-time }
+        finishedAt: { type: ["string", "null"], format: date-time }
+        durationMs: { type: ["integer", "null"], description: "Wall-clock duration in milliseconds." }
+        sourceRowsRead: { type: ["integer", "null"] }
+        duplicatesCollapsed: { type: ["integer", "null"] }
+        catalogUpserts: { type: ["integer", "null"] }
+        facilityUpserts: { type: ["integer", "null"] }
+        issueRowsInserted: { type: ["integer", "null"] }
+        notes: { type: ["string", "null"] }
+
+    SupplyImportStatus:
+      type: object
+      required:
+        - checkedAt
+        - tableCounts
+        - reconciledCatalogCount
+        - mappedFacilitiesCount
+        - hiddenNodeCount
+        - recentImports
+      properties:
+        checkedAt: { type: string, format: date-time }
+        tableCounts: { $ref: "#/components/schemas/SupplyImportTableCounts" }
+        reconciledCatalogCount:
+          type: integer
+          description: "Count of catalog_entries rows produced by the reconciler (source = 'supply_demo_v2')."
+        mappedFacilitiesCount:
+          type: integer
+          description: "Count of supply_demo_v2_facilities rows whose node_id has been populated."
+        hiddenNodeCount:
+          type: integer
+          description: "Count of nodes rows with hidden_from_map = true."
+        recentImports:
+          type: array
+          items: { $ref: "#/components/schemas/SupplyImportRun" }
 
     SeedStatus:
       type: object

@@ -96,7 +96,7 @@ export const GetTableHealthResponse = zod.object({
       status: zod
         .enum(["healthy", "degraded", "empty"])
         .describe(
-          "Heuristic health verdict from row count + scan ratio + analyze recency.",
+          "Heuristic verdict: 'empty' if rowCount is 0, 'degraded' if a meaningfully-sized table is dominated by sequential scans, otherwise 'healthy'.",
         ),
       detail: zod
         .string()
@@ -105,6 +105,61 @@ export const GetTableHealthResponse = zod.object({
     }),
   ),
   checkedAt: zod.coerce.date(),
+});
+
+/**
+ * @summary Read-only status of the supply demo import pipeline — staging counts, reconciliation counts, hidden-node counts, and the last 10 import runs.
+ */
+export const GetSupplyImportStatusResponse = zod.object({
+  checkedAt: zod.coerce.date(),
+  tableCounts: zod.object({
+    supply_demo_v2_catalog: zod
+      .number()
+      .describe("Row count of the isolated catalog staging table."),
+    supply_demo_v2_facilities: zod
+      .number()
+      .describe("Row count of the isolated facility staging table."),
+    supply_demo_v2_issues: zod
+      .number()
+      .describe("Row count of the isolated issue staging table."),
+    supply_demo_v2_imports: zod
+      .number()
+      .describe("Row count of the import-run history table."),
+  }),
+  reconciledCatalogCount: zod
+    .number()
+    .describe(
+      "Count of catalog_entries rows produced by the reconciler (source = 'supply_demo_v2').",
+    ),
+  mappedFacilitiesCount: zod
+    .number()
+    .describe(
+      "Count of supply_demo_v2_facilities rows whose node_id has been populated.",
+    ),
+  hiddenNodeCount: zod
+    .number()
+    .describe("Count of nodes rows with hidden_from_map = true."),
+  recentImports: zod.array(
+    zod.object({
+      id: zod.number(),
+      sourceFile: zod
+        .string()
+        .nullish()
+        .describe("Path to the source spreadsheet, if recorded."),
+      startedAt: zod.coerce.date(),
+      finishedAt: zod.coerce.date().nullish(),
+      durationMs: zod
+        .number()
+        .nullish()
+        .describe("Wall-clock duration in milliseconds."),
+      sourceRowsRead: zod.number().nullish(),
+      duplicatesCollapsed: zod.number().nullish(),
+      catalogUpserts: zod.number().nullish(),
+      facilityUpserts: zod.number().nullish(),
+      issueRowsInserted: zod.number().nullish(),
+      notes: zod.string().nullish(),
+    }),
+  ),
 });
 
 export const listCatalogItemsQueryLimitDefault = 50;

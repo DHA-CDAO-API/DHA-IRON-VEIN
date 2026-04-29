@@ -71,6 +71,7 @@ import type {
   SiteDetail,
   SiteSummary,
   Supplier,
+  SupplyImportStatus,
   TableHealthList,
   TheaterBloodReadiness,
   TheaterZone,
@@ -434,6 +435,81 @@ export function useGetTableHealth<
   request?: SecondParameter<typeof customFetch>;
 }): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetTableHealthQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Read-only status of the supply demo import pipeline — staging counts, reconciliation counts, hidden-node counts, and the last 10 import runs.
+ */
+export const getGetSupplyImportStatusUrl = () => {
+  return `/api/admin/supply-import/status`;
+};
+
+export const getSupplyImportStatus = async (
+  options?: RequestInit,
+): Promise<SupplyImportStatus> => {
+  return customFetch<SupplyImportStatus>(getGetSupplyImportStatusUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetSupplyImportStatusQueryKey = () => {
+  return [`/api/admin/supply-import/status`] as const;
+};
+
+export const getGetSupplyImportStatusQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSupplyImportStatus>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getSupplyImportStatus>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetSupplyImportStatusQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getSupplyImportStatus>>
+  > = ({ signal }) => getSupplyImportStatus({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getSupplyImportStatus>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetSupplyImportStatusQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getSupplyImportStatus>>
+>;
+export type GetSupplyImportStatusQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Read-only status of the supply demo import pipeline — staging counts, reconciliation counts, hidden-node counts, and the last 10 import runs.
+ */
+
+export function useGetSupplyImportStatus<
+  TData = Awaited<ReturnType<typeof getSupplyImportStatus>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getSupplyImportStatus>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetSupplyImportStatusQueryOptions(options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;
