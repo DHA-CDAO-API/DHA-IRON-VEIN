@@ -85,9 +85,30 @@ export default function Copilot() {
     setStreaming({ convId, text: '' });
 
     try {
+      // Streaming endpoint: we can't go through the OpenAPI client because
+      // it consumes the body to JSON, so we hit fetch directly. That means
+      // we have to mirror the CSRF double-submit token by hand — read the
+      // `csrf` cookie and echo it as `X-CSRF-Token`, exactly like the
+      // shared customFetch does for every other mutation. Without this
+      // header the server's csrfMiddleware rejects the POST with 403
+      // `csrf_token_invalid` and the operator just sees a generic
+      // "Copilot request failed (HTTP 403)".
+      const csrfCookie = (() => {
+        if (typeof document === 'undefined') return null;
+        for (const part of document.cookie.split(';')) {
+          const trimmed = part.trim();
+          if (trimmed.startsWith('csrf=')) {
+            return decodeURIComponent(trimmed.slice('csrf='.length));
+          }
+        }
+        return null;
+      })();
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (csrfCookie) headers['X-CSRF-Token'] = csrfCookie;
       const res = await fetch(`/api/copilot/conversations/${convId}/messages`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
+        credentials: 'include',
         body: JSON.stringify({ content: userMsg, provider })
       });
 
