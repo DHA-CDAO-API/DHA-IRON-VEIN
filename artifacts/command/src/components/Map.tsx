@@ -56,8 +56,33 @@ interface NetworkMapProps {
   /**
    * Set of categories the user has selected via the layer panel. If the set is
    * empty (or contains all categories) the map shows everything.
+   *
+   * @deprecated Prefer `layerSelection` which lets the operator narrow down
+   * to specific item ids in addition to whole categories. Still accepted as a
+   * fallback to avoid breaking embeds that haven't migrated yet.
    */
   selectedCategories?: Set<SupplyCategory>;
+  /**
+   * Generalised layer filter. When both `itemIds` and `categories` are empty
+   * the map shows everything. When set, a shipment passes the filter if its
+   * itemId is in `itemIds` OR its category is in `categories`. Routes are
+   * narrowed by category only (route rows don't carry per-item granularity).
+   */
+  layerSelection?: { itemIds: Set<string>; categories: Set<string> };
+  /**
+   * When set, nodes whose threat tier matches `tierFilter` render at full
+   * opacity and the rest are dimmed. Used by the Blood Readiness widget so
+   * clicking a tier chip visually focuses the matching sites without losing
+   * the global map context. Pass `null` to clear.
+   */
+  tierFilter?: ThreatTier | null;
+  /**
+   * When true, `tierFilter` is applied only to nodes that hold blood
+   * (the `bloodNodeIds` set). Other nodes render at normal opacity. Lets
+   * the blood widget tier-chip filter focus blood-storing sites without
+   * dimming non-blood nodes the operator may still need to see.
+   */
+  bloodNodeIds?: Set<string>;
   showThreats?: boolean;
   showAOR?: boolean;
   showZones?: boolean;
@@ -279,6 +304,9 @@ export default function NetworkGLMap(props: NetworkMapProps) {
     zones = [],
     highlightedZoneIds,
     selectedCategories,
+    layerSelection,
+    tierFilter,
+    bloodNodeIds,
     showThreats = true,
     showAOR = true,
     showZones = true,
@@ -371,20 +399,42 @@ export default function NetworkGLMap(props: NetworkMapProps) {
     [riskByNode],
   );
 
-  // Decide whether a route / shipment passes the active layer filter.
-  const allCategoriesActive = useMemo(() => {
-    if (!selectedCategories || selectedCategories.size === 0) return true;
-    return false;
-  }, [selectedCategories]);
+  // Resolve the effective layer filter from either the new `layerSelection`
+  // prop (item ids + categories) or the legacy `selectedCategories` prop.
+  // An empty selection in both means "show everything".
+  const effectiveItemIds = useMemo<Set<string>>(
+    () => layerSelection?.itemIds ?? new Set<string>(),
+    [layerSelection],
+  );
+  const effectiveCategories = useMemo<Set<string>>(() => {
+    const out = new Set<string>();
+    if (layerSelection) for (const c of layerSelection.categories) out.add(c);
+    if (selectedCategories) for (const c of selectedCategories) out.add(c);
+    return out;
+  }, [layerSelection, selectedCategories]);
+
+  const allLayersActive = useMemo(
+    () => effectiveItemIds.size === 0 && effectiveCategories.size === 0,
+    [effectiveItemIds, effectiveCategories],
+  );
 
   const categoryActive = (cat: string | undefined): boolean => {
-    if (allCategoriesActive) return true;
+    if (allLayersActive) return true;
     if (!cat) return false;
-    return selectedCategories!.has(cat as SupplyCategory);
+    return effectiveCategories.has(cat);
+  };
+
+  // Shipment-level match: itemId is the most specific signal — if the user
+  // picked individual items those shipments should pass even when their
+  // category isn't otherwise selected. Falls back to category match.
+  const shipmentMatchesFilter = (s: any): boolean => {
+    if (allLayersActive) return true;
+    if (s?.itemId && effectiveItemIds.has(s.itemId)) return true;
+    return categoryActive(s?.category);
   };
 
   const routeMatchesFilter = (r: any): boolean => {
-    if (allCategoriesActive) return true;
+    if (allLayersActive) return true;
     const cats: string[] = r.categories ?? [];
     if (cats.length === 0) return false;
     for (const c of cats) if (categoryActive(c)) return true;
@@ -418,7 +468,7 @@ export default function NetworkGLMap(props: NetworkMapProps) {
     }
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [routes, nodeIndex, allCategoriesActive, selectedCategories]);
+  }, [routes, nodeIndex, allLayersActive, selectedCategories, layerSelection]);
 
   // Build animated shipment trips. Each trip is a real shipment row, so the
   // particle the operator sees is clickable and surfaces the underlying
@@ -438,7 +488,7 @@ export default function NetworkGLMap(props: NetworkMapProps) {
     const trips: Trip[] = [];
     const SHIPMENT_SPAN = TRIP_LENGTH * 0.55;
 
-    const activeShipments = shipments.filter((s: any) => categoryActive(s.category));
+    const activeShipments = shipments.filter((s: any) => shipmentMatchesFilter(s));
 
     // Distribute offsets across the safe window [0, TRIP_LENGTH - span) so
     // timestamps stay strictly inside the loop and trips reach their
@@ -466,7 +516,7 @@ export default function NetworkGLMap(props: NetworkMapProps) {
       i++;
     }
     return trips;
-  }, [shipments, nodeIndex, allCategoriesActive, selectedCategories]);
+  }, [shipments, nodeIndex, allLayersActive, selectedCategories, layerSelection]);
 
   // Decorate nodes with their tier + risk for fast lookups in layer callbacks.
   type DecoratedNode = {
@@ -493,20 +543,29 @@ export default function NetworkGLMap(props: NetworkMapProps) {
     });
   }, [nodes, riskByNodeMap]);
 
-  // Decide colour: when a single category is selected, recolour by that
+  // Decide colour: when exactly one category is active, recolour by that
   // category's DOS (green/amber/red bands). Otherwise use the threat tier.
+  // When a `tierFilter` is active, nodes that do NOT match the requested
+  // tier are dimmed so the matching set visually pops without removing the
+  // surrounding context. `bloodNodeIds`, when provided, scopes the dimming
+  // logic to blood-storing nodes only.
   const nodeColor = (d: DecoratedNode): [number, number, number, number] => {
-    if (selectedCategories && selectedCategories.size === 1) {
-      const cat = Array.from(selectedCategories)[0];
+    let rgb: [number, number, number];
+    if (effectiveCategories.size === 1 && effectiveItemIds.size === 0) {
+      const cat = Array.from(effectiveCategories)[0];
       const dos = d.dosByCategory?.[cat] ?? 999;
-      let rgb: [number, number, number];
       if (dos <= 5) rgb = TIER_COLOR.critical;
       else if (dos <= 14) rgb = TIER_COLOR.heightened;
       else rgb = TIER_COLOR.nominal;
-      return [...rgb, 235];
+    } else {
+      rgb = TIER_COLOR[d.tier];
     }
-    const rgb = TIER_COLOR[d.tier];
-    return [...rgb, 235];
+    let alpha = 235;
+    if (tierFilter) {
+      const inScope = !bloodNodeIds || bloodNodeIds.has(d.raw.id);
+      if (inScope && d.tier !== tierFilter) alpha = 50;
+    }
+    return [rgb[0], rgb[1], rgb[2], alpha];
   };
 
   // ---------------------------------------------------------------------------
@@ -567,8 +626,9 @@ export default function NetworkGLMap(props: NetworkMapProps) {
         },
         updateTriggers: {
           getColor: [
-            allCategoriesActive,
-            Array.from(selectedCategories ?? []).join(','),
+            allLayersActive,
+            Array.from(effectiveCategories).join(','),
+            Array.from(effectiveItemIds).join(','),
             hoveredRouteId,
           ],
           getWidth: [hoveredRouteId],
@@ -781,7 +841,13 @@ export default function NetworkGLMap(props: NetworkMapProps) {
           }
         },
         updateTriggers: {
-          getFillColor: [allCategoriesActive, Array.from(selectedCategories ?? []).join(',')],
+          getFillColor: [
+            allLayersActive,
+            Array.from(effectiveCategories).join(','),
+            Array.from(effectiveItemIds).join(','),
+            tierFilter ?? '',
+            bloodNodeIds ? bloodNodeIds.size : 0,
+          ],
         },
       }),
     );
@@ -790,7 +856,8 @@ export default function NetworkGLMap(props: NetworkMapProps) {
   }, [
     routePaths, decoratedNodes, threats,
     aorBoundary, showAOR, showThreats, onNodeClick,
-    allCategoriesActive, selectedCategories,
+    allLayersActive, selectedCategories, layerSelection,
+    tierFilter, bloodNodeIds,
     zones, showZones, highlightedZoneIds, onZoneClick,
     drawMode, draftVertices, hoverCoord,
   ]);

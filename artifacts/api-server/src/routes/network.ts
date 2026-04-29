@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { db, nodes, routes, theaterZones } from "@workspace/db";
+import { db, nodes, routes, theaterZones, items as itemsTable } from "@workspace/db";
 import { desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import {
@@ -46,6 +46,7 @@ router.get("/network/snapshot", async (_req, res, next) => {
       routeCats,
       zoneRows,
       bloodReadinessByNode,
+      itemRows,
     ] = await Promise.all([
       db.select().from(nodes).where(VISIBLE_NODES_FILTER),
       db.select().from(routes),
@@ -54,6 +55,7 @@ router.get("/network/snapshot", async (_req, res, next) => {
       computeRouteCategories(),
       db.select().from(theaterZones).orderBy(desc(theaterZones.createdAt)),
       computeBloodReadinessByNode(),
+      db.select().from(itemsTable),
     ]);
     const decoratedRoutes = routeRows.map((r) => ({
       ...r,
@@ -86,6 +88,17 @@ router.get("/network/snapshot", async (_req, res, next) => {
       focusedHubId,
       operationalState: risk.operationalState,
       bloodReadinessByNode,
+      // Lightweight catalog payload that drives the Network Map's
+      // Layers panel (built-in sub-layer tree + custom layer builder).
+      // Strips persistence-only columns the UI doesn't need.
+      items: itemRows.map((i) => ({
+        id: i.id,
+        name: i.name,
+        category: i.category,
+        commodityType: i.commodityType,
+        productNoun: i.productNoun,
+        criticality: i.criticality,
+      })),
     });
   } catch (err) {
     next(err);

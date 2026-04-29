@@ -113,6 +113,10 @@ export type NodeBloodReadinessRollup = {
   totalViableUnits: number;
   unitsExpiringWithin72h: number;
   tier: "nominal" | "heightened" | "critical";
+  // Per-component family viable unit counts (LTOWB, PRBC, FFP, PLASMA,
+  // PLATELETS, CRYO, FDP). Lets the network-map sidebar break down
+  // "total viable units" across blood sub-types without a second query.
+  viableByComponent: Record<string, number>;
 };
 
 export type TheaterBloodReadiness = {
@@ -420,16 +424,26 @@ export async function computeBloodReadinessByNode(): Promise<NodeBloodReadinessR
   const itemMap = new Map(allItems.map((i) => [i.id, i]));
   const nowMs = Date.now();
 
-  // Bucket all lots by node, accumulating viable / near-expiry counts.
-  const lotsByNode = new Map<string, { viable: number; w72: number; w7: number }>();
+  // Bucket all lots by node, accumulating viable / near-expiry counts and
+  // per-component family viable totals so the sidebar can render a
+  // sub-type breakdown without a second DB pass.
+  type NodeBucket = {
+    viable: number;
+    w72: number;
+    w7: number;
+    byComponent: Record<string, number>;
+  };
+  const lotsByNode = new Map<string, NodeBucket>();
   for (const lot of allLots) {
     if (lot.status === "COMPROMISED" || lot.status === "EXPIRED") continue;
     const b = bucketLot(lot, nowMs);
     if (b.expired) continue;
-    const cur = lotsByNode.get(lot.nodeId) ?? { viable: 0, w72: 0, w7: 0 };
+    const cur =
+      lotsByNode.get(lot.nodeId) ?? { viable: 0, w72: 0, w7: 0, byComponent: {} };
     cur.viable += lot.units;
     if (b.w72) cur.w72 += lot.units;
     if (b.w7) cur.w7 += lot.units;
+    cur.byComponent[lot.component] = (cur.byComponent[lot.component] ?? 0) + lot.units;
     lotsByNode.set(lot.nodeId, cur);
   }
 
@@ -472,6 +486,7 @@ export async function computeBloodReadinessByNode(): Promise<NodeBloodReadinessR
       totalViableUnits: viable,
       unitsExpiringWithin72h: w72,
       tier: tierForBloodDos(viableDaysOfSupply),
+      viableByComponent: lots?.byComponent ?? {},
     });
   }
   return out;
