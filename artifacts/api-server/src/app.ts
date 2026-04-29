@@ -79,7 +79,14 @@ app.use(
       if (allowList.has(origin)) return cb(null, true);
       try {
         const u = new URL(origin);
-        if (u.host.endsWith(".replit.dev") || u.host.endsWith(".replit.com")) {
+        // .replit.dev and .replit.com cover the workspace proxy hosts;
+        // .replit.app covers deployed Autoscale apps (the production
+        // deployment lives at dha-iron-vein.replit.app).
+        if (
+          u.host.endsWith(".replit.dev") ||
+          u.host.endsWith(".replit.com") ||
+          u.host.endsWith(".replit.app")
+        ) {
           return cb(null, true);
         }
       } catch {
