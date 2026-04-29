@@ -9,9 +9,8 @@ import {
   getListOrdersQueryKey,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
@@ -24,15 +23,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { CategoryFilterToggle } from "@/components/CategoryFilterToggle";
-import { categoryMatches, type CategoryFilter } from "@/lib/format";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { SortableTable } from "@/components/ui/sortable-table";
+import { categoryMatches, formatNumber, type CategoryFilter } from "@/lib/format";
 import { useToast } from "@/hooks/use-toast";
 import {
   Activity,
@@ -41,13 +33,72 @@ import {
   CheckCircle2,
   Loader2,
   ShoppingBag,
+  Users,
+  ShieldAlert,
+  ExternalLink,
 } from "lucide-react";
 import type {
   CasualtyRequirementRow,
   SufficiencyRow,
+  PatientRerouteCandidate,
+  SufficiencyRowVerdict,
+  PatientRerouteCandidatePosture,
 } from "@workspace/api-client-react";
 
 type PatientCounts = Record<string, number>;
+
+function verdictPillClass(verdict: SufficiencyRowVerdict): string {
+  if (verdict === "green")
+    return "border-emerald-500/40 bg-emerald-500/15 text-emerald-200";
+  if (verdict === "amber")
+    return "border-amber-500/40 bg-amber-500/15 text-amber-200";
+  return "border-destructive/50 bg-destructive/15 text-destructive";
+}
+
+function verdictLabel(verdict: SufficiencyRowVerdict): string {
+  if (verdict === "green") return "Sufficient";
+  if (verdict === "amber") return "At Risk";
+  return "Short";
+}
+
+function posturePillClass(posture: PatientRerouteCandidatePosture): string {
+  if (posture === "viable")
+    return "border-emerald-500/40 bg-emerald-500/15 text-emerald-200";
+  if (posture === "stretched")
+    return "border-amber-500/40 bg-amber-500/15 text-amber-200";
+  return "border-destructive/50 bg-destructive/15 text-destructive";
+}
+
+function StatusPill({
+  className,
+  children,
+}: {
+  className: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <span
+      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${className}`}
+    >
+      {children}
+    </span>
+  );
+}
+
+function SectionHeader({
+  title,
+  meta,
+}: {
+  title: React.ReactNode;
+  meta?: React.ReactNode;
+}) {
+  return (
+    <div className="px-4 py-3 border-b border-border/50 bg-muted/20 text-xs uppercase tracking-wider text-muted-foreground font-medium flex items-center justify-between gap-3">
+      <span>{title}</span>
+      {meta != null && <span className="font-mono normal-case">{meta}</span>}
+    </div>
+  );
+}
 
 export default function CasualtyPlanner() {
   const queryClient = useQueryClient();
@@ -258,139 +309,210 @@ export default function CasualtyPlanner() {
       categoryMatches(filter, r.category),
     ) ?? [];
 
+  const shortageCount = filteredSufficiency.filter(
+    (r) => r.verdict === "red",
+  ).length;
+  const reroutes = result?.reroutes ?? [];
+
   return (
-    <div className="flex flex-col gap-4 p-4 overflow-y-auto h-full">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
+    <div
+      className="h-full flex flex-col p-4 gap-4 overflow-y-auto bg-background text-foreground"
+      data-testid="casualty-planner-page"
+    >
+      <div className="flex items-start justify-between gap-4 flex-wrap shrink-0 border-b border-border pb-4">
+        <div className="min-w-0">
+          <div className="flex items-center gap-3 mb-1">
             <Activity className="h-6 w-6 text-red-300" />
-            Casualty Planner
-          </h1>
-          <p className="text-sm text-muted-foreground">
+            <h1 className="text-2xl font-bold uppercase tracking-wider">
+              Casualty Planner
+            </h1>
+          </div>
+          <p className="text-sm text-muted-foreground max-w-3xl">
             Translate a casualty load into a sufficiency check, supplier
             shortfall ranking, and patient reroute candidates.
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap justify-end">
           <CategoryFilterToggle value={filter} onChange={setFilter} />
           <Button
             variant="default"
+            size="sm"
+            className="gap-2"
             onClick={handleBulkOrder}
             disabled={
               !result?.sufficiency ||
               !siteId ||
               createOrder.isPending ||
-              filteredSufficiency.filter((r) => r.verdict === "red").length ===
-                0
+              shortageCount === 0
             }
             data-testid="button-bulk-order"
           >
             {createOrder.isPending ? (
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
-              <ShoppingBag className="h-4 w-4 mr-2" />
+              <ShoppingBag className="h-4 w-4" />
             )}
-            Order everything still short
+            Bulk Order Shortfalls
+            {shortageCount > 0 && (
+              <span className="ml-1 inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-primary-foreground/20 px-1.5 text-[10px] font-mono">
+                {shortageCount}
+              </span>
+            )}
           </Button>
         </div>
       </div>
 
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-base">Scenario inputs</CardTitle>
-        </CardHeader>
-        <CardContent className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div className="space-y-1">
-            <Label>Event template</Label>
-            <Select
-              value={eventTypeId ?? ""}
-              onValueChange={(v) => setEventTypeId(v)}
-            >
-              <SelectTrigger data-testid="select-event-type">
-                <SelectValue placeholder="Pick an event…" />
-              </SelectTrigger>
-              <SelectContent>
-                {eventTypes.map((e) => (
-                  <SelectItem key={e.id} value={e.id}>
-                    {e.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+      <Card className="bg-card/50 border-border shrink-0">
+        <SectionHeader title="Scenario Inputs" />
+        <CardContent className="p-4 space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="space-y-1.5 min-w-0">
+              <Label className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">
+                Event template
+              </Label>
+              <Select
+                value={eventTypeId ?? ""}
+                onValueChange={(v) => setEventTypeId(v)}
+              >
+                <SelectTrigger
+                  data-testid="select-event-type"
+                  className="w-full"
+                >
+                  <SelectValue placeholder="Pick an event…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {eventTypes.map((e) => (
+                    <SelectItem key={e.id} value={e.id}>
+                      {e.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5 min-w-0">
+              <Label className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">
+                Treatment site
+              </Label>
+              <Select
+                value={siteId ?? ""}
+                onValueChange={(v) => setSiteId(v)}
+              >
+                <SelectTrigger data-testid="select-site" className="w-full">
+                  <SelectValue placeholder="Optional — pick a site…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {sites.map((s) => (
+                    <SelectItem key={s.nodeId} value={s.nodeId}>
+                      {s.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5 min-w-0">
+              <Label
+                htmlFor="input-total-casualties"
+                className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium"
+              >
+                Total casualties
+              </Label>
+              <Input
+                id="input-total-casualties"
+                type="number"
+                value={totalCasualties}
+                min={0}
+                onChange={(e) =>
+                  setTotalCasualties(Number(e.target.value) || 0)
+                }
+                className="font-mono"
+                data-testid="input-total-casualties"
+              />
+            </div>
+            <div className="space-y-1.5 min-w-0">
+              <Label
+                htmlFor="input-resupply-eta"
+                className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium"
+              >
+                Resupply ETA (h)
+              </Label>
+              <Input
+                id="input-resupply-eta"
+                type="number"
+                placeholder="Optional · e.g. 36"
+                value={resupplyEtaHours}
+                min={0}
+                onChange={(e) => setResupplyEtaHours(e.target.value)}
+                className="font-mono"
+                data-testid="input-resupply-eta"
+              />
+            </div>
           </div>
-          <div className="space-y-1">
-            <Label>Treatment site</Label>
-            <Select
-              value={siteId ?? ""}
-              onValueChange={(v) => setSiteId(v)}
-            >
-              <SelectTrigger data-testid="select-site">
-                <SelectValue placeholder="Optional — pick a site…" />
-              </SelectTrigger>
-              <SelectContent>
-                {sites.map((s) => (
-                  <SelectItem key={s.nodeId} value={s.nodeId}>
-                    {s.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1">
-            <Label>Total casualties</Label>
-            <Input
-              type="number"
-              value={totalCasualties}
-              min={0}
-              onChange={(e) => setTotalCasualties(Number(e.target.value) || 0)}
-              data-testid="input-total-casualties"
-            />
-          </div>
-          <div className="space-y-1">
-            <Label>Resupply ETA (h, optional)</Label>
-            <Input
-              type="number"
-              placeholder="e.g. 36"
-              value={resupplyEtaHours}
-              min={0}
-              onChange={(e) => setResupplyEtaHours(e.target.value)}
-              data-testid="input-resupply-eta"
-            />
-          </div>
-          <div className="space-y-1 md:col-span-2">
-            <Label>
-              Arrival window: <span className="font-mono">{arrivalWindowHours}h</span>
-            </Label>
-            <Slider
-              value={[arrivalWindowHours]}
-              min={6}
-              max={120}
-              step={6}
-              onValueChange={(v) => setArrivalWindowHours(v[0])}
-              data-testid="slider-arrival-window"
-            />
-          </div>
-          <div className="md:col-span-2 flex items-center gap-3">
-            <Switch
-              checked={restrictReroutes}
-              onCheckedChange={setRestrictReroutes}
-              id="restrict-reroutes"
-              data-testid="switch-restrict-reroutes"
-            />
-            <Label htmlFor="restrict-reroutes">
-              Restrict reroute candidates to same regional hub
-            </Label>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-stretch">
+            <div className="lg:col-span-2 space-y-2 rounded-md border border-border/40 bg-muted/10 p-3 min-w-0">
+              <div className="flex items-center justify-between gap-3">
+                <Label className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">
+                  Arrival window
+                </Label>
+                <span
+                  className="font-mono text-sm tabular-nums"
+                  data-testid="text-arrival-window"
+                >
+                  {arrivalWindowHours}h
+                </span>
+              </div>
+              <Slider
+                value={[arrivalWindowHours]}
+                min={6}
+                max={120}
+                step={6}
+                onValueChange={(v) => setArrivalWindowHours(v[0])}
+                data-testid="slider-arrival-window"
+              />
+              <div className="flex justify-between text-[10px] uppercase tracking-wider text-muted-foreground/70 font-mono">
+                <span>6h</span>
+                <span>120h</span>
+              </div>
+            </div>
+            <div className="flex items-center justify-between gap-3 rounded-md border border-border/40 bg-muted/10 p-3 min-w-0">
+              <Label
+                htmlFor="restrict-reroutes"
+                className="text-xs leading-snug min-w-0 cursor-pointer"
+              >
+                <span className="block text-[11px] uppercase tracking-wider text-muted-foreground font-medium mb-0.5">
+                  Reroute scope
+                </span>
+                <span className="text-foreground">
+                  Restrict to same regional hub
+                </span>
+              </Label>
+              <Switch
+                checked={restrictReroutes}
+                onCheckedChange={setRestrictReroutes}
+                id="restrict-reroutes"
+                data-testid="switch-restrict-reroutes"
+                className="shrink-0"
+              />
+            </div>
           </div>
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-base">
-            Patient counts ({totalPatients} total)
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
+      <Card className="bg-card/50 border-border shrink-0">
+        <SectionHeader
+          title={
+            <span className="inline-flex items-center gap-2">
+              <Users className="h-3.5 w-3.5" />
+              Patient Counts
+            </span>
+          }
+          meta={
+            <span data-testid="text-total-patients">
+              {formatNumber(totalPatients)} total
+            </span>
+          }
+        />
+        <CardContent className="p-4">
           {isLoading ? (
             <div className="text-sm text-muted-foreground">Loading…</div>
           ) : (
@@ -398,19 +520,19 @@ export default function CasualtyPlanner() {
               {patientTypes.map((p) => (
                 <div
                   key={p.id}
-                  className="flex items-center justify-between gap-3 p-2 rounded-md bg-secondary/30 border border-border"
+                  className="flex items-start justify-between gap-3 p-3 rounded-md bg-muted/10 border border-border/40"
                 >
-                  <div className="min-w-0">
-                    <div className="text-sm font-medium truncate">
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm font-medium leading-snug line-clamp-2 break-words">
                       {p.name}
                     </div>
-                    <div className="text-[11px] text-muted-foreground">
-                      {p.severity} · {p.avgClinicianMinutes} min/clinician
+                    <div className="mt-1 text-[10px] uppercase tracking-wider text-muted-foreground font-medium">
+                      {p.severity} · {p.avgClinicianMinutes}m / clinician
                     </div>
                   </div>
                   <Input
                     type="number"
-                    className="w-20 text-right"
+                    className="w-20 text-right font-mono shrink-0"
                     min={0}
                     value={counts[p.id] ?? 0}
                     onChange={(e) =>
@@ -431,210 +553,366 @@ export default function CasualtyPlanner() {
       {verdict && (
         <Card
           className={
-            verdict.redCount > 0
-              ? "border-red-500/40 bg-red-500/5"
+            "shrink-0 " +
+            (verdict.redCount > 0
+              ? "border-destructive/40 bg-destructive/5"
               : verdict.amberCount > 0
                 ? "border-amber-500/40 bg-amber-500/5"
-                : "border-emerald-500/40 bg-emerald-500/5"
+                : "border-emerald-500/40 bg-emerald-500/5")
           }
         >
           <CardContent className="p-4 flex items-center gap-3">
             {verdict.redCount > 0 ? (
-              <AlertTriangle className="h-6 w-6 text-red-400" />
+              <ShieldAlert className="h-6 w-6 text-destructive shrink-0" />
+            ) : verdict.amberCount > 0 ? (
+              <AlertTriangle className="h-6 w-6 text-amber-500 shrink-0" />
             ) : (
-              <CheckCircle2 className="h-6 w-6 text-emerald-400" />
+              <CheckCircle2 className="h-6 w-6 text-emerald-500 shrink-0" />
             )}
-            <div className="flex-1">
-              <div className="text-sm font-semibold" data-testid="text-sufficiency-verdict">
+            <div className="flex-1 min-w-0">
+              <div
+                className="text-sm font-semibold"
+                data-testid="text-sufficiency-verdict"
+              >
                 {verdict.verdict}
               </div>
-              <div className="text-xs text-muted-foreground">
-                {verdict.greenCount} on-hand · {verdict.amberCount} reliant on
-                inbound · {verdict.redCount} short
+              <div className="mt-0.5 text-xs text-muted-foreground flex flex-wrap gap-x-3 gap-y-1">
+                <span>
+                  <span className="font-mono text-emerald-500">
+                    {verdict.greenCount}
+                  </span>{" "}
+                  on-hand
+                </span>
+                <span>
+                  <span className="font-mono text-amber-500">
+                    {verdict.amberCount}
+                  </span>{" "}
+                  reliant on inbound
+                </span>
+                <span>
+                  <span className="font-mono text-destructive">
+                    {verdict.redCount}
+                  </span>{" "}
+                  short
+                </span>
               </div>
             </div>
           </CardContent>
         </Card>
       )}
 
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-base">
-            {siteId ? "Sufficiency at site" : "Required materiel"}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Item</TableHead>
-                <TableHead>Commodity</TableHead>
-                <TableHead className="text-right">Required</TableHead>
-                {siteId && (
-                  <>
-                    <TableHead className="text-right">On hand</TableHead>
-                    <TableHead className="text-right">Inbound</TableHead>
-                    <TableHead className="text-right">Short</TableHead>
-                    <TableHead>Verdict</TableHead>
-                    <TableHead>Best supplier</TableHead>
-                  </>
-                )}
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {(siteId
-                ? (filteredSufficiency as SufficiencyRow[])
-                : (filteredRequired as CasualtyRequirementRow[])
-              ).map((r) => {
-                const sr =
-                  "verdict" in r ? (r as SufficiencyRow) : null;
-                return (
-                  <TableRow key={r.itemId} data-testid={`row-item-${r.itemId}`}>
-                    <TableCell>
-                      <div className="font-medium">{r.itemName}</div>
-                      <div className="text-[11px] text-muted-foreground">
+      <Card className="bg-card/50 border-border shrink-0">
+        <SectionHeader
+          title={siteId ? "Sufficiency at Site" : "Required Materiel"}
+          meta={
+            siteId
+              ? `${filteredSufficiency.length} item${filteredSufficiency.length === 1 ? "" : "s"}`
+              : `${filteredRequired.length} item${filteredRequired.length === 1 ? "" : "s"}`
+          }
+        />
+        <div className="overflow-auto">
+          {siteId ? (
+            <SortableTable
+              data={filteredSufficiency as SufficiencyRow[]}
+              rowKey={(r) => r.itemId}
+              emptyMessage={
+                totalPatients === 0
+                  ? "Add patient counts to see required materiel."
+                  : "No items match the current category filter."
+              }
+              initialSort={{ key: "shortfall", direction: "desc" }}
+              columns={[
+                {
+                  key: "item",
+                  label: "Item",
+                  sortAccessor: (r) => r.itemName,
+                  render: (r) => (
+                    <div
+                      className="min-w-0"
+                      data-testid={`row-item-${r.itemId}`}
+                    >
+                      <div className="font-medium leading-snug">
+                        {r.itemName}
+                      </div>
+                      <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">
                         {r.size} · {r.unitOfIssue}
                       </div>
-                    </TableCell>
-                    <TableCell className="text-xs">
-                      <div>{r.commodityType}</div>
-                      <div className="text-muted-foreground">
+                    </div>
+                  ),
+                },
+                {
+                  key: "commodity",
+                  label: "Commodity",
+                  sortAccessor: (r) => r.commodityType,
+                  render: (r) => (
+                    <div className="min-w-0">
+                      <div className="text-xs">{r.commodityType}</div>
+                      <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">
                         {r.unspscCommodity}
                       </div>
-                    </TableCell>
-                    <TableCell className="text-right font-mono">
-                      {r.requiredQty}
-                    </TableCell>
-                    {siteId && sr && (
-                      <>
-                        <TableCell className="text-right font-mono">
-                          {sr.onHand}
-                        </TableCell>
-                        <TableCell className="text-right font-mono">
-                          {sr.inboundBeforeWindow}
-                        </TableCell>
-                        <TableCell className="text-right font-mono">
-                          {sr.shortfallQty || "—"}
-                        </TableCell>
-                        <TableCell>
-                          <Badge
-                            variant={
-                              sr.verdict === "green"
-                                ? "default"
-                                : sr.verdict === "amber"
-                                  ? "secondary"
-                                  : "destructive"
-                            }
-                          >
-                            {sr.verdict.toUpperCase()}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-xs">
-                          {sr.supplierAlternatives?.[0] ? (
-                            <div>
-                              <div>{sr.supplierAlternatives[0].supplierName}</div>
-                              <div className="text-muted-foreground">
-                                ETA{" "}
-                                {sr.supplierAlternatives[0].projectedEta.toFixed(
-                                  1,
-                                )}
-                                d
-                              </div>
-                            </div>
-                          ) : (
-                            <span className="text-muted-foreground">—</span>
-                          )}
-                        </TableCell>
-                      </>
-                    )}
-                  </TableRow>
-                );
-              })}
-              {(siteId ? filteredSufficiency : filteredRequired).length === 0 && (
-                <TableRow>
-                  <TableCell
-                    colSpan={siteId ? 8 : 3}
-                    className="text-center text-sm text-muted-foreground py-6"
-                  >
-                    Add patient counts to see required materiel.
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </CardContent>
+                    </div>
+                  ),
+                },
+                {
+                  key: "required",
+                  label: "Required",
+                  align: "right",
+                  sortAccessor: (r) => r.requiredQty,
+                  render: (r) => (
+                    <span className="font-mono tabular-nums">
+                      {formatNumber(r.requiredQty)}
+                    </span>
+                  ),
+                },
+                {
+                  key: "onHand",
+                  label: "On Hand",
+                  align: "right",
+                  sortAccessor: (r) => r.onHand,
+                  render: (r) => (
+                    <span className="font-mono tabular-nums">
+                      {formatNumber(r.onHand)}
+                    </span>
+                  ),
+                },
+                {
+                  key: "inbound",
+                  label: "Inbound",
+                  align: "right",
+                  sortAccessor: (r) => r.inboundBeforeWindow,
+                  render: (r) => (
+                    <span className="font-mono tabular-nums text-muted-foreground">
+                      {formatNumber(r.inboundBeforeWindow)}
+                    </span>
+                  ),
+                },
+                {
+                  key: "shortfall",
+                  label: "Short",
+                  align: "right",
+                  sortAccessor: (r) => r.shortfallQty,
+                  render: (r) =>
+                    r.shortfallQty > 0 ? (
+                      <span className="font-mono tabular-nums text-destructive font-semibold">
+                        {formatNumber(r.shortfallQty)}
+                      </span>
+                    ) : (
+                      <span className="font-mono tabular-nums text-muted-foreground">
+                        —
+                      </span>
+                    ),
+                },
+                {
+                  key: "verdict",
+                  label: "Verdict",
+                  sortAccessor: (r) => r.verdict,
+                  render: (r) => (
+                    <StatusPill className={verdictPillClass(r.verdict)}>
+                      {verdictLabel(r.verdict)}
+                    </StatusPill>
+                  ),
+                },
+                {
+                  key: "supplier",
+                  label: "Best Supplier",
+                  sortAccessor: (r) =>
+                    r.supplierAlternatives?.[0]?.supplierName ?? "",
+                  render: (r) => {
+                    const alt = r.supplierAlternatives?.[0];
+                    if (!alt)
+                      return (
+                        <span className="text-muted-foreground text-xs">—</span>
+                      );
+                    return (
+                      <div className="min-w-0">
+                        <div className="text-xs font-medium truncate">
+                          {alt.supplierName}
+                        </div>
+                        <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium font-mono">
+                          ETA {alt.projectedEta.toFixed(1)}d
+                        </div>
+                      </div>
+                    );
+                  },
+                },
+              ]}
+            />
+          ) : (
+            <SortableTable
+              data={filteredRequired as CasualtyRequirementRow[]}
+              rowKey={(r) => r.itemId}
+              emptyMessage={
+                totalPatients === 0
+                  ? "Add patient counts to see required materiel."
+                  : "No items match the current category filter."
+              }
+              initialSort={{ key: "required", direction: "desc" }}
+              columns={[
+                {
+                  key: "item",
+                  label: "Item",
+                  sortAccessor: (r) => r.itemName,
+                  render: (r) => (
+                    <div
+                      className="min-w-0"
+                      data-testid={`row-item-${r.itemId}`}
+                    >
+                      <div className="font-medium leading-snug">
+                        {r.itemName}
+                      </div>
+                      <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">
+                        {r.size} · {r.unitOfIssue}
+                      </div>
+                    </div>
+                  ),
+                },
+                {
+                  key: "commodity",
+                  label: "Commodity",
+                  sortAccessor: (r) => r.commodityType,
+                  render: (r) => (
+                    <div className="min-w-0">
+                      <div className="text-xs">{r.commodityType}</div>
+                      <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">
+                        {r.unspscCommodity}
+                      </div>
+                    </div>
+                  ),
+                },
+                {
+                  key: "required",
+                  label: "Required",
+                  align: "right",
+                  sortAccessor: (r) => r.requiredQty,
+                  render: (r) => (
+                    <span className="font-mono tabular-nums">
+                      {formatNumber(r.requiredQty)}
+                    </span>
+                  ),
+                },
+              ]}
+            />
+          )}
+        </div>
       </Card>
 
-      {result?.reroutes && result.reroutes.length > 0 && (
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base flex items-center gap-2">
-              <ArrowRight className="h-4 w-4 text-violet-300" />
-              Patient reroute candidates
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Site</TableHead>
-                  <TableHead>Posture</TableHead>
-                  <TableHead className="text-right">Distance</TableHead>
-                  <TableHead className="text-right">Transit</TableHead>
-                  <TableHead className="text-right">Coverage</TableHead>
-                  <TableHead className="text-right">Surge slots</TableHead>
-                  <TableHead></TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {result.reroutes.map((c) => (
-                  <TableRow key={c.nodeId} data-testid={`row-reroute-${c.nodeId}`}>
-                    <TableCell>
-                      <div className="font-medium">{c.nodeName}</div>
-                      <div className="text-[11px] text-muted-foreground">
-                        {c.countryCode}
+      {reroutes.length > 0 && (
+        <Card className="bg-card/50 border-border shrink-0">
+          <SectionHeader
+            title={
+              <span className="inline-flex items-center gap-2">
+                <ArrowRight className="h-3.5 w-3.5 text-violet-300" />
+                Patient Reroute Candidates
+              </span>
+            }
+            meta={`${reroutes.length} site${reroutes.length === 1 ? "" : "s"}`}
+          />
+          <div className="overflow-auto">
+            <SortableTable
+              data={reroutes as PatientRerouteCandidate[]}
+              rowKey={(r) => r.nodeId}
+              emptyMessage="No reroute candidates."
+              initialSort={{ key: "transit", direction: "asc" }}
+              columns={[
+                {
+                  key: "site",
+                  label: "Site",
+                  sortAccessor: (r) => r.nodeName,
+                  render: (r) => (
+                    <div
+                      className="min-w-0"
+                      data-testid={`row-reroute-${r.nodeId}`}
+                    >
+                      <div className="font-medium leading-snug">
+                        {r.nodeName}
                       </div>
-                    </TableCell>
-                    <TableCell>
-                      <Badge
-                        variant={
-                          c.posture === "viable"
-                            ? "default"
-                            : c.posture === "stretched"
-                              ? "secondary"
-                              : "destructive"
-                        }
-                      >
-                        {c.posture}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-right font-mono">
-                      {c.distanceKm} km
-                    </TableCell>
-                    <TableCell className="text-right font-mono">
-                      {c.estimatedTransitDays.toFixed(1)} d
-                    </TableCell>
-                    <TableCell className="text-right font-mono">
-                      {Math.round(c.supplyCoverage * 100)}%
-                    </TableCell>
-                    <TableCell className="text-right font-mono">
-                      {c.residualCapacity}
-                    </TableCell>
-                    <TableCell>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => navigate(`/sites/${c.nodeId}`)}
-                        data-testid={`button-view-${c.nodeId}`}
-                      >
-                        View
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
+                      <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">
+                        {r.countryCode || "—"}
+                      </div>
+                    </div>
+                  ),
+                },
+                {
+                  key: "posture",
+                  label: "Posture",
+                  sortAccessor: (r) => r.posture,
+                  render: (r) => (
+                    <StatusPill className={posturePillClass(r.posture)}>
+                      {r.posture}
+                    </StatusPill>
+                  ),
+                },
+                {
+                  key: "distance",
+                  label: "Distance",
+                  align: "right",
+                  sortAccessor: (r) => r.distanceKm,
+                  render: (r) => (
+                    <span className="font-mono tabular-nums">
+                      {formatNumber(r.distanceKm)}{" "}
+                      <span className="text-muted-foreground text-xs">km</span>
+                    </span>
+                  ),
+                },
+                {
+                  key: "transit",
+                  label: "Transit",
+                  align: "right",
+                  sortAccessor: (r) => r.estimatedTransitDays,
+                  render: (r) => (
+                    <span className="font-mono tabular-nums">
+                      {r.estimatedTransitDays.toFixed(1)}{" "}
+                      <span className="text-muted-foreground text-xs">d</span>
+                    </span>
+                  ),
+                },
+                {
+                  key: "coverage",
+                  label: "Coverage",
+                  align: "right",
+                  sortAccessor: (r) => r.supplyCoverage,
+                  render: (r) => (
+                    <span className="font-mono tabular-nums">
+                      {Math.round(r.supplyCoverage * 100)}
+                      <span className="text-muted-foreground text-xs">%</span>
+                    </span>
+                  ),
+                },
+                {
+                  key: "surge",
+                  label: "Surge Slots",
+                  align: "right",
+                  sortAccessor: (r) => r.residualCapacity,
+                  render: (r) => (
+                    <span className="font-mono tabular-nums">
+                      {formatNumber(r.residualCapacity)}
+                    </span>
+                  ),
+                },
+                {
+                  key: "action",
+                  label: "",
+                  sortable: false,
+                  align: "right",
+                  render: (r) => (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="gap-1.5 hover:text-primary"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        navigate(`/sites/${r.nodeId}`);
+                      }}
+                      data-testid={`button-view-${r.nodeId}`}
+                    >
+                      Open
+                      <ExternalLink className="h-3.5 w-3.5" />
+                    </Button>
+                  ),
+                },
+              ]}
+            />
+          </div>
         </Card>
       )}
     </div>
