@@ -48,7 +48,7 @@ export function TimeToFailLeaderboard() {
           Time-to-Fail Leaderboard
         </CardTitle>
       </CardHeader>
-      <CardContent className="p-0 overflow-y-auto flex-1">
+      <CardContent className="p-0 overflow-y-auto flex-1 @container">
         {isLoading && !data ? (
           <div className="p-3 space-y-2">
             {Array.from({ length: 6 }).map((_, i) => (
@@ -107,35 +107,43 @@ function LeaderboardRow({
             aria-hidden
           />
           <div className="flex-1 min-w-0">
-            <div className="flex items-baseline gap-2">
-              <span className="text-sm font-medium truncate text-foreground/90">
+            <div className="flex items-baseline gap-2 min-w-0">
+              <span className="text-sm font-medium truncate text-foreground/90 min-w-0">
                 {entry.nodeName}
               </span>
               <span className="text-[10px] text-muted-foreground uppercase tracking-wider shrink-0">
                 {entry.nodeType}
               </span>
             </div>
-            <div className="flex items-baseline gap-2 text-[11px] mt-0.5">
-              <span className={TIER_TEXT[tier]}>
+            <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-[11px] mt-0.5">
+              <span className={`${TIER_TEXT[tier]} whitespace-nowrap`}>
                 {formatDOS(entry.viableDaysOfSupply)} d DOS
               </span>
-              <span className="text-muted-foreground">·</span>
-              <span className="text-muted-foreground">
+              <span className="text-muted-foreground whitespace-nowrap">
+                <span className="mr-2">·</span>
                 stockout in {formatDOS(entry.daysUntilStockout)} d
               </span>
               {entry.constraintCategory && (
-                <>
-                  <span className="text-muted-foreground">·</span>
-                  <span className="text-muted-foreground capitalize">
-                    {entry.constraintCategory.replace(/_/g, " ")}
-                  </span>
-                </>
+                <span className="text-muted-foreground capitalize whitespace-nowrap">
+                  <span className="mr-2">·</span>
+                  {entry.constraintCategory.replace(/_/g, " ")}
+                </span>
               )}
             </div>
           </div>
-          <Sparkline points={entry.sparkline} animated={animated} />
-          <DosDelta entry={entry} />
-          <RankDelta delta={rankDelta} />
+          {/* Right-side decorations: hide progressively as the card narrows
+              so the metric text never gets crushed. Container queries are used
+              (not viewport breakpoints) because this card sits in a responsive
+              grid cell whose width can be small even on a wide screen. */}
+          <div className="hidden @sm:block">
+            <Sparkline points={entry.sparkline} animated={animated} />
+          </div>
+          <div className="hidden @md:block">
+            <DosDelta entry={entry} />
+          </div>
+          <div className="hidden @md:block">
+            <RankDelta delta={rankDelta} />
+          </div>
         </div>
       </Link>
     </li>
