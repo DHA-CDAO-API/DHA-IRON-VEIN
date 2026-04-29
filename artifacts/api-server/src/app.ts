@@ -154,16 +154,26 @@ app.use("/api/predictive/recommendations", (req, res, next) =>
 // 8. Routes.
 app.use("/api", router);
 
-// 9. Error handler — never leak internal details to the client in prod.
+// 9. Error handler — never leak internal details to the client in prod,
+//    EXCEPT for the Copilot family of routes during the hackathon demo.
+//    Background: the deployed Copilot endpoints have been failing with an
+//    opaque HTTP 500 and the deployment logs API only returns stale logs,
+//    so the actual cause cannot be diagnosed from outside. Surfacing the
+//    real error message under /api/copilot/* keeps the demo debuggable
+//    without widening the blast radius for the rest of the API. The
+//    follow-up "Hide raw error details from end users in the chat" task
+//    tracks reverting this once a hardened deployment is needed.
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 app.use((err: unknown, req: Request, res: Response, _next: NextFunction) => {
-  req.log?.error({ err }, "request failed");
+  req.log?.error({ err, url: req.originalUrl }, "request failed");
   if (res.headersSent) return;
-  if (process.env.NODE_ENV === "production") {
+  const message = err instanceof Error ? err.message : "internal_error";
+  const isProd = process.env.NODE_ENV === "production";
+  const isCopilotRoute = req.originalUrl.startsWith("/api/copilot");
+  if (isProd && !isCopilotRoute) {
     res.status(500).json({ error: "internal_error" });
     return;
   }
-  const message = err instanceof Error ? err.message : "internal_error";
   res.status(500).json({ error: "internal_error", detail: message });
 });
 
