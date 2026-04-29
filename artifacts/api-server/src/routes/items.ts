@@ -1,9 +1,20 @@
 import { Router, type IRouter } from "express";
-import { db, items, inventoryBalances, suppliers, supplierItems, orders, orderLines, alerts } from "@workspace/db";
+import {
+  db,
+  items,
+  inventoryBalances,
+  suppliers,
+  supplierItems,
+  orders,
+  orderLines,
+  alerts,
+  activityEntries,
+} from "@workspace/db";
 import { eq, sql, and, or, ilike } from "drizzle-orm";
-import { loadSimContext } from "../lib/ctx";
+import { invalidateSimCache, loadSimContext } from "../lib/ctx";
 import { computeDailyDemand, projectDaysOfSupply, statusFromDOS } from "@workspace/sim";
 import { mapSupplierToApi } from "../lib/mappers";
+import { requireAdmin } from "../lib/require-admin";
 
 const router: IRouter = Router();
 
@@ -159,6 +170,80 @@ router.get("/items/:itemId", async (req, res, next) => {
         createdAt: o.createdAt.toISOString(),
       })),
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Admin endpoint: edit a single item's editable catalog fields. Currently
+// only `unitPriceUsd` — the field operators need to fix to unblock POs that
+// would otherwise hit the `zero_total_order` rule (task #222). Persists the
+// new price, writes a CATALOG_PRICE_CHANGED activity entry, invalidates the
+// sim cache so derived views pick up the change, and returns the updated
+// item row.
+router.patch("/items/:itemId", requireAdmin, async (req, res, next) => {
+  try {
+    const itemId = req.params.itemId;
+    const body = (req.body ?? {}) as {
+      unitPriceUsd?: unknown;
+      note?: unknown;
+    };
+
+    const raw = body.unitPriceUsd;
+    const parsed =
+      typeof raw === "number"
+        ? raw
+        : typeof raw === "string" && raw.trim() !== ""
+          ? Number(raw)
+          : NaN;
+    if (!Number.isFinite(parsed) || parsed < 0) {
+      return res
+        .status(400)
+        .json({ error: "unitPriceUsd must be a non-negative finite number" });
+    }
+    // Round to cents — catalog prices are USD and the UI shows them at
+    // 2-decimal precision; storing more is just noise.
+    const newPrice = Math.round(parsed * 100) / 100;
+
+    const note =
+      typeof body.note === "string" && body.note.trim() !== ""
+        ? body.note.trim().slice(0, 500)
+        : null;
+
+    const [existing] = await db.select().from(items).where(eq(items.id, itemId));
+    if (!existing) return res.status(404).json({ error: "item not found" });
+
+    const oldPrice = Number(existing.unitPriceUsd) || 0;
+
+    if (newPrice === oldPrice) {
+      // No-op: still return the row so the client can refresh.
+      return res.json(existing);
+    }
+
+    const [updated] = await db
+      .update(items)
+      .set({ unitPriceUsd: newPrice })
+      .where(eq(items.id, itemId))
+      .returning();
+
+    await db.insert(activityEntries).values({
+      kind: "CATALOG_PRICE_CHANGED",
+      actor: "operator",
+      message: `${existing.name} price $${oldPrice.toFixed(2)} → $${newPrice.toFixed(2)}${
+        note ? ` — ${note}` : ""
+      }`,
+      refType: "item",
+      refId: itemId,
+      meta: {
+        itemId,
+        from: oldPrice,
+        to: newPrice,
+        note,
+      },
+    });
+
+    invalidateSimCache();
+    res.json(updated);
   } catch (err) {
     next(err);
   }

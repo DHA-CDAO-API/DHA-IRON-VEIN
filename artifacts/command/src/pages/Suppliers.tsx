@@ -67,7 +67,7 @@ export default function Suppliers() {
     query: { queryKey: getListOrdersQueryKey(orderParams) },
   });
 
-  const { data: items } = useListItems({
+  const { data: items } = useListItems(undefined, {
     query: { queryKey: getListItemsQueryKey() },
   });
 

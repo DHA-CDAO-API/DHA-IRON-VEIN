@@ -257,6 +257,23 @@ paths:
     get:
       operationId: listItems
       tags: [items]
+      parameters:
+        - in: query
+          name: search
+          description: ILIKE filter against name / mfr_cat_no / ndc.
+          schema: { type: string }
+        - in: query
+          name: source
+          description: Filter by provenance (`seed` or `supply_demo_v2`).
+          schema: { type: string }
+        - in: query
+          name: limit
+          description: Page size (default 500, max 5000).
+          schema: { type: integer }
+        - in: query
+          name: offset
+          description: Pagination offset.
+          schema: { type: integer }
       responses:
         "200":
           description: ok
@@ -280,6 +297,37 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ItemDetail" }
+    patch:
+      operationId: updateItem
+      tags: [items]
+      summary: Update editable catalog fields on an item (currently `unitPriceUsd`).
+      description: |
+        Admin endpoint used by the Catalog Prices screen to repair or set the
+        catalog `unit_price_usd` on an item. Persists the new value, writes a
+        `CATALOG_PRICE_CHANGED` activity entry capturing the actor, the old
+        and new values, and an optional note, and returns the updated `Item`.
+        New POs created after this call (and any subsequent backfill run) use
+        the new price.
+      parameters:
+        - in: path
+          name: itemId
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateItemInput" }
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Item" }
+        "403":
+          description: forbidden (active role is not an admin role)
+        "404":
+          description: item not found
 
   /items/{itemId}/procedures:
     get:
@@ -2141,6 +2189,18 @@ components:
       anyOf:
         - required: [status]
         - required: [priority]
+
+    UpdateItemInput:
+      type: object
+      required: [unitPriceUsd]
+      properties:
+        unitPriceUsd:
+          type: number
+          minimum: 0
+          description: New catalog unit price in USD; must be a non-negative finite number.
+        note:
+          type: string
+          description: Optional rationale stored on the CATALOG_PRICE_CHANGED activity entry.
 
     Alert:
       type: object

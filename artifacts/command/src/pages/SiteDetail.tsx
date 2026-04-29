@@ -141,7 +141,7 @@ export default function SiteDetail() {
     },
   });
 
-  const { data: items } = useListItems({
+  const { data: items } = useListItems(undefined, {
     query: { queryKey: getListItemsQueryKey() },
   });
 

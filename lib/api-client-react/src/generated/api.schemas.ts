@@ -1258,6 +1258,16 @@ export type UpdateOrderStatusInput = unknown & {
   note?: string | null;
 };
 
+export interface UpdateItemInput {
+  /**
+   * New catalog unit price in USD; must be a non-negative finite number.
+   * @minimum 0
+   */
+  unitPriceUsd: number;
+  /** Optional rationale stored on the CATALOG_PRICE_CHANGED activity entry. */
+  note?: string;
+}
+
 export interface AcknowledgeAlertInput {
   acknowledgedBy: string;
   /** @nullable */
@@ -2509,6 +2519,25 @@ export interface CasualtyEvaluateResult {
 export type ListCatalogItemsParams = {
   search?: string;
   limit?: number;
+};
+
+export type ListItemsParams = {
+  /**
+   * ILIKE filter against name / mfr_cat_no / ndc.
+   */
+  search?: string;
+  /**
+   * Filter by provenance (`seed` or `supply_demo_v2`).
+   */
+  source?: string;
+  /**
+   * Page size (default 500, max 5000).
+   */
+  limit?: number;
+  /**
+   * Pagination offset.
+   */
+  offset?: number;
 };
 
 export type ListProceduresParams = {

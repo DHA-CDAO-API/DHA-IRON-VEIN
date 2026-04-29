@@ -18,6 +18,7 @@ import PurchaseOrder from "@/pages/PurchaseOrder";
 import Scenarios from "@/pages/Scenarios";
 import Copilot from "@/pages/Copilot";
 import DataAdmin from "@/pages/DataAdmin";
+import CatalogPrices from "@/pages/admin/CatalogPrices";
 import Settings from "@/pages/Settings";
 import Profile from "@/pages/Profile";
 import Locations from "@/pages/Locations";
@@ -66,6 +67,7 @@ function Router() {
             <Route path="/tags" component={TagsAdmin} />
             <Route path="/tags/:slug" component={TagDetailPage} />
             <Route path="/copilot" component={Copilot} />
+            <Route path="/admin/prices" component={CatalogPrices} />
             <Route path="/data" component={DataAdmin} />
             <Route path="/settings" component={Settings} />
             <Route path="/profile" component={Profile} />

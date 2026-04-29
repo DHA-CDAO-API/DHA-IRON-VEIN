@@ -55,6 +55,7 @@ import type {
   ListAlertsParams,
   ListCatalogItemsParams,
   ListInventoryBalancesParams,
+  ListItemsParams,
   ListOrdersParams,
   ListProceduresParams,
   ListTagsParams,
@@ -108,6 +109,7 @@ import type {
   TagUpdateInput,
   TheaterBloodReadiness,
   TheaterZone,
+  UpdateItemInput,
   UpdateOrderStatusInput,
   UpdateProfileInput,
   UpdateScenarioInput,
@@ -1303,35 +1305,57 @@ export const useUpdateSitePopulation = <
   return useMutation(getUpdateSitePopulationMutationOptions(options));
 };
 
-export const getListItemsUrl = () => {
-  return `/api/items`;
+export const getListItemsUrl = (params?: ListItemsParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/items?${stringifiedParams}`
+    : `/api/items`;
 };
 
-export const listItems = async (options?: RequestInit): Promise<Item[]> => {
-  return customFetch<Item[]>(getListItemsUrl(), {
+export const listItems = async (
+  params?: ListItemsParams,
+  options?: RequestInit,
+): Promise<Item[]> => {
+  return customFetch<Item[]>(getListItemsUrl(params), {
     ...options,
     method: "GET",
   });
 };
 
-export const getListItemsQueryKey = () => {
-  return [`/api/items`] as const;
+export const getListItemsQueryKey = (params?: ListItemsParams) => {
+  return [`/api/items`, ...(params ? [params] : [])] as const;
 };
 
 export const getListItemsQueryOptions = <
   TData = Awaited<ReturnType<typeof listItems>>,
   TError = ErrorType<unknown>,
->(options?: {
-  query?: UseQueryOptions<Awaited<ReturnType<typeof listItems>>, TError, TData>;
-  request?: SecondParameter<typeof customFetch>;
-}) => {
+>(
+  params?: ListItemsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listItems>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
   const { query: queryOptions, request: requestOptions } = options ?? {};
 
-  const queryKey = queryOptions?.queryKey ?? getListItemsQueryKey();
+  const queryKey = queryOptions?.queryKey ?? getListItemsQueryKey(params);
 
   const queryFn: QueryFunction<Awaited<ReturnType<typeof listItems>>> = ({
     signal,
-  }) => listItems({ signal, ...requestOptions });
+  }) => listItems(params, { signal, ...requestOptions });
 
   return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
     Awaited<ReturnType<typeof listItems>>,
@@ -1348,11 +1372,18 @@ export type ListItemsQueryError = ErrorType<unknown>;
 export function useListItems<
   TData = Awaited<ReturnType<typeof listItems>>,
   TError = ErrorType<unknown>,
->(options?: {
-  query?: UseQueryOptions<Awaited<ReturnType<typeof listItems>>, TError, TData>;
-  request?: SecondParameter<typeof customFetch>;
-}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
-  const queryOptions = getListItemsQueryOptions(options);
+>(
+  params?: ListItemsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listItems>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListItemsQueryOptions(params, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;
@@ -1440,6 +1471,100 @@ export function useGetItemDetail<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * Admin endpoint used by the Catalog Prices screen to repair or set the
+catalog `unit_price_usd` on an item. Persists the new value, writes a
+`CATALOG_PRICE_CHANGED` activity entry capturing the actor, the old
+and new values, and an optional note, and returns the updated `Item`.
+New POs created after this call (and any subsequent backfill run) use
+the new price.
+
+ * @summary Update editable catalog fields on an item (currently `unitPriceUsd`).
+ */
+export const getUpdateItemUrl = (itemId: string) => {
+  return `/api/items/${itemId}`;
+};
+
+export const updateItem = async (
+  itemId: string,
+  updateItemInput: UpdateItemInput,
+  options?: RequestInit,
+): Promise<Item> => {
+  return customFetch<Item>(getUpdateItemUrl(itemId), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updateItemInput),
+  });
+};
+
+export const getUpdateItemMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateItem>>,
+    TError,
+    { itemId: string; data: BodyType<UpdateItemInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateItem>>,
+  TError,
+  { itemId: string; data: BodyType<UpdateItemInput> },
+  TContext
+> => {
+  const mutationKey = ["updateItem"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateItem>>,
+    { itemId: string; data: BodyType<UpdateItemInput> }
+  > = (props) => {
+    const { itemId, data } = props ?? {};
+
+    return updateItem(itemId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateItemMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateItem>>
+>;
+export type UpdateItemMutationBody = BodyType<UpdateItemInput>;
+export type UpdateItemMutationError = ErrorType<void>;
+
+/**
+ * @summary Update editable catalog fields on an item (currently `unitPriceUsd`).
+ */
+export const useUpdateItem = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateItem>>,
+    TError,
+    { itemId: string; data: BodyType<UpdateItemInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateItem>>,
+  TError,
+  { itemId: string; data: BodyType<UpdateItemInput> },
+  TContext
+> => {
+  return useMutation(getUpdateItemMutationOptions(options));
+};
 
 /**
  * @summary Reverse lookup — which procedures use this item, and at what tier.

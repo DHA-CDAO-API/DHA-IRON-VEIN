@@ -72,7 +72,7 @@ export function SearchPalette({
   const { data: nodes = [] } = useListNodes({
     query: { queryKey: getListNodesQueryKey(), enabled: open },
   });
-  const { data: items = [] } = useListItems({
+  const { data: items = [] } = useListItems(undefined, {
     query: { queryKey: getListItemsQueryKey(), enabled: open },
   });
   const { data: suppliers = [] } = useListSuppliers({

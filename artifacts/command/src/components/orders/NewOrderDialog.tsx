@@ -125,7 +125,7 @@ export function NewOrderDialog({ open, onOpenChange, prefill }: NewOrderDialogPr
   const createOrder = useCreateOrder();
   const { canWrite, reason: writeReason } = useCanWrite();
 
-  const { data: items } = useListItems({
+  const { data: items } = useListItems(undefined, {
     query: { queryKey: getListItemsQueryKey(), enabled: open },
   });
   const { data: nodes } = useListNodes({

@@ -153,7 +153,7 @@ export default function CasualtyPlanner() {
   // currency subtotals — we look up `unitPriceUsd` per shortfall row so
   // operators see the cost implication of the consolidated batch before
   // sending. Backed by the same /items endpoint the rest of the app uses.
-  const { data: catalogItems = [] } = useListItems({
+  const { data: catalogItems = [] } = useListItems(undefined, {
     query: { queryKey: getListItemsQueryKey() },
   });
   const unitPriceById = React.useMemo(() => {

@@ -879,6 +879,22 @@ export const UpdateSitePopulationResponse = zod.object({
   wasteFactor: zod.number(),
 });
 
+export const ListItemsQueryParams = zod.object({
+  search: zod.coerce
+    .string()
+    .optional()
+    .describe("ILIKE filter against name \/ mfr_cat_no \/ ndc."),
+  source: zod.coerce
+    .string()
+    .optional()
+    .describe("Filter by provenance (`seed` or `supply_demo_v2`)."),
+  limit: zod.coerce
+    .number()
+    .optional()
+    .describe("Page size (default 500, max 5000)."),
+  offset: zod.coerce.number().optional().describe("Pagination offset."),
+});
+
 export const ListItemsResponseItem = zod.object({
   id: zod.string(),
   name: zod.string(),
@@ -1117,6 +1133,73 @@ export const GetItemDetailResponse = zod.object({
       }),
     )
     .optional(),
+});
+
+/**
+ * Admin endpoint used by the Catalog Prices screen to repair or set the
+catalog `unit_price_usd` on an item. Persists the new value, writes a
+`CATALOG_PRICE_CHANGED` activity entry capturing the actor, the old
+and new values, and an optional note, and returns the updated `Item`.
+New POs created after this call (and any subsequent backfill run) use
+the new price.
+
+ * @summary Update editable catalog fields on an item (currently `unitPriceUsd`).
+ */
+export const UpdateItemParams = zod.object({
+  itemId: zod.coerce.string(),
+});
+
+export const updateItemBodyUnitPriceUsdMin = 0;
+
+export const UpdateItemBody = zod.object({
+  unitPriceUsd: zod
+    .number()
+    .min(updateItemBodyUnitPriceUsdMin)
+    .describe(
+      "New catalog unit price in USD; must be a non-negative finite number.",
+    ),
+  note: zod
+    .string()
+    .optional()
+    .describe(
+      "Optional rationale stored on the CATALOG_PRICE_CHANGED activity entry.",
+    ),
+});
+
+export const UpdateItemResponse = zod.object({
+  id: zod.string(),
+  name: zod.string(),
+  unit: zod.string(),
+  unitOfIssue: zod.string().optional(),
+  category: zod
+    .enum(["blood_products", "supplies", "other"])
+    .optional()
+    .describe("Top-level grouping for medical-logistics catalog"),
+  classOfSupply: zod.string().optional(),
+  criticality: zod.string(),
+  usagePerDraw: zod.number(),
+  usageRate: zod.number(),
+  demandBasis: zod.string(),
+  skewFactor: zod.number().optional(),
+  leadTimeDays: zod.number().optional(),
+  shelfLifeDays: zod.number().optional(),
+  baseDemandPerEvent: zod.number().optional(),
+  wasteAdjustedDemand: zod.number().optional(),
+  unitPriceUsd: zod.number().optional(),
+  trigger: zod.string().optional(),
+  niinOrSku: zod.string().optional(),
+  source: zod.enum(["seed", "supply_demo_v2"]).optional(),
+  sourceCatalogEntryId: zod.number().nullish(),
+  manufacturer: zod.string().nullish(),
+  manufacturerLong: zod.string().nullish(),
+  mfrCatNo: zod.string().nullish(),
+  ndc: zod.string().nullish(),
+  productNoun: zod.string().nullish(),
+  productType: zod.string().nullish(),
+  productSize: zod.string().nullish(),
+  unspscCommodity: zod.string().nullish(),
+  ghxCommodityType: zod.string().nullish(),
+  sosTypeDescription: zod.string().nullish(),
 });
 
 /**

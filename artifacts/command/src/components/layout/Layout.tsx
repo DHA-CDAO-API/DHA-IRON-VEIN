@@ -3,7 +3,8 @@ import { Link, useLocation } from "wouter";
 import { 
   Activity, Map as MapIcon, Box, ShoppingCart, PlayCircle, 
   MessageSquare, Database, Settings, UserCircle, Search,
-  Building2, Truck, Tag as TagIcon, BriefcaseMedical, Stethoscope, LogOut
+  Building2, Truck, Tag as TagIcon, BriefcaseMedical, Stethoscope, LogOut,
+  DollarSign,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import RoleBadge from "@/components/RoleBadge";
@@ -133,6 +134,16 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       hoverText: "hover:text-lime-100",
       ring: "focus-visible:ring-lime-400",
     },
+    "/admin/prices": {
+      iconActive: "text-emerald-300",
+      iconInactive: "text-emerald-400/65",
+      iconHover: "group-hover:text-emerald-200",
+      activeBg: "bg-emerald-400/15",
+      activeText: "text-emerald-100",
+      hoverBg: "hover:bg-emerald-400/10",
+      hoverText: "hover:text-emerald-100",
+      ring: "focus-visible:ring-emerald-400",
+    },
     "/settings": {
       iconActive: "text-orange-300",
       iconInactive: "text-orange-400/65",
@@ -203,6 +214,13 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     { href: "/copilot", label: "Copilot", icon: MessageSquare },
   ];
 
+  // Roles allowed to see the Catalog Prices admin entry. Server enforces
+  // this for real on PATCH /items/:itemId — see ADMIN_ROLES in
+  // artifacts/api-server/src/lib/require-admin.ts. Hiding the nav entry
+  // for non-admins is purely cosmetic and avoids dead links.
+  const ADMIN_ROLES = new Set(["logistician", "commander"]);
+  const isAdmin = !!profile?.role && ADMIN_ROLES.has(profile.role);
+
   const bottomItems: Array<{
     href: string;
     label: string;
@@ -210,6 +228,17 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     matches?: (path: string) => boolean;
   }> = [
     { href: "/tags", label: "Tags", icon: TagIcon, matches: (p) => p === "/tags" || p.startsWith("/tags/") },
+    ...(isAdmin
+      ? [
+          {
+            href: "/admin/prices",
+            label: "Prices",
+            icon: DollarSign,
+            matches: (p: string) =>
+              p === "/admin/prices" || p.startsWith("/admin/prices"),
+          },
+        ]
+      : []),
     { href: "/data", label: "Data", icon: Database },
     { href: "/settings", label: "Settings", icon: Settings },
     { href: "/profile", label: "Profile", icon: UserCircle },
@@ -271,7 +300,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         </div>
         <div className="p-2 border-t border-border flex flex-col gap-1 shrink-0">
           {bottomItems.map((item) => {
-            const active = location === item.href;
+            const active = item.matches ? item.matches(location) : location === item.href;
             const c = NAV_COLORS[item.href] ?? FALLBACK_NAV_COLOR;
             return (
               <Link
