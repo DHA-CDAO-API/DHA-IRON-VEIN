@@ -6,6 +6,7 @@ import {
   Building2, Truck, Tag as TagIcon, BriefcaseMedical, Stethoscope, LogOut,
   DollarSign,
 } from "lucide-react";
+import { useGetProfile } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import RoleBadge from "@/components/RoleBadge";
 import AlertsRail from "@/components/AlertsRail";
@@ -18,6 +19,10 @@ import { IronVeinBrand } from "@/components/brand/IronVeinBrand";
 export default function Layout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
   const palette = useSearchPalette();
+  // Profile drives role-gated nav entries (e.g. the admin Prices link
+  // below). Server-side checks remain authoritative — see ADMIN_ROLES in
+  // artifacts/api-server/src/lib/require-admin.ts.
+  const { data: profile } = useGetProfile();
 
   // Per-item accent colors. Each row owns a distinct hue so users can scan
   // the rail at a glance and immediately know where they are. Class strings
