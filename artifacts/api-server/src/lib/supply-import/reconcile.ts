@@ -81,6 +81,7 @@ export async function runCatalogReconcile(): Promise<ReconcileSummary> {
       values.push({
         mfrCatNo,
         manufacturer,
+        manufacturerLong: row.manufacturerLong ?? null,
         description,
         productNoun: (row.productNoun ?? "").trim() || description,
         productType: (row.productType ?? "").trim() || "Supply Item",
@@ -88,6 +89,8 @@ export async function runCatalogReconcile(): Promise<ReconcileSummary> {
         productSize: row.productSize ?? null,
         ghxCommodityType: row.ghxCommodityType ?? null,
         fullDescription: row.fullDescription ?? null,
+        ndc: row.productNDC ?? null,
+        sosTypeDescription: row.sosTypeDescription ?? null,
         source: "supply_demo_v2",
         // Keep all existing operational fields at their defaults; orders /
         // PAR / alerts continue to ignore source='supply_demo_v2' rows

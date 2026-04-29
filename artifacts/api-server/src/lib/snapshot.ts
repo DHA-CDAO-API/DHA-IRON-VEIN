@@ -47,7 +47,7 @@ export async function computeRiskByNode(): Promise<{
   operationalState: string;
   focusedHubId: string | null;
 }> {
-  const { ctx } = await loadSimContext();
+  const { ctx, historicalBurn } = await loadSimContext();
   const openAlerts = await db
     .select()
     .from(alertsTable)
@@ -75,11 +75,36 @@ export async function computeRiskByNode(): Promise<{
   }
 
   const onHandByKey = new Map<string, number>();
-  for (const b of ctx.balances) onHandByKey.set(`${b.nodeId}:${b.itemId}`, b.onHand);
+  // Per-node set of item ids that materially contribute to risk: anything
+  // we have on hand at that node OR have a real historical-burn rate for.
+  // Items absent from both sets contribute zero burn and zero on-hand
+  // (=> dos sentinel of 999) so we can safely skip them — critical for
+  // performance now that activated catalogs push `ctx.items` to ~60k.
+  const relevantItemIdsByNode = new Map<string, Set<string>>();
+  const addRelevant = (nodeId: string, itemId: string) => {
+    let s = relevantItemIdsByNode.get(nodeId);
+    if (!s) {
+      s = new Set();
+      relevantItemIdsByNode.set(nodeId, s);
+    }
+    s.add(itemId);
+  };
+  for (const b of ctx.balances) {
+    onHandByKey.set(`${b.nodeId}:${b.itemId}`, b.onHand);
+    addRelevant(b.nodeId, b.itemId);
+  }
+  for (const [nodeId, burnMap] of historicalBurn.entries()) {
+    for (const itemId of burnMap.keys()) addRelevant(nodeId, itemId);
+  }
 
   // Look up category & full item record by id (the SimItem in ctx may not carry category)
   const itemRows = await db.select().from(itemsTable);
   const itemRowById = new Map(itemRows.map((i) => [i.id, i]));
+  const simItemById = new Map(ctx.items.map((i) => [i.id, i]));
+  // Seeded items with no historical burn still need a synthetic baseline
+  // (e.g. blood products, curated supplies) so we always include them.
+  const seededSimItems = ctx.items.filter((i) => !i.id.startsWith("cat_"));
+  const seededIds = new Set(seededSimItems.map((i) => i.id));
 
   const riskByNode: RiskNodeSummary[] = ctx.nodes.map((node) => {
     const profile = ctx.profiles.get(node.id);
@@ -98,11 +123,25 @@ export async function computeRiskByNode(): Promise<{
       };
     }
     const state = ctx.states.get(profile.operationalState);
+    // Build the per-node item subset: seeded items (always relevant for the
+    // synthetic baseline) + any imported item we have on hand or a
+    // historical burn rate for at this node.
+    const relevantIds = relevantItemIdsByNode.get(node.id);
+    const nodeItems = relevantIds
+      ? [
+          ...seededSimItems,
+          ...Array.from(relevantIds)
+            .filter((id) => !seededIds.has(id))
+            .map((id) => simItemById.get(id))
+            .filter((it): it is NonNullable<typeof it> => !!it),
+        ]
+      : seededSimItems;
     const demands = computeDailyDemand({
       profile,
-      items: ctx.items,
+      items: nodeItems,
       operationalState: state,
       itemSkew: ctx.itemSkew,
+      historicalBurnByItem: historicalBurn.get(node.id),
     });
     let critShort = 0;
     let minDos = 999;

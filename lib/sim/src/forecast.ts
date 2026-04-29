@@ -15,6 +15,18 @@ export function computeDailyDemand(args: {
   encounterMultiplierOverride?: number;
   populationMultiplierOverride?: number;
   specimensMultiplier?: number;
+  /**
+   * Optional per-item override of the daily burn rate, sourced from real
+   * issue history (see `item_facility_demand_rollup`). When a value is
+   * present for an item, the historical burn rate is used as the daily
+   * demand directly — multiplied only by the operational-state encounter
+   * multiplier and the encounter multiplier override so scenario knobs
+   * (combat ramp, etc.) still flex the projection.
+   *
+   * Items without a historical rate fall back to the synthetic
+   * encounter-based math below.
+   */
+  historicalBurnByItem?: Map<string, number>;
 }): DailyDemand[] {
   const stateMult = args.operationalState?.encounterMultiplier ?? 1;
   const popMult = args.operationalState?.populationMultiplier ?? 1;
@@ -40,8 +52,18 @@ export function computeDailyDemand(args: {
   // Cold-chain shipments per day at the node (1 per ~50 transfusion events)
   const shipmentEvents = transfusionEvents * 0.02 + 0.05;
 
+  // Effective scenario multiplier applied to historical-burn rates so
+  // simulator knobs like the combat ramp still influence the projection
+  // even for items whose baseline comes from real issues data.
+  const histScenarioMult = stateMult * encMult;
+
   return args.items.map((it) => {
     const skew = args.itemSkew[it.id] ?? 1;
+    const histRate = args.historicalBurnByItem?.get(it.id);
+    if (histRate !== undefined && histRate > 0) {
+      const qty = histRate * histScenarioMult * skew;
+      return { itemId: it.id, quantity: Math.max(0, qty) };
+    }
     let qty = 0;
     switch (it.trigger) {
       case "phlebotomy_event":

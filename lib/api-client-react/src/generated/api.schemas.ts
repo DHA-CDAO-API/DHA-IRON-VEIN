@@ -425,6 +425,10 @@ export interface SiteSummary {
   type: string;
   /** @nullable */
   regionalHub?: string | null;
+  /** @nullable */
+  aor?: string | null;
+  coordsApproximate?: boolean;
+  hiddenFromMap?: boolean;
   daysOfSupply: number;
   openAlerts: number;
   riskScore: number;
@@ -869,6 +873,13 @@ export const ItemCategory = {
   other: "other",
 } as const;
 
+export type ItemSource = (typeof ItemSource)[keyof typeof ItemSource];
+
+export const ItemSource = {
+  seed: "seed",
+  supply_demo_v2: "supply_demo_v2",
+} as const;
+
 export interface Item {
   id: string;
   name: string;
@@ -888,6 +899,18 @@ export interface Item {
   wasteAdjustedDemand?: number;
   trigger?: string;
   niinOrSku?: string;
+  source?: ItemSource;
+  sourceCatalogEntryId?: number | null;
+  manufacturer?: string | null;
+  manufacturerLong?: string | null;
+  mfrCatNo?: string | null;
+  ndc?: string | null;
+  productNoun?: string | null;
+  productType?: string | null;
+  productSize?: string | null;
+  unspscCommodity?: string | null;
+  ghxCommodityType?: string | null;
+  sosTypeDescription?: string | null;
 }
 
 export interface Supplier {

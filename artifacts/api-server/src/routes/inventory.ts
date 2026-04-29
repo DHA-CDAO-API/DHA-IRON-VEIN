@@ -29,6 +29,7 @@ router.get("/inventory/balances", async (req, res, next) => {
         items: ctx.ctx.items,
         operationalState: ctx.ctx.states.get(profile.operationalState),
         itemSkew: ctx.ctx.itemSkew,
+        historicalBurnByItem: ctx.historicalBurn.get(node.id),
       });
       for (const d of demands) burnByNodeItem.set(`${node.id}:${d.itemId}`, d.quantity);
     }

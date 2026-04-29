@@ -31,6 +31,9 @@ router.get("/sites", async (_req, res, next) => {
           name: n.name,
           type: n.type,
           regionalHub: n.regionalHub,
+          aor: n.aor,
+          coordsApproximate: n.coordsApproximate,
+          hiddenFromMap: n.hiddenFromMap,
           daysOfSupply: r?.daysOfSupply ?? 999,
           openAlerts: r?.openAlerts ?? 0,
           riskScore: r?.riskScore ?? 0,
@@ -71,12 +74,14 @@ router.get("/sites/:nodeId", async (req, res, next) => {
       ]);
 
     const profile = profileRow[0];
+    const historicalBurnByItem = ctx.historicalBurn.get(nodeId);
     const dailyDemand = profile
       ? computeDailyDemand({
           profile,
           items: ctx.ctx.items,
           operationalState: ctx.ctx.states.get(profile.operationalState),
           itemSkew: ctx.ctx.itemSkew,
+          historicalBurnByItem,
         })
       : [];
     const demandByItem = new Map(dailyDemand.map((d) => [d.itemId, d.quantity]));
@@ -129,6 +134,7 @@ router.get("/sites/:nodeId", async (req, res, next) => {
       watchDays: ctx.ctx.watchDays,
       criticalDays: ctx.ctx.criticalDays,
       paddingDays: ctx.paddingDays,
+      historicalBurnByNode: ctx.historicalBurn,
     });
 
     const supplierRows = await db.select().from(suppliersTable);

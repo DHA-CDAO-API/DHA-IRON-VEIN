@@ -86,6 +86,62 @@ export default function ItemDetail() {
               <span>Lead time: {formatDays((item as { leadTimeDays?: number }).leadTimeDays)}</span>
             )}
           </div>
+          {(() => {
+            const it = item as {
+              source?: string;
+              manufacturer?: string | null;
+              manufacturerLong?: string | null;
+              mfrCatNo?: string | null;
+              ndc?: string | null;
+              productNoun?: string | null;
+              productType?: string | null;
+              productSize?: string | null;
+              unspscCommodity?: string | null;
+              ghxCommodityType?: string | null;
+              sosTypeDescription?: string | null;
+            };
+            const attrs: { label: string; value: string; testId: string }[] = [];
+            const push = (label: string, value: unknown, testId: string) => {
+              if (value === null || value === undefined) return;
+              const s = String(value).trim();
+              if (!s) return;
+              attrs.push({ label, value: s, testId });
+            };
+            push('Manufacturer', it.manufacturerLong || it.manufacturer, 'item-attr-manufacturer');
+            push('MFR Cat #', it.mfrCatNo, 'item-attr-mfr-cat');
+            push('NDC', it.ndc, 'item-attr-ndc');
+            push('Product Noun', it.productNoun, 'item-attr-product-noun');
+            push('Product Type', it.productType, 'item-attr-product-type');
+            push('Product Size', it.productSize, 'item-attr-product-size');
+            push('UNSPSC', it.unspscCommodity, 'item-attr-unspsc');
+            push('GHX Commodity', it.ghxCommodityType, 'item-attr-ghx');
+            push('SOS Type', it.sosTypeDescription, 'item-attr-sos');
+            if (attrs.length === 0 && it.source !== 'supply_demo_v2') return null;
+            return (
+              <div
+                className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs"
+                data-testid="item-attribute-strip"
+              >
+                {it.source === 'supply_demo_v2' && (
+                  <Badge
+                    variant="outline"
+                    className="border-primary/50 text-primary bg-primary/5 uppercase tracking-wide text-[10px]"
+                    data-testid="item-source-badge"
+                  >
+                    Imported
+                  </Badge>
+                )}
+                {attrs.map((a) => (
+                  <div key={a.testId} className="flex items-baseline gap-1.5" data-testid={a.testId}>
+                    <span className="text-[10px] uppercase tracking-wider text-muted-foreground/80">
+                      {a.label}
+                    </span>
+                    <span className="font-mono text-foreground/90">{a.value}</span>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
           <div className="mt-2">
             <TagEditor entityType="item" entityId={item.id} />
           </div>

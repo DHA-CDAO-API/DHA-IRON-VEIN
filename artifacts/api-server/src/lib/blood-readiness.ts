@@ -269,6 +269,7 @@ export async function computeNodeBloodReadiness(
 
   // Per-node demand for blood-product items only (used to back out viable DOS)
   const profile = ctx.ctx.profiles.get(nodeId);
+  const historicalBurnByItem = ctx.historicalBurn.get(nodeId);
   let bloodDemandPerDay = 0;
   if (profile) {
     const demands = computeDailyDemand({
@@ -276,6 +277,7 @@ export async function computeNodeBloodReadiness(
       items: ctx.ctx.items,
       operationalState: ctx.ctx.states.get(profile.operationalState),
       itemSkew: ctx.ctx.itemSkew,
+      historicalBurnByItem,
     });
     for (const d of demands) {
       const item = itemMap.get(d.itemId);
@@ -312,6 +314,7 @@ export async function computeNodeBloodReadiness(
       items: ctx.ctx.items,
       operationalState: ctx.ctx.states.get(profile.operationalState),
       itemSkew: ctx.ctx.itemSkew,
+      historicalBurnByItem,
     });
     for (const d of demands) burnByItem.set(d.itemId, d.quantity);
   }
@@ -450,6 +453,7 @@ export async function computeBloodReadinessByNode(): Promise<NodeBloodReadinessR
         items: ctx.ctx.items,
         operationalState: ctx.ctx.states.get(profile.operationalState),
         itemSkew: ctx.ctx.itemSkew,
+        historicalBurnByItem: ctx.historicalBurn.get(node.id),
       });
       for (const d of demands) {
         const item = itemMap.get(d.itemId);
@@ -533,6 +537,7 @@ export async function computeTheaterBloodReadiness(): Promise<TheaterBloodReadin
       items: ctx.ctx.items,
       operationalState: ctx.ctx.states.get(profile.operationalState),
       itemSkew: ctx.ctx.itemSkew,
+      historicalBurnByItem: ctx.historicalBurn.get(node.id),
     });
     let nodeMinDOS = 999;
     for (const reagent of TESTING_SUPPLY_ITEMS) {

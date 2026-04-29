@@ -12,6 +12,7 @@ import {
   bloodLots as bloodLotsTable,
   coldChainAssets as coldChainAssetsTable,
   donorPools as donorPoolsTable,
+  itemFacilityDemandRollup as demandRollupTable,
 } from "@workspace/db";
 import type {
   ScenarioContext,
@@ -29,12 +30,24 @@ import type {
 
 export type RouteWithCast = SimRoute;
 
+/**
+ * Per-node, per-item historical daily burn rate, derived from the supply
+ * demo issues table by the activation step. `Map<nodeId, Map<itemId, dailyBurn>>`.
+ *
+ * Routes that compute forecasts pass the per-node inner map to
+ * `computeDailyDemand` as `historicalBurnByItem`. Items present in the
+ * map use the historical rate; items not present fall back to the
+ * synthetic encounter-based math.
+ */
+export type HistoricalBurnIndex = Map<string, Map<string, number>>;
+
 let cache:
   | {
       builtAt: number;
       ctx: ScenarioContext;
       suppliers: SimSupplier[];
       paddingDays: number;
+      historicalBurn: HistoricalBurnIndex;
     }
   | undefined;
 
@@ -42,6 +55,7 @@ export async function loadSimContext(force = false): Promise<{
   ctx: ScenarioContext;
   suppliers: SimSupplier[];
   paddingDays: number;
+  historicalBurn: HistoricalBurnIndex;
 }> {
   if (cache && !force && Date.now() - cache.builtAt < 5000) {
     return cache;
@@ -59,6 +73,7 @@ export async function loadSimContext(force = false): Promise<{
     bloodLotsRows,
     coldChainAssetsRows,
     donorPoolsRows,
+    rollupRows,
   ] = await Promise.all([
     db.select().from(nodesTable),
     db.select().from(routesTable),
@@ -72,6 +87,13 @@ export async function loadSimContext(force = false): Promise<{
     db.select().from(bloodLotsTable),
     db.select().from(coldChainAssetsTable),
     db.select().from(donorPoolsTable),
+    db
+      .select({
+        nodeId: demandRollupTable.nodeId,
+        itemId: demandRollupTable.itemId,
+        dailyBurn: demandRollupTable.dailyBurn,
+      })
+      .from(demandRollupTable),
   ]);
 
   const settings = settingsRows[0];
@@ -178,11 +200,23 @@ export async function loadSimContext(force = false): Promise<{
     donorPools,
   };
 
+  const historicalBurn: HistoricalBurnIndex = new Map();
+  for (const r of rollupRows) {
+    if (r.dailyBurn <= 0) continue;
+    let inner = historicalBurn.get(r.nodeId);
+    if (!inner) {
+      inner = new Map<string, number>();
+      historicalBurn.set(r.nodeId, inner);
+    }
+    inner.set(r.itemId, r.dailyBurn);
+  }
+
   cache = {
     builtAt: Date.now(),
     ctx,
     suppliers,
     paddingDays: settings?.demandPaddingDays ?? 7,
+    historicalBurn,
   };
   return cache;
 }

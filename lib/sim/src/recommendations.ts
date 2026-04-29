@@ -221,26 +221,64 @@ export function generateRecommendations(args: {
   watchDays: number;
   criticalDays: number;
   paddingDays: number;
+  /**
+   * Optional per-node, per-item historical daily-burn override. When a
+   * node has an entry, the inner map is forwarded to `computeDailyDemand`
+   * so the recommendation engine reorders against real history rather
+   * than synthetic rates. Items without history fall back to synthetic.
+   */
+  historicalBurnByNode?: Map<string, Map<string, number>>;
 }): Recommendation[] {
   const recs: Recommendation[] = [];
   const balanceMap = new Map<string, number>();
+  // Track which items materially matter so the per-node forecast loop
+  // doesn't iterate the entire (~60k after supply-demo activation) catalog
+  // when only a handful of items have on-hand or historical-burn data.
+  const itemsWithBalanceByNode = new Map<string, Set<string>>();
   for (const b of args.balances) {
     balanceMap.set(`${b.nodeId}:${b.itemId}`, b.onHand);
+    let s = itemsWithBalanceByNode.get(b.nodeId);
+    if (!s) {
+      s = new Set();
+      itemsWithBalanceByNode.set(b.nodeId, s);
+    }
+    s.add(b.itemId);
   }
+  // Item lookups inside the inner loop must be O(1) — the previous
+  // `args.items.find(...)` was O(items × demands × nodes).
+  const itemById = new Map(args.items.map((i) => [i.id, i]));
+  // Always include seeded items (anything not from the supply-demo
+  // catalog) so curated blood/supply recommendations still emit.
+  const seededIds = new Set(
+    args.items.filter((i) => !i.id.startsWith("cat_")).map((i) => i.id),
+  );
 
   for (const node of args.nodes) {
     const profile = args.profiles.get(node.id);
     if (!profile || profile.activeSupportedPopulation === 0) continue;
     const state = args.states.get(profile.operationalState);
+    // Build per-node item subset: seeded items + anything we have on hand
+    // here + anything with a historical burn rate at this node.
+    const relevant = new Set<string>(seededIds);
+    const onHandHere = itemsWithBalanceByNode.get(node.id);
+    if (onHandHere) for (const id of onHandHere) relevant.add(id);
+    const histHere = args.historicalBurnByNode?.get(node.id);
+    if (histHere) for (const id of histHere.keys()) relevant.add(id);
+    const nodeItems: SimItem[] = [];
+    for (const id of relevant) {
+      const it = itemById.get(id);
+      if (it) nodeItems.push(it);
+    }
     const demands = computeDailyDemand({
       profile,
-      items: args.items,
+      items: nodeItems,
       operationalState: state,
       itemSkew: args.itemSkew,
+      historicalBurnByItem: args.historicalBurnByNode?.get(node.id),
     });
     const upstreamRoute = findUpstreamRoute(node.id, args.routes);
     for (const dem of demands) {
-      const item = args.items.find((i) => i.id === dem.itemId);
+      const item = itemById.get(dem.itemId);
       if (!item) continue;
       const onHand = balanceMap.get(`${node.id}:${dem.itemId}`) ?? 0;
       const dos = projectDaysOfSupply(onHand, dem.quantity);

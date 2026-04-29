@@ -1,21 +1,25 @@
-# Supply Demo Data v2 — Import, Reconciliation, and Map Integration
+# Supply Demo Data v2 — Import, Reconciliation, Activation, and Map Integration
 
 This document describes the end-to-end pipeline that brings the
 `Supply_Demo_Data_2.xlsx` dataset (~389k unique issue rows, 61.9k catalog
 entries, 25 MTF facilities) into the application without disturbing the
 curated demo data, the operational schema, or any existing UI surface.
 
-The pipeline has four stages, each owned by its own admin endpoint and
+The pipeline has five stages, each owned by its own admin endpoint and
 each independently reversible by the rollback endpoint:
 
 1. **Import** — parse the spreadsheet and load it into isolated staging
    tables (`supply_demo_v2_*`).
 2. **Reconcile** — fold the staging catalog rows into the canonical
-   `catalog_entries` table.
+   `catalog_entries` table (capturing NDC, manufacturer-long, SOS type).
 3. **Map facilities** — create one hidden `nodes` row per imported facility
    so we have a real foreign-key target for downstream joins.
-4. **Status panel** — read-only view of the pipeline state on the existing
-   admin page.
+4. **Activate** — promote reconciled catalog rows into `items`, un-hide
+   facility nodes onto the network map, derive on-hand inventory from
+   real issues data, and roll up per-(node,item) demand for the forecast
+   engine.
+5. **Status panel** — read-only view of the pipeline state on the existing
+   admin page, plus an **Activate** button that calls the activation step.
 
 All endpoints are mounted under `/api/admin/supply-import/`. They are
 intentionally unauthenticated for the hackathon scope; locking them down is
@@ -221,7 +225,131 @@ before being truncated.
 
 ---
 
-## 4. Read-only admin status panel
+## 4. Activation — promoting catalog → items + deriving inventory
+
+Reconciliation and facility-mapping leave the dataset *visible* (browsable
+in `/api/catalog`, foreign-key-able from staging) but *inactive*: the
+imported catalog rows aren't `items`, the facility nodes are hidden from
+the map, no inventory exists for them, and the forecast engine has no
+real demand history. The activation step is what turns the dataset on.
+
+### What it does
+
+`artifacts/api-server/src/lib/supply-import/activate.ts` implements
+`runActivation` and `revertActivation`. A single `runActivation` pass:
+
+1. **Promote items.** For every `catalog_entries` row with
+   `source = 'supply_demo_v2'`, insert (or update) an `items` row with id
+   `cat_<entry_id>` carrying:
+   - `source = 'supply_demo_v2'` and `sourceCatalogEntryId`
+   - manufacturer, manufacturerLong, mfrCatNo, ndc, productNoun,
+     productType, productSize, unspscCommodity, ghxCommodityType,
+     sosTypeDescription (from the catalog row joined to the staging
+     `supply_demo_v2_catalog`)
+   - sensible defaults for criticality, usagePerDraw, usageRate,
+     demandBasis, trigger, wasteAdjustedDemand, leadTimeDays,
+     shelfLifeDays
+2. **Activate facility nodes.** Flip every node whose id starts with
+   `supplyV2_` from `hiddenFromMap = true` to `false`. Assign each one a
+   deterministic location across the three INDOPACOM AOR buckets
+   (`INDOPACOM-North`, `INDOPACOM-Central`, `INDOPACOM-South`) by hashing
+   the facility code; jitter lat/lng inside the AOR; mark
+   `coordsApproximate = true`. Classify type/regional hub/active
+   population/stock days from the display name.
+3. **Roll up demand.** From `supply_demo_v2_issues` joined to facilities
+   (with a real `node_id`), aggregate `(node_id, item_id) → totalQuantity,
+   lineCount, dailyBurn = totalQuantity / 365` into the new
+   `item_facility_demand_rollup` table. The forecast engine reads this
+   table on every request (see "Forecast integration" below).
+4. **Derive inventory.** For each facility, pick its top 80 items by line
+   count (cap to items with `lineCount >= 3` so we don't conjure stock
+   for noise) and write one `inventory_balances` row per (node, item)
+   with:
+   ```
+   onHand = round(dailyBurn * 21d * jitter)        # target_dos = 21 days
+   par    = round(dailyBurn * 14d)
+   reorderPoint = round(dailyBurn * 7d)
+   source = 'derived'
+   ```
+   Existing seeded balances (`source = 'seeded'`) are never touched.
+
+The function is **idempotent**: re-running produces zero net new rows on
+items/inventory/rollup and zero net flips on nodes. It returns a summary
+with counters used by the admin panel:
+
+```ts
+{
+  itemsPromoted, itemsAlreadyPromoted,
+  facilitiesActivated, facilitiesAlreadyActive,
+  rollupRowsWritten, inventoryRowsWritten,
+  durationMs
+}
+```
+
+### Schema additions used by activation
+
+- `items` — `manufacturer`, `manufacturerLong`, `mfrCatNo`, `ndc`,
+  `productNoun`, `productType`, `productSize`, `unspscCommodity`,
+  `ghxCommodityType`, `sosTypeDescription`, `source`
+  ('seed'|'supply_demo_v2'), `sourceCatalogEntryId`.
+- `nodes` — `aor`, `coordsApproximate`.
+- `inventory_balances` — `source` ('seeded'|'derived'|'imported').
+- `item_facility_demand_rollup` (new): `(nodeId, itemId, totalQuantity,
+  lineCount, dailyBurn)` with PK `(nodeId, itemId)` and a covering index
+  on `(nodeId)`.
+
+Indexes added for the activation read paths:
+
+- `items(source)`, `items(ndc)`, `items(mfrCatNo)`, `items(unspscCommodity)`
+- `nodes(hiddenFromMap)`
+- `inventory_balances(node_id, item_id)`
+
+### Forecast integration (real demand history)
+
+`artifacts/api-server/src/lib/ctx.ts` loads the rollup once per request
+into `historicalBurn: Map<nodeId, Map<itemId, dailyBurn>>`.
+
+The shared sim helper `computeDailyDemand` accepts an optional
+`historicalBurnByItem` argument: when an item has a non-zero historical
+burn rate at that node, the forecast uses that rate directly (still
+flexed by the operational-state encounter multiplier and any encounter
+override so scenario knobs continue to work). Items without history fall
+back to the synthetic per-encounter math.
+
+All callers — `/sites`, `/items`, `/inventory`, `/dashboard/overview`,
+`/predictive`, `/overview`, `lib/snapshot`, `lib/blood-readiness`, and
+`recommendations` — pass the per-node historical-burn map through.
+
+### Endpoint
+
+```
+POST /api/admin/supply-import/activate
+     -> runs runActivation(); returns the counters above. Idempotent.
+```
+
+The admin panel exposes a one-click **Activate** button in the
+`SupplyImportPanel` card header that POSTs this endpoint and renders the
+returned counters.
+
+### Rollback behavior
+
+`POST /api/admin/supply-import/rollback` now runs `revertActivation` *first*
+inside the same transaction, then performs the existing reconcile/map
+cleanup. `revertActivation`:
+
+1. Deletes `inventory_balances` rows where `source = 'derived'`.
+2. Truncates `item_facility_demand_rollup`.
+3. Deletes `items` rows where `source = 'supply_demo_v2'`.
+4. Re-hides `supplyV2_*` nodes (`hiddenFromMap = true`) and clears their
+   AOR / approximate-coord flags.
+5. Invalidates the in-memory simulation context cache so the next request
+   reads a clean slate.
+
+Seeded items, seeded balances, and the 35 curated nodes are untouched.
+
+---
+
+## 5. Read-only admin status panel
 
 The existing `/data` admin page (component
 `artifacts/command/src/pages/DataAdmin.tsx`) renders a new

@@ -83,6 +83,7 @@ export * from "./inventoryBalanceStatus";
 export * from "./item";
 export * from "./itemCategory";
 export * from "./itemDetail";
+export * from "./itemSource";
 export * from "./listActivityParams";
 export * from "./listAlertsParams";
 export * from "./listCatalogItemsParams";

@@ -1,15 +1,46 @@
 import { Router, type IRouter } from "express";
 import { db, items, inventoryBalances, suppliers, supplierItems, orders, orderLines, alerts } from "@workspace/db";
-import { eq, sql, and } from "drizzle-orm";
+import { eq, sql, and, or, ilike } from "drizzle-orm";
 import { loadSimContext } from "../lib/ctx";
 import { computeDailyDemand, projectDaysOfSupply, statusFromDOS } from "@workspace/sim";
 import { mapSupplierToApi } from "../lib/mappers";
 
 const router: IRouter = Router();
 
-router.get("/items", async (_req, res, next) => {
+router.get("/items", async (req, res, next) => {
   try {
-    const rows = await db.select().from(items);
+    // Optional filters keep the dropdown payload manageable now that the
+    // promoted catalog can balloon the items table to ~62k rows.
+    //
+    //   ?source=seed|supply_demo_v2   filter by provenance
+    //   ?search=...                   ILIKE on name / mfr_cat_no / ndc
+    //   ?limit=N                      cap result size (default 500, max 5000)
+    //   ?offset=N                     paginate
+    const sourceParam = typeof req.query.source === "string" ? req.query.source : undefined;
+    const searchParam = typeof req.query.search === "string" ? req.query.search.trim() : "";
+    const limitRaw = Number.parseInt(String(req.query.limit ?? "500"), 10);
+    const limit = Math.max(1, Math.min(Number.isFinite(limitRaw) ? limitRaw : 500, 5000));
+    const offsetRaw = Number.parseInt(String(req.query.offset ?? "0"), 10);
+    const offset = Math.max(0, Number.isFinite(offsetRaw) ? offsetRaw : 0);
+
+    const conditions = [] as Parameters<typeof and>[number][];
+    if (sourceParam) conditions.push(eq(items.source, sourceParam));
+    if (searchParam) {
+      const like = `%${searchParam}%`;
+      conditions.push(
+        or(
+          ilike(items.name, like),
+          ilike(items.mfrCatNo, like),
+          ilike(items.ndc, like),
+        ) as Parameters<typeof and>[number],
+      );
+    }
+
+    const whereExpr = conditions.length > 0 ? and(...conditions) : undefined;
+    const baseQuery = db.select().from(items);
+    const rows = await (whereExpr ? baseQuery.where(whereExpr) : baseQuery)
+      .limit(limit)
+      .offset(offset);
     res.json(rows);
   } catch (err) {
     next(err);
@@ -30,12 +61,14 @@ router.get("/items/:itemId", async (req, res, next) => {
 
     const dosByNode = ctx.ctx.nodes.map((node) => {
       const profile = ctx.ctx.profiles.get(node.id);
+      const historicalBurnByItem = ctx.historicalBurn.get(node.id);
       const demand = profile
         ? computeDailyDemand({
             profile,
             items: ctx.ctx.items,
             operationalState: ctx.ctx.states.get(profile.operationalState),
             itemSkew: ctx.ctx.itemSkew,
+            historicalBurnByItem,
           }).find((d) => d.itemId === itemId)?.quantity ?? 0
         : 0;
       const onHand = balanceByNode.get(node.id) ?? 0;

@@ -401,7 +401,7 @@ router.get("/overview/cascade", async (_req, res, next) => {
 router.get("/overview/leaderboard", async (req, res, next) => {
   try {
     const limit = Math.min(20, Math.max(1, Number(req.query.limit ?? 8) || 8));
-    const [{ ctx }, nodeRows, allLots, itemRows] = await Promise.all([
+    const [{ ctx, historicalBurn }, nodeRows, allLots, itemRows] = await Promise.all([
       loadSimContext(),
       db.select().from(nodesTable),
       db.select().from(bloodLots),
@@ -443,19 +443,22 @@ router.get("/overview/leaderboard", async (req, res, next) => {
       if (!readiness) continue;
 
       // Daily blood-product burn (used to drive sparkline + stockout).
+      // Pre-filter to blood-product items only — this is critical now that
+      // ctx.items can be ~60k after supply demo activation.
       const profile = ctx.profiles.get(node.id);
       let burn = 0;
       if (profile) {
+        const bloodItems = ctx.items.filter(
+          (i) => itemMap.get(i.id)?.category === "blood_products",
+        );
         const demands = computeDailyDemand({
           profile,
-          items: ctx.items,
+          items: bloodItems,
           operationalState: ctx.states.get(profile.operationalState),
           itemSkew: ctx.itemSkew,
+          historicalBurnByItem: historicalBurn.get(node.id),
         });
-        for (const d of demands) {
-          const it = itemMap.get(d.itemId);
-          if (it?.category === "blood_products") burn += d.quantity;
-        }
+        for (const d of demands) burn += d.quantity;
       }
 
       const tier = tierFromDOS(
@@ -877,14 +880,20 @@ router.get("/overview/mission-risk-matrix", async (_req, res, next) => {
     const balanceMap = new Map<string, number>();
     for (const b of allBalances) balanceMap.set(`${b.nodeId}:${b.itemId}`, b.onHand);
 
-    // Demand per node × item.
+    // Demand per node × item. Restrict to items we actually have on hand
+    // anywhere in the network (anything else contributes 0 in burnByKey
+    // lookups below). This keeps mission-grid fast even with ~60k items
+    // in the activated supply demo catalog.
     const burnByKey = new Map<string, number>();
+    const itemsWithBalance = new Set<string>();
+    for (const b of allBalances) itemsWithBalance.add(b.itemId);
+    const filteredItems = ctx.items.filter((i) => itemsWithBalance.has(i.id));
     for (const node of ctx.nodes) {
       const profile = ctx.profiles.get(node.id);
       if (!profile) continue;
       const demands = computeDailyDemand({
         profile,
-        items: ctx.items,
+        items: filteredItems,
         operationalState: ctx.states.get(profile.operationalState),
         itemSkew: ctx.itemSkew,
       });

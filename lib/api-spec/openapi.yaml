@@ -1472,6 +1472,17 @@ components:
         name: { type: string }
         type: { type: string }
         regionalHub: { type: ["string", "null"] }
+        # AOR label assigned by the supply demo activation step. Null for
+        # nodes that come from the curated seed (their geography is already
+        # explicit and they are not bucketed by AOR).
+        aor: { type: ["string", "null"] }
+        # True when latitude/longitude were synthesized by the activation
+        # step (no real coordinates available); UI surfaces this as an
+        # advisory badge.
+        coordsApproximate: { type: boolean }
+        # True for placeholder nodes that should NOT be rendered on the
+        # network map (e.g. imported facilities prior to activation).
+        hiddenFromMap: { type: boolean }
         daysOfSupply: { type: number }
         openAlerts: { type: integer }
         riskScore: { type: number }
@@ -1547,6 +1558,26 @@ components:
         wasteAdjustedDemand: { type: number }
         trigger: { type: string }
         niinOrSku: { type: string }
+        # Provenance: 'seed' for the curated catalog, 'supply_demo_v2' for
+        # rows promoted from the supply demo dataset by the activation step.
+        source:
+          type: string
+          enum: [seed, supply_demo_v2]
+        sourceCatalogEntryId:
+          type: integer
+          nullable: true
+        # Rich attributes carried over from supply demo activation. All
+        # nullable; legacy / seeded rows do not populate them.
+        manufacturer: { type: string, nullable: true }
+        manufacturerLong: { type: string, nullable: true }
+        mfrCatNo: { type: string, nullable: true }
+        ndc: { type: string, nullable: true }
+        productNoun: { type: string, nullable: true }
+        productType: { type: string, nullable: true }
+        productSize: { type: string, nullable: true }
+        unspscCommodity: { type: string, nullable: true }
+        ghxCommodityType: { type: string, nullable: true }
+        sosTypeDescription: { type: string, nullable: true }
 
     ItemDetail:
       type: object

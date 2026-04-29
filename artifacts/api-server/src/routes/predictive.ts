@@ -63,6 +63,7 @@ router.post("/predictive/forecast", async (req, res, next) => {
         items,
         operationalState: ctx.ctx.states.get(profile.operationalState),
         itemSkew: ctx.ctx.itemSkew,
+        historicalBurnByItem: ctx.historicalBurn.get(nodeId),
       });
       const balanceMap = new Map<string, number>();
       for (const b of ctx.ctx.balances) {

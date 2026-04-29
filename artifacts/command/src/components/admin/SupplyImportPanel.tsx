@@ -1,4 +1,5 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   useGetSupplyImportStatus,
   getGetSupplyImportStatusQueryKey,
@@ -6,7 +7,37 @@ import {
 } from '@workspace/api-client-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { PackageSearch, MapPinOff, Database, Layers } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import {
+  PackageSearch,
+  MapPinOff,
+  Database,
+  Layers,
+  PlayCircle,
+} from 'lucide-react';
+
+interface ActivationSummary {
+  itemsPromoted: number;
+  itemsAlreadyPromoted: number;
+  facilitiesActivated: number;
+  facilitiesAlreadyActive: number;
+  rollupRowsWritten: number;
+  inventoryRowsWritten: number;
+  durationMs: number;
+}
+
+async function postActivate(): Promise<ActivationSummary> {
+  const res = await fetch('/api/admin/supply-import/activate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: '{}',
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`activate failed (${res.status}): ${text || res.statusText}`);
+  }
+  return (await res.json()) as ActivationSummary;
+}
 
 const REFRESH_INTERVAL_MS = 30_000;
 
@@ -60,6 +91,7 @@ function Chip({ label, value, hint, testId }: ChipProps) {
 }
 
 export function SupplyImportPanel() {
+  const queryClient = useQueryClient();
   const { data, isLoading, isError } = useGetSupplyImportStatus({
     query: {
       queryKey: getGetSupplyImportStatusQueryKey(),
@@ -67,6 +99,28 @@ export function SupplyImportPanel() {
       refetchIntervalInBackground: false,
     },
   });
+
+  const [activating, setActivating] = useState(false);
+  const [activateResult, setActivateResult] =
+    useState<ActivationSummary | null>(null);
+  const [activateError, setActivateError] = useState<string | null>(null);
+
+  const onActivate = async () => {
+    setActivating(true);
+    setActivateError(null);
+    try {
+      const summary = await postActivate();
+      setActivateResult(summary);
+      // Force a status refresh so the chips reflect the new state.
+      queryClient.invalidateQueries({
+        queryKey: getGetSupplyImportStatusQueryKey(),
+      });
+    } catch (err) {
+      setActivateError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setActivating(false);
+    }
+  };
 
   const recentImports = useMemo<SupplyImportRun[]>(
     () => data?.recentImports ?? [],
@@ -93,13 +147,26 @@ export function SupplyImportPanel() {
               </span>
             )}
           </CardTitle>
-          <Badge
-            variant="outline"
-            className="text-muted-foreground border-border bg-muted/20 uppercase tracking-wider text-[10px]"
-            data-testid="supply-import-readonly-tag"
-          >
-            Read-only
-          </Badge>
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={onActivate}
+              disabled={activating}
+              data-testid="button-supply-import-activate"
+              className="h-7 text-xs"
+            >
+              <PlayCircle className="h-3.5 w-3.5 mr-1.5" />
+              {activating ? 'Activating…' : 'Activate'}
+            </Button>
+            <Badge
+              variant="outline"
+              className="text-muted-foreground border-border bg-muted/20 uppercase tracking-wider text-[10px]"
+              data-testid="supply-import-readonly-tag"
+            >
+              Status read-only
+            </Badge>
+          </div>
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -142,6 +209,58 @@ export function SupplyImportPanel() {
                 hint="supply_demo_v2_imports"
               />
             </div>
+            {(activateResult || activateError) && (
+              <div
+                className="rounded border border-border bg-card/40 px-3 py-2 text-xs space-y-1"
+                data-testid="supply-import-activate-result"
+              >
+                {activateError ? (
+                  <div className="text-destructive">
+                    Activation failed: {activateError}
+                  </div>
+                ) : activateResult ? (
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 sm:grid-cols-4">
+                    <div data-testid="activate-items-promoted">
+                      <span className="text-muted-foreground">Items promoted: </span>
+                      <span className="font-mono">
+                        {formatNumber(activateResult.itemsPromoted)}
+                      </span>
+                      {activateResult.itemsAlreadyPromoted > 0 && (
+                        <span className="text-muted-foreground/70">
+                          {' '}(+{formatNumber(activateResult.itemsAlreadyPromoted)} existing)
+                        </span>
+                      )}
+                    </div>
+                    <div data-testid="activate-facilities">
+                      <span className="text-muted-foreground">Facilities activated: </span>
+                      <span className="font-mono">
+                        {formatNumber(activateResult.facilitiesActivated)}
+                      </span>
+                      {activateResult.facilitiesAlreadyActive > 0 && (
+                        <span className="text-muted-foreground/70">
+                          {' '}(+{formatNumber(activateResult.facilitiesAlreadyActive)} existing)
+                        </span>
+                      )}
+                    </div>
+                    <div data-testid="activate-rollup-rows">
+                      <span className="text-muted-foreground">Demand rollup rows: </span>
+                      <span className="font-mono">
+                        {formatNumber(activateResult.rollupRowsWritten)}
+                      </span>
+                    </div>
+                    <div data-testid="activate-inventory-rows">
+                      <span className="text-muted-foreground">Derived inventory rows: </span>
+                      <span className="font-mono">
+                        {formatNumber(activateResult.inventoryRowsWritten)}
+                      </span>
+                    </div>
+                    <div className="col-span-2 sm:col-span-4 text-muted-foreground/80 text-[10px]">
+                      Completed in {formatDuration(activateResult.durationMs)} — rerun is idempotent; rollback reverses.
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            )}
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
               <div
                 className="flex items-center gap-3 rounded border border-border bg-card/40 px-3 py-2"

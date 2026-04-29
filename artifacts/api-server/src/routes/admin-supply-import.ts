@@ -21,6 +21,8 @@ import {
   runFacilityMapping,
   deleteMappedFacilityNodes,
 } from "../lib/supply-import/map-facilities";
+import { runActivation, revertActivation } from "../lib/supply-import/activate";
+import { invalidateSimCache } from "../lib/ctx";
 
 const router: IRouter = Router();
 
@@ -74,6 +76,17 @@ router.post("/admin/supply-import/map-facilities", async (req, res, next) => {
     res.json(summary);
   } catch (err) {
     req.log?.error({ err }, "supply-import map-facilities failed");
+    next(err);
+  }
+});
+
+router.post("/admin/supply-import/activate", async (req, res, next) => {
+  try {
+    const summary = await runActivation(req.body ?? {});
+    invalidateSimCache();
+    res.json(summary);
+  } catch (err) {
+    req.log?.error({ err }, "supply-import activate failed");
     next(err);
   }
 });
@@ -181,6 +194,10 @@ router.post("/admin/supply-import/rollback", async (req, res, next) => {
       .select({ c: sql<number>`count(*)::int` })
       .from(supplyDemoV2Imports);
 
+    // Activation must be reverted FIRST so the items / inventory /
+    // rollup rows that reference catalog_entries.id are gone before we
+    // try to delete the catalog rows themselves.
+    const activationRevert = await revertActivation();
     const hiddenNodesDeleted = await deleteMappedFacilityNodes();
     const catalogEntriesReverted = await deleteReconciledCatalogEntries();
 
@@ -191,6 +208,8 @@ router.post("/admin/supply-import/rollback", async (req, res, next) => {
       ${supplyDemoV2Imports}
       RESTART IDENTITY`);
 
+    invalidateSimCache();
+
     res.json({
       deleted: {
         supply_demo_v2_issues: issuesRow.c,
@@ -199,6 +218,7 @@ router.post("/admin/supply-import/rollback", async (req, res, next) => {
         supply_demo_v2_imports: importsRow.c,
         catalog_entries_reconciled: catalogEntriesReverted,
         hidden_nodes: hiddenNodesDeleted,
+        activation: activationRevert,
       },
     });
   } catch (err) {

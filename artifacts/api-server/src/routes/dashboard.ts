@@ -139,15 +139,22 @@ router.get("/dashboard/risk", async (_req, res, next) => {
     const nodeMap = new Map(ctx.ctx.nodes.map((n) => [n.id, n]));
     const itemMap = new Map(ctx.ctx.items.map((i) => [i.id, i]));
 
+    // Restrict to items that actually appear in inventory_balances —
+    // anything else has no on-hand here and would just emit DOS sentinels.
+    // Critical for perf with the activated supply demo catalog (~60k items).
+    const itemsWithBalance = new Set<string>();
+    for (const b of balanceRows) itemsWithBalance.add(b.itemId);
+    const filteredItems = ctx.ctx.items.filter((i) => itemsWithBalance.has(i.id));
     const burnByNodeItem = new Map<string, number>();
     for (const node of ctx.ctx.nodes) {
       const profile = ctx.ctx.profiles.get(node.id);
       if (!profile) continue;
       const demands = computeDailyDemand({
         profile,
-        items: ctx.ctx.items,
+        items: filteredItems,
         operationalState: ctx.ctx.states.get(profile.operationalState),
         itemSkew: ctx.ctx.itemSkew,
+        historicalBurnByItem: ctx.historicalBurn.get(node.id),
       });
       for (const d of demands) burnByNodeItem.set(`${node.id}:${d.itemId}`, d.quantity);
     }

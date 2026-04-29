@@ -12,6 +12,10 @@ export interface SiteSummary {
   type: string;
   /** @nullable */
   regionalHub?: string | null;
+  /** @nullable */
+  aor?: string | null;
+  coordsApproximate?: boolean;
+  hiddenFromMap?: boolean;
   daysOfSupply: number;
   openAlerts: number;
   riskScore: number;

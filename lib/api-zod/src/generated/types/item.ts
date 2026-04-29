@@ -6,6 +6,7 @@
  * OpenAPI spec version: 1.0.0
  */
 import type { ItemCategory } from "./itemCategory";
+import type { ItemSource } from "./itemSource";
 
 export interface Item {
   id: string;
@@ -26,4 +27,16 @@ export interface Item {
   wasteAdjustedDemand?: number;
   trigger?: string;
   niinOrSku?: string;
+  source?: ItemSource;
+  sourceCatalogEntryId?: number | null;
+  manufacturer?: string | null;
+  manufacturerLong?: string | null;
+  mfrCatNo?: string | null;
+  ndc?: string | null;
+  productNoun?: string | null;
+  productType?: string | null;
+  productSize?: string | null;
+  unspscCommodity?: string | null;
+  ghxCommodityType?: string | null;
+  sosTypeDescription?: string | null;
 }
