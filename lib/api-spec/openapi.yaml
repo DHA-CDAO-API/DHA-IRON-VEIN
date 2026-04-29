@@ -26,6 +26,7 @@ tags:
   - name: blood
   - name: tags
   - name: casualty
+  - name: procedures
 
 paths:
   /healthz:
@@ -275,6 +276,59 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ItemDetail" }
+
+  /items/{itemId}/procedures:
+    get:
+      operationId: listItemProcedures
+      tags: [procedures, items]
+      summary: Reverse lookup — which procedures use this item, and at what tier.
+      parameters:
+        - in: path
+          name: itemId
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/ProcedureUsage" }
+
+  /procedures:
+    get:
+      operationId: listProcedures
+      tags: [procedures]
+      summary: List the clinician-curated procedure library.
+      parameters:
+        - in: query
+          name: role
+          description: Optional role filter (role_1, role_2, role_3).
+          schema: { type: string, enum: [role_1, role_2, role_3] }
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/ProcedureSummary" }
+  /procedures/{procedureId}:
+    get:
+      operationId: getProcedureDetail
+      tags: [procedures]
+      parameters:
+        - in: path
+          name: procedureId
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProcedureDetail" }
 
   /inventory/balances:
     get:
@@ -1323,6 +1377,13 @@ components:
         regionalHub: { type: ["string", "null"] }
         upstreamNode: { type: ["string", "null"] }
         countryCode: { type: ["string", "null"] }
+        role:
+          type: ["string", "null"]
+          enum: [role_1, role_2, role_3, null]
+          description: |
+            Echelon-of-care tag for demand nodes. role_1 = aid station,
+            role_2 = forward surgical, role_3 = combat support hospital.
+            NULL for non-demand sites (suppliers, hubs, prime vendors).
 
     Route:
       type: object
@@ -1526,6 +1587,10 @@ components:
         criticalShortItems: { type: integer }
         latitude: { type: number }
         longitude: { type: number }
+        role:
+          type: ["string", "null"]
+          enum: [role_1, role_2, role_3, null]
+          description: Echelon-of-care tag (role_1/2/3) for demand nodes; null for non-demand sites.
 
     SiteDetail:
       type: object
@@ -2239,6 +2304,97 @@ components:
         confidenceScore: { type: number }
         scenarioId: { type: ["string", "null"] }
         promotedOrderId: { type: ["string", "null"] }
+        companionItems:
+          type: array
+          description: |
+            Primary-tier supply dependents drawn from the procedure(s) that
+            consume this item. Used by the Recommendations rail to show a
+            "+N companion supplies" chip and by the Promote dialog to bundle
+            the dependents into one multi-line order.
+          items: { $ref: "#/components/schemas/CompanionItem" }
+
+    CompanionItem:
+      type: object
+      required: [itemId, itemName, tier, quantityPerEvent]
+      properties:
+        itemId: { type: string }
+        itemName: { type: string }
+        tier:
+          type: string
+          enum: [primary, secondary, tertiary]
+        quantityPerEvent: { type: number }
+        unit: { type: ["string", "null"] }
+        onHandAtNode: { type: ["number", "null"] }
+        procedureId: { type: ["string", "null"] }
+        procedureName: { type: ["string", "null"] }
+
+    ProcedureSummary:
+      type: object
+      required: [id, slug, name, clinicalCategory, roles, primaryCount, secondaryCount, tertiaryCount]
+      properties:
+        id: { type: string }
+        slug: { type: string }
+        name: { type: string }
+        description: { type: string }
+        clinicalCategory: { type: string }
+        roles:
+          type: array
+          items:
+            type: string
+            enum: [role_1, role_2, role_3]
+        primaryCount: { type: integer }
+        secondaryCount: { type: integer }
+        tertiaryCount: { type: integer }
+
+    ProcedureSupplyEntry:
+      type: object
+      required: [itemId, itemName, tier, quantityPerEvent]
+      properties:
+        itemId: { type: string }
+        itemName: { type: string }
+        unit: { type: ["string", "null"] }
+        category: { type: ["string", "null"] }
+        criticality: { type: ["string", "null"] }
+        tier:
+          type: string
+          enum: [primary, secondary, tertiary]
+        quantityPerEvent: { type: number }
+        notes: { type: ["string", "null"] }
+
+    ProcedureDetail:
+      type: object
+      required: [id, slug, name, description, clinicalCategory, roles, supplies]
+      properties:
+        id: { type: string }
+        slug: { type: string }
+        name: { type: string }
+        description: { type: string }
+        clinicalCategory: { type: string }
+        roles:
+          type: array
+          items:
+            type: string
+            enum: [role_1, role_2, role_3]
+        supplies:
+          type: array
+          items: { $ref: "#/components/schemas/ProcedureSupplyEntry" }
+
+    ProcedureUsage:
+      type: object
+      required: [procedureId, procedureName, slug, tier]
+      properties:
+        procedureId: { type: string }
+        procedureName: { type: string }
+        slug: { type: string }
+        tier:
+          type: string
+          enum: [primary, secondary, tertiary]
+        quantityPerEvent: { type: number }
+        roles:
+          type: array
+          items:
+            type: string
+            enum: [role_1, role_2, role_3]
 
     RecommendationAlternative:
       type: object
@@ -2288,6 +2444,13 @@ components:
         supplierId: { type: string }
         etaDays: { type: number, minimum: 0 }
         priority: { type: string, enum: [ROUTINE, URGENT, FLASH] }
+        includeCompanionSupplies:
+          type: boolean
+          description: |
+            When true, the promoted purchase order also includes one line per
+            companion supply item (items that share a procedure tier with the
+            recommended item). Each line uses the companion's recommended
+            quantity and a covering supplier. Defaults to false.
 
     ForecastInput:
       type: object

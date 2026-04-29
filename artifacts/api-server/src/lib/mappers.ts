@@ -16,11 +16,26 @@ type RawRecommendation = {
   alternatives?: unknown;
 };
 
+export type CompanionItemEntry = {
+  itemId: string;
+  itemName: string;
+  tier: "primary" | "secondary" | "tertiary";
+  procedureId: string;
+  procedureName: string;
+  quantityPerEvent: number;
+};
+
 export type RecommendationLookups = {
   itemNamesById?: Map<string, string>;
   nodeNamesById?: Map<string, string>;
   supplierNamesById?: Map<string, string>;
   supplierFromNodeById?: Map<string, string>;
+  /**
+   * Companion-item lookup keyed by primary itemId. When present, the mapper
+   * attaches the array (de-duplicated by item) onto the recommendation as
+   * `companionItems` so the UI can render the bundled-promotion toggle.
+   */
+  companionItemsByItemId?: Map<string, CompanionItemEntry[]>;
 };
 
 /**
@@ -78,6 +93,7 @@ export function mapRecommendationToApi(
     scenarioId: null,
     promotedOrderId: opts.promotedOrderId ?? null,
     status: opts.status ?? "OPEN",
+    companionItems: lookups.companionItemsByItemId?.get(rec.itemId) ?? [],
   };
 }
 

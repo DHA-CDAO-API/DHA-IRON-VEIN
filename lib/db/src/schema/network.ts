@@ -21,6 +21,12 @@ export const nodes = pgTable(
     regionalHub: text("regional_hub"),
     upstreamNode: text("upstream_node"),
     countryCode: text("country_code"),
+    // Echelon-of-care role tag for demand nodes. NULL for non-demand sites
+    // (suppliers, prime vendors, hubs). One of "role_1" (aid station),
+    // "role_2" (forward surgical), "role_3" (combat support hospital).
+    // Backfilled at seed time from the free-text `type` column; a future
+    // task can add an editing UI.
+    role: text("role"),
     // When true, this node represents a placeholder created by the supply
     // demo facility import. It carries no real geography and must NOT be
     // rendered on the network map. The Sites list page still shows it so an

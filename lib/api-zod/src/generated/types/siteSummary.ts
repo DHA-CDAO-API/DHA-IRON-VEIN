@@ -5,6 +5,7 @@
  * Predictive Sustainment Platform API for INDOPACOM medical logistics decision support.
  * OpenAPI spec version: 1.0.0
  */
+import type { SiteSummaryRole } from "./siteSummaryRole";
 
 export interface SiteSummary {
   nodeId: string;
@@ -22,4 +23,9 @@ export interface SiteSummary {
   criticalShortItems?: number;
   latitude?: number;
   longitude?: number;
+  /**
+   * Echelon-of-care tag (role_1/2/3) for demand nodes; null for non-demand sites.
+   * @nullable
+   */
+  role?: SiteSummaryRole;
 }

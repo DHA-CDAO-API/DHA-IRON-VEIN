@@ -5,6 +5,8 @@ import {
   useListNodes,
   useListSuppliers,
   useListInventoryBalances,
+  useListItemProcedures,
+  getListItemProceduresQueryKey,
   getListItemsQueryKey,
   getListNodesQueryKey,
   getListSuppliersQueryKey,
@@ -14,6 +16,7 @@ import {
   type Node as NetworkNode,
   type Supplier,
 } from "@workspace/api-client-react";
+import { Link } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   Dialog,
@@ -865,6 +868,10 @@ export function NewOrderDialog({ open, onOpenChange, prefill }: NewOrderDialogPr
             </div>
           </div>
 
+          {itemId && (
+            <CompanionProceduresPanel itemId={itemId} />
+          )}
+
           {!supplierCarriesItem && selectedSupplier && (
             <div
               data-testid="supplier-coverage-warning"
@@ -927,5 +934,90 @@ export function NewOrderDialog({ open, onOpenChange, prefill }: NewOrderDialogPr
         </form>
       </DialogContent>
     </Dialog>
+  );
+}
+
+const TIER_LABELS: Record<string, string> = {
+  primary: "Primary",
+  secondary: "Secondary",
+  tertiary: "Tertiary",
+};
+
+const TIER_CLASSES: Record<string, string> = {
+  primary: "border-emerald-500/40 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10",
+  secondary: "border-amber-500/40 text-amber-600 dark:text-amber-400 bg-amber-500/10",
+  tertiary: "border-sky-500/40 text-sky-600 dark:text-sky-400 bg-sky-500/10",
+};
+
+function CompanionProceduresPanel({ itemId }: { itemId: string }) {
+  const { data, isLoading } = useListItemProcedures(itemId, {
+    query: {
+      queryKey: getListItemProceduresQueryKey(itemId),
+      enabled: itemId.length > 0,
+    },
+  });
+
+  if (isLoading) {
+    return (
+      <div
+        data-testid="companion-procedures-loading"
+        className="rounded border border-border/60 bg-muted/30 px-3 py-2 text-xs text-muted-foreground"
+      >
+        Loading clinical context…
+      </div>
+    );
+  }
+
+  const procedures = data ?? [];
+  if (procedures.length === 0) return null;
+
+  return (
+    <div
+      data-testid="companion-procedures-panel"
+      className="rounded border border-border/60 bg-muted/30 px-3 py-2 space-y-2"
+    >
+      <div className="flex items-center justify-between gap-2">
+        <div className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+          Used in {procedures.length} procedure
+          {procedures.length === 1 ? "" : "s"}
+        </div>
+        <Link
+          href="/procedures"
+          className="text-[11px] text-muted-foreground hover:text-foreground underline-offset-2 hover:underline"
+        >
+          Browse library →
+        </Link>
+      </div>
+      <ul className="space-y-1.5" data-testid="companion-procedures-list">
+        {procedures.slice(0, 5).map((p) => (
+          <li
+            key={p.procedureId}
+            className="flex items-center justify-between gap-2 text-xs"
+            data-testid={`companion-procedure-${p.procedureId}`}
+          >
+            <Link
+              href={`/procedures/${p.procedureId}`}
+              className="truncate hover:text-primary hover:underline"
+            >
+              {p.procedureName}
+            </Link>
+            <Badge
+              variant="outline"
+              className={cn(
+                "shrink-0 text-[10px] uppercase tracking-wide",
+                TIER_CLASSES[p.tier] ?? "",
+              )}
+            >
+              {TIER_LABELS[p.tier] ?? p.tier}
+            </Badge>
+          </li>
+        ))}
+        {procedures.length > 5 && (
+          <li className="text-[11px] text-muted-foreground">
+            + {procedures.length - 5} more
+          </li>
+        )}
+      </ul>
+    </div>
   );
 }

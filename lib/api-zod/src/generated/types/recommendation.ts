@@ -5,6 +5,7 @@
  * Predictive Sustainment Platform API for INDOPACOM medical logistics decision support.
  * OpenAPI spec version: 1.0.0
  */
+import type { CompanionItem } from "./companionItem";
 import type { RecommendationAlternative } from "./recommendationAlternative";
 import type { RecommendationDisplacement } from "./recommendationDisplacement";
 import type { RecommendationSourceChannel } from "./recommendationSourceChannel";
@@ -54,4 +55,10 @@ proportional to capacity.
   scenarioId?: string | null;
   /** @nullable */
   promotedOrderId?: string | null;
+  /** Primary-tier supply dependents drawn from the procedure(s) that
+consume this item. Used by the Recommendations rail to show a
+"+N companion supplies" chip and by the Promote dialog to bundle
+the dependents into one multi-line order.
+ */
+  companionItems?: CompanionItem[];
 }

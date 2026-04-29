@@ -15,6 +15,7 @@ import { computeRiskByNode } from "../lib/snapshot";
 import { invalidateSimCache, loadSimContext } from "../lib/ctx";
 import { computeNodeBloodReadiness } from "../lib/blood-readiness";
 import { mapRecommendationToApi } from "../lib/mappers";
+import { buildCompanionItemsByItemId } from "../lib/companion-items";
 import { mapDbAlertToApi } from "./alerts";
 import { buildTlammStockpile } from "./tlamm";
 import {
@@ -38,6 +39,7 @@ router.get("/sites", async (_req, res, next) => {
           nodeId: n.id,
           name: n.name,
           type: n.type,
+          role: n.role ?? null,
           regionalHub: n.regionalHub,
           aor: n.aor,
           coordsApproximate: n.coordsApproximate,
@@ -160,12 +162,16 @@ router.get("/sites/:nodeId", async (req, res, next) => {
       : [];
     const recs = [...allRecs, ...tlammSelfRecs].filter((r) => r.nodeId === nodeId);
 
-    const supplierRows = await db.select().from(suppliersTable);
+    const [supplierRows, companionItemsByItemId] = await Promise.all([
+      db.select().from(suppliersTable),
+      buildCompanionItemsByItemId(),
+    ]);
     const recLookups = {
       itemNamesById: new Map(allItems.map((i) => [i.id, i.name])),
       nodeNamesById: new Map([[nodeRow.id, nodeRow.name]]),
       supplierNamesById: new Map(supplierRows.map((s) => [s.id, s.name])),
       supplierFromNodeById: new Map<string, string>(),
+      companionItemsByItemId,
     };
     const generatedAt = new Date().toISOString();
 

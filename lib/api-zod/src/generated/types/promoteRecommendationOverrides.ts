@@ -14,4 +14,10 @@ export interface PromoteRecommendationOverrides {
   /** @minimum 0 */
   etaDays?: number;
   priority?: PromoteRecommendationOverridesPriority;
+  /** When true, the promoted purchase order also includes one line per
+companion supply item (items that share a procedure tier with the
+recommended item). Each line uses the companion's recommended
+quantity and a covering supplier. Defaults to false.
+ */
+  includeCompanionSupplies?: boolean;
 }

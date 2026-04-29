@@ -3,7 +3,7 @@ import { Link, useLocation } from "wouter";
 import { 
   Activity, Map as MapIcon, Box, ShoppingCart, PlayCircle, 
   MessageSquare, Database, Settings, UserCircle, Search,
-  Building2, Truck, Tag as TagIcon, BriefcaseMedical
+  Building2, Truck, Tag as TagIcon, BriefcaseMedical, Stethoscope
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import RoleBadge from "@/components/RoleBadge";
@@ -94,6 +94,16 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       hoverText: "hover:text-red-100",
       ring: "focus-visible:ring-red-400",
     },
+    "/procedures": {
+      iconActive: "text-pink-300",
+      iconInactive: "text-pink-400/65",
+      iconHover: "group-hover:text-pink-200",
+      activeBg: "bg-pink-400/15",
+      activeText: "text-pink-100",
+      hoverBg: "hover:bg-pink-400/10",
+      hoverText: "hover:text-pink-100",
+      ring: "focus-visible:ring-pink-400",
+    },
     "/scenarios": {
       iconActive: "text-violet-300",
       iconInactive: "text-violet-400/60",
@@ -155,7 +165,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       ring: "focus-visible:ring-indigo-400",
     },
   };
-  const DEFAULT_NAV_COLOR: NavColor = {
+
+  const NAV_COLOR_FALLBACK: NavColor = {
     iconActive: "text-slate-200",
     iconInactive: "text-slate-400/60",
     iconHover: "group-hover:text-slate-200",
@@ -188,6 +199,12 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     },
     { href: "/orders", label: "Orders", icon: ShoppingCart },
     { href: "/casualty", label: "Casualty Planner", icon: BriefcaseMedical },
+    {
+      href: "/procedures",
+      label: "Procedures",
+      icon: Stethoscope,
+      matches: (p) => p === "/procedures" || p.startsWith("/procedures/"),
+    },
     { href: "/scenarios", label: "Scenarios", icon: PlayCircle },
     { href: "/copilot", label: "Copilot", icon: MessageSquare },
   ];
@@ -244,7 +261,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               const active = item.matches
                 ? item.matches(location)
                 : location === item.href || (item.href !== "/" && location.startsWith(item.href));
-              const c = NAV_COLORS[item.href] ?? DEFAULT_NAV_COLOR;
+              const c = NAV_COLORS[item.href] ?? NAV_COLOR_FALLBACK;
               return (
                 <Link
                   key={item.href}
@@ -270,7 +287,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         <div className="p-2 border-t border-border flex flex-col gap-1 shrink-0">
           {bottomItems.map((item) => {
             const active = location === item.href;
-            const c = NAV_COLORS[item.href] ?? DEFAULT_NAV_COLOR;
+            const c = NAV_COLORS[item.href] ?? NAV_COLOR_FALLBACK;
             return (
               <Link
                 key={item.href}

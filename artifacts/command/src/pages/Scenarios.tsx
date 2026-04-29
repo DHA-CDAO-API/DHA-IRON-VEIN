@@ -2801,6 +2801,7 @@ function RecommendationCards({
           supplierId: overrides.supplierId,
           etaDays: overrides.etaDays,
           priority: overrides.priority,
+          includeCompanionSupplies: overrides.includeCompanionSupplies,
         },
       });
       const order = res as { id?: string; orderNo?: string } | undefined;

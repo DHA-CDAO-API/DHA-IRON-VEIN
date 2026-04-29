@@ -21,6 +21,7 @@ import overviewRouter from "./overview";
 import adminSupplyImportRouter from "./admin-supply-import";
 import tagsRouter from "./tags";
 import casualtyRouter from "./casualty";
+import proceduresRouter from "./procedures";
 
 const router: IRouter = Router();
 
@@ -46,5 +47,6 @@ router.use(overviewRouter);
 router.use(adminSupplyImportRouter);
 router.use(tagsRouter);
 router.use(casualtyRouter);
+router.use(proceduresRouter);
 
 export default router;

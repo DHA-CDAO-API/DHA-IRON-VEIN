@@ -18,3 +18,4 @@ export * from "./snapshots";
 export * from "./supply_demo_v2";
 export * from "./tags";
 export * from "./casualty";
+export * from "./procedures";

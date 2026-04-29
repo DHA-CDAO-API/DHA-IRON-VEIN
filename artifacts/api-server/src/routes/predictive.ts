@@ -8,6 +8,7 @@ import {
   items as itemsTable,
   nodes as nodesTable,
   suppliers as suppliersTable,
+  procedureSupplies,
 } from "@workspace/db";
 import { desc, eq } from "drizzle-orm";
 import { loadSimContext } from "../lib/ctx";
@@ -19,6 +20,7 @@ import {
 } from "@workspace/sim";
 import { invalidateSimCache } from "../lib/ctx";
 import { mapRecommendationToApi } from "../lib/mappers";
+import { buildCompanionItemsByItemId } from "../lib/companion-items";
 
 const router: IRouter = Router();
 
@@ -147,11 +149,19 @@ router.get("/predictive/recommendations", async (req, res, next) => {
     const promotedByLogicalId = new Map(
       promoted.filter((p) => p.promotedOrderId).map((p) => [p.id, p]),
     );
+    const itemNamesById = new Map(itemRows.map((i) => [i.id, i.name]));
+
+    // Build companion-items index: for each itemId, list other items that
+    // appear together in any procedure, tagged with the highest-priority
+    // tier they're used at and a representative procedure name.
+    const companionItemsByItemId = await buildCompanionItemsByItemId();
+
     const lookups = {
-      itemNamesById: new Map(itemRows.map((i) => [i.id, i.name])),
+      itemNamesById,
       nodeNamesById: new Map(nodeRows.map((n) => [n.id, n.name])),
       supplierNamesById: new Map(supplierRows.map((s) => [s.id, s.name])),
       supplierFromNodeById: new Map<string, string>(),
+      companionItemsByItemId,
     };
     const generatedAt = new Date().toISOString();
 
@@ -183,7 +193,14 @@ router.post(
         supplierId?: string;
         etaDays?: number;
         priority?: string;
+        /**
+         * When true, the promotion folds in the recommended item's companion
+         * supplies (every item that shares a procedure with it) as additional
+         * order lines, each scaled to one event-equivalent.
+         */
+        includeCompanionSupplies?: boolean;
       };
+      const includeCompanions = overrides.includeCompanionSupplies === true;
       const allowedPriorities = new Set(["ROUTINE", "URGENT", "FLASH"]);
       const overridePriority =
         typeof overrides.priority === "string" &&
@@ -303,10 +320,61 @@ router.post(
         overrideSupplierId != null ||
         overridePriority != null;
 
+      // Optional companion supplies — when enabled, each item that shares a
+      // procedure with the primary item is added as a single-event line. We
+      // pick the deepest (lowest-tier) reference per item so we don't double
+      // count and we keep the order at one event-equivalent of bundling.
+      type CompanionLine = {
+        itemId: string;
+        quantity: number;
+        tier: "primary" | "secondary" | "tertiary";
+        procedureId: string;
+      };
+      let companionLines: CompanionLine[] = [];
+      if (includeCompanions) {
+        const supplyRows = await db.select().from(procedureSupplies);
+        const procIds = Array.from(
+          new Set(
+            supplyRows.filter((s) => s.itemId === rec.itemId).map((s) => s.procedureId),
+          ),
+        );
+        const tierWeight: Record<string, number> = {
+          primary: 0,
+          secondary: 1,
+          tertiary: 2,
+        };
+        const best = new Map<string, CompanionLine>();
+        for (const procId of procIds) {
+          for (const sib of supplyRows) {
+            if (sib.procedureId !== procId) continue;
+            if (sib.itemId === rec.itemId) continue;
+            const cand: CompanionLine = {
+              itemId: sib.itemId,
+              quantity: sib.quantityPerEvent,
+              tier: sib.tier as "primary" | "secondary" | "tertiary",
+              procedureId: procId,
+            };
+            const prev = best.get(sib.itemId);
+            if (
+              !prev ||
+              (tierWeight[cand.tier] ?? 9) < (tierWeight[prev.tier] ?? 9)
+            ) {
+              best.set(sib.itemId, cand);
+            }
+          }
+        }
+        companionLines = Array.from(best.values());
+      }
+
       const orderId = `o-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
       const orderNo = `PO-${new Date().getFullYear()}-${Math.floor(Math.random() * 90000 + 10000)}`;
       const requested = new Date(Date.now() + Math.max(1, finalEta) * 86400_000);
-      const totalUsd = finalQty * 1.5;
+      const primaryTotal = finalQty * 1.5;
+      const companionTotal = companionLines.reduce(
+        (acc, l) => acc + l.quantity * 1.5,
+        0,
+      );
+      const totalUsd = primaryTotal + companionTotal;
       await db.insert(orders).values({
         id: orderId,
         orderNo,
@@ -317,15 +385,25 @@ router.post(
         requestedDeliveryAt: requested,
         totalUsd,
         promotedFromRecommendationId: rec.id,
-        notes: rec.reason,
+        notes: includeCompanions
+          ? `${rec.reason} (bundled with ${companionLines.length} companion supply line${companionLines.length === 1 ? "" : "s"})`
+          : rec.reason,
       });
-      await db.insert(orderLines).values({
+      const primaryLine = {
         orderId,
         itemId: rec.itemId,
         quantity: finalQty,
         unitPriceUsd: 1.5,
-        lineTotalUsd: totalUsd,
-      });
+        lineTotalUsd: primaryTotal,
+      };
+      const companionLineRows = companionLines.map((cl) => ({
+        orderId,
+        itemId: cl.itemId,
+        quantity: cl.quantity,
+        unitPriceUsd: 1.5,
+        lineTotalUsd: cl.quantity * 1.5,
+      }));
+      await db.insert(orderLines).values([primaryLine, ...companionLineRows]);
 
       await db
         .insert(recsTable)
@@ -362,16 +440,20 @@ router.post(
           refId: orderId,
           meta: {
             totalUsd,
-            lines: 1,
+            lines: 1 + companionLines.length,
+            companionLines: companionLines.length,
+            bundled: includeCompanions,
             promotedFromRecommendationId: rec.id,
           },
         },
         {
           kind: "RECOMMENDATION_PROMOTED",
           actor: "operator",
-          message: overrideUsed
-            ? `AI recommendation promoted to order ${orderNo} with operator overrides`
-            : `AI recommendation promoted to order ${orderNo}`,
+          message: includeCompanions
+            ? `AI recommendation promoted to order ${orderNo} with ${companionLines.length} companion supply line${companionLines.length === 1 ? "" : "s"}`
+            : overrideUsed
+              ? `AI recommendation promoted to order ${orderNo} with operator overrides`
+              : `AI recommendation promoted to order ${orderNo}`,
           refType: "order",
           refId: orderId,
           meta: {
@@ -383,6 +465,8 @@ router.post(
             promotedEtaDays: finalEta,
             promotedPriority: finalPriority,
             overridden: overrideUsed,
+            bundled: includeCompanions,
+            companionLines: companionLines.length,
           },
         },
       ]);
@@ -398,7 +482,7 @@ router.post(
         createdAt: new Date().toISOString(),
         requestedDeliveryAt: requested.toISOString(),
         totalUsd,
-        lineCount: 1,
+        lineCount: 1 + companionLines.length,
       });
     } catch (err) {
       next(err);

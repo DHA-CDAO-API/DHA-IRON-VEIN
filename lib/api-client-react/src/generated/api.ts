@@ -53,6 +53,7 @@ import type {
   ListCatalogItemsParams,
   ListInventoryBalancesParams,
   ListOrdersParams,
+  ListProceduresParams,
   ListTagsParams,
   MissionRiskMatrix,
   NetworkSnapshot,
@@ -63,6 +64,9 @@ import type {
   OverviewActivityStream,
   PatientType,
   PresetEvent,
+  ProcedureDetail,
+  ProcedureSummary,
+  ProcedureUsage,
   Profile,
   PromoteRecommendationOverrides,
   ReadinessLeaderboard,
@@ -1419,6 +1423,270 @@ export function useGetItemDetail<
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetItemDetailQueryOptions(itemId, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Reverse lookup — which procedures use this item, and at what tier.
+ */
+export const getListItemProceduresUrl = (itemId: string) => {
+  return `/api/items/${itemId}/procedures`;
+};
+
+export const listItemProcedures = async (
+  itemId: string,
+  options?: RequestInit,
+): Promise<ProcedureUsage[]> => {
+  return customFetch<ProcedureUsage[]>(getListItemProceduresUrl(itemId), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListItemProceduresQueryKey = (itemId: string) => {
+  return [`/api/items/${itemId}/procedures`] as const;
+};
+
+export const getListItemProceduresQueryOptions = <
+  TData = Awaited<ReturnType<typeof listItemProcedures>>,
+  TError = ErrorType<unknown>,
+>(
+  itemId: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listItemProcedures>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListItemProceduresQueryKey(itemId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listItemProcedures>>
+  > = ({ signal }) => listItemProcedures(itemId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!itemId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof listItemProcedures>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListItemProceduresQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listItemProcedures>>
+>;
+export type ListItemProceduresQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Reverse lookup — which procedures use this item, and at what tier.
+ */
+
+export function useListItemProcedures<
+  TData = Awaited<ReturnType<typeof listItemProcedures>>,
+  TError = ErrorType<unknown>,
+>(
+  itemId: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listItemProcedures>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListItemProceduresQueryOptions(itemId, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary List the clinician-curated procedure library.
+ */
+export const getListProceduresUrl = (params?: ListProceduresParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/procedures?${stringifiedParams}`
+    : `/api/procedures`;
+};
+
+export const listProcedures = async (
+  params?: ListProceduresParams,
+  options?: RequestInit,
+): Promise<ProcedureSummary[]> => {
+  return customFetch<ProcedureSummary[]>(getListProceduresUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListProceduresQueryKey = (params?: ListProceduresParams) => {
+  return [`/api/procedures`, ...(params ? [params] : [])] as const;
+};
+
+export const getListProceduresQueryOptions = <
+  TData = Awaited<ReturnType<typeof listProcedures>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListProceduresParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listProcedures>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListProceduresQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listProcedures>>> = ({
+    signal,
+  }) => listProcedures(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listProcedures>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListProceduresQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listProcedures>>
+>;
+export type ListProceduresQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List the clinician-curated procedure library.
+ */
+
+export function useListProcedures<
+  TData = Awaited<ReturnType<typeof listProcedures>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListProceduresParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listProcedures>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListProceduresQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getGetProcedureDetailUrl = (procedureId: string) => {
+  return `/api/procedures/${procedureId}`;
+};
+
+export const getProcedureDetail = async (
+  procedureId: string,
+  options?: RequestInit,
+): Promise<ProcedureDetail> => {
+  return customFetch<ProcedureDetail>(getGetProcedureDetailUrl(procedureId), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetProcedureDetailQueryKey = (procedureId: string) => {
+  return [`/api/procedures/${procedureId}`] as const;
+};
+
+export const getGetProcedureDetailQueryOptions = <
+  TData = Awaited<ReturnType<typeof getProcedureDetail>>,
+  TError = ErrorType<unknown>,
+>(
+  procedureId: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getProcedureDetail>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetProcedureDetailQueryKey(procedureId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getProcedureDetail>>
+  > = ({ signal }) =>
+    getProcedureDetail(procedureId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!procedureId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getProcedureDetail>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetProcedureDetailQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getProcedureDetail>>
+>;
+export type GetProcedureDetailQueryError = ErrorType<unknown>;
+
+export function useGetProcedureDetail<
+  TData = Awaited<ReturnType<typeof getProcedureDetail>>,
+  TError = ErrorType<unknown>,
+>(
+  procedureId: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getProcedureDetail>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetProcedureDetailQueryOptions(procedureId, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

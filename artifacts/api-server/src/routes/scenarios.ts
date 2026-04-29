@@ -12,6 +12,8 @@ import {
 import { asc, desc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { loadSimContext } from "../lib/ctx";
+import { buildCompanionItemsByItemId } from "../lib/companion-items";
+import type { CompanionItemEntry } from "../lib/mappers";
 import {
   runScenario,
   findUpstreamRoute,
@@ -312,11 +314,14 @@ router.get("/scenarios/:scenarioId", async (req, res, next) => {
       .from(scenariosTable)
       .where(eq(scenariosTable.id, req.params.scenarioId));
     if (!row) return res.status(404).json({ error: "scenario not found" });
-    const ctx = await loadSimContext();
-    const persistedRecs = await db
-      .select()
-      .from(recsTable)
-      .where(eq(recsTable.scenarioId, row.id));
+    const [ctx, persistedRecs, companionItemsByItemId] = await Promise.all([
+      loadSimContext(),
+      db
+        .select()
+        .from(recsTable)
+        .where(eq(recsTable.scenarioId, row.id)),
+      buildCompanionItemsByItemId(),
+    ]);
     // Reconstruct the supplier degradation that was in effect when the
     // scenario was saved so the rendered Supplier Impact section matches
     // the COA recommendations the operator originally saw.
@@ -350,6 +355,7 @@ router.get("/scenarios/:scenarioId", async (req, res, next) => {
       promotedByRecId: new Map(
         persistedRecs.map((r) => [r.id, r.promotedOrderId ?? null]),
       ),
+      companionItemsByItemId,
     });
     res.json({
       // Legacy fields first
@@ -452,6 +458,7 @@ router.post("/scenarios/preview", async (req, res, next) => {
       horizonDays,
     });
     const result = runScenario(ctx.ctx, { horizonDays, perturbation });
+    const companionItemsByItemId = await buildCompanionItemsByItemId();
     const envelope = buildScenarioResultEnvelope({
       id: "preview",
       name: raw.name,
@@ -465,6 +472,7 @@ router.post("/scenarios/preview", async (req, res, next) => {
       baselineSuppliers: ctx.suppliers,
       appliedSupplierImpacts: degraded.applied,
       promotedByRecId: new Map(),
+      companionItemsByItemId,
     });
     res.json({
       id: "preview",
@@ -676,6 +684,7 @@ router.post("/scenarios", async (req, res, next) => {
       await db.insert(recsTable).values(dbRows).onConflictDoNothing();
     }
 
+    const companionItemsByItemId = await buildCompanionItemsByItemId();
     const envelope = buildScenarioResultEnvelope({
       id,
       name: body.name,
@@ -689,6 +698,7 @@ router.post("/scenarios", async (req, res, next) => {
       baselineSuppliers: ctx.suppliers,
       appliedSupplierImpacts: degraded.applied,
       promotedByRecId: new Map(),
+      companionItemsByItemId,
     });
     res.json({
       // Legacy fields first (no `kind` here — envelope owns it)
@@ -728,6 +738,7 @@ function buildScenarioResultEnvelope(args: {
   baselineSuppliers?: SimSupplier[];
   appliedSupplierImpacts?: AppliedSupplierImpact[];
   promotedByRecId: Map<string, string | null>;
+  companionItemsByItemId?: Map<string, CompanionItemEntry[]>;
 }) {
   const {
     id,
@@ -742,6 +753,7 @@ function buildScenarioResultEnvelope(args: {
     baselineSuppliers,
     appliedSupplierImpacts,
     promotedByRecId,
+    companionItemsByItemId,
   } = args;
   const nodeMap = new Map(ctx.nodes.map((n) => [n.id, n]));
   const itemMap = new Map(ctx.items.map((i) => [i.id, i]));
@@ -866,6 +878,7 @@ function buildScenarioResultEnvelope(args: {
     appliedSupplierImpacts,
     promotedByRecId,
     runAt,
+    companionItemsByItemId,
   });
 
   // Build the Supplier Impact section. We derive the "rerouted to" map by
@@ -1365,6 +1378,7 @@ function buildScenarioRecommendationsView(args: {
   appliedSupplierImpacts?: AppliedSupplierImpact[];
   promotedByRecId: Map<string, string | null>;
   runAt: Date;
+  companionItemsByItemId?: Map<string, CompanionItemEntry[]>;
 }) {
   const {
     scenarioId,
@@ -1375,6 +1389,7 @@ function buildScenarioRecommendationsView(args: {
     appliedSupplierImpacts,
     promotedByRecId,
     runAt,
+    companionItemsByItemId,
   } = args;
   const nodeMap = new Map(ctx.nodes.map((n) => [n.id, n]));
   const itemMap = new Map(ctx.items.map((i) => [i.id, i]));
@@ -1427,6 +1442,7 @@ function buildScenarioRecommendationsView(args: {
       confidenceScore: Math.min(0.95, 0.55 + (row.expectedRiskReduction ?? 0) / 200),
       scenarioId,
       promotedOrderId: promotedByRecId.get(row.id) ?? null,
+      companionItems: companionItemsByItemId?.get(row.itemId) ?? [],
     };
   });
 }

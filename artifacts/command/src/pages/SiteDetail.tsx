@@ -48,6 +48,7 @@ import { orderStatusBadgeClass, orderStatusLabel } from '@/lib/orderStatus';
 import { BloodReadinessTab } from '@/components/site/blood/BloodReadinessTab';
 import { SitePopulationEditor } from '@/components/site/SitePopulationEditor';
 import { NewOrderDialog } from '@/components/orders/NewOrderDialog';
+import { EchelonRoleBadge } from '@/components/EchelonRoleBadge';
 import { Plus } from 'lucide-react';
 import { TagEditor } from '@/components/tags/TagEditor';
 
@@ -192,6 +193,7 @@ export default function SiteDetail() {
           supplierId: overrides.supplierId,
           etaDays: overrides.etaDays,
           priority: overrides.priority,
+          includeCompanionSupplies: overrides.includeCompanionSupplies,
         },
       });
       const order = res as { id?: string; orderNo?: string } | undefined;
@@ -420,6 +422,7 @@ export default function SiteDetail() {
           <div className="flex items-center gap-3 mb-1 flex-wrap">
             <h1 className="text-2xl font-bold uppercase tracking-wider">{node.name}</h1>
             <Badge variant="outline" className="text-primary border-primary">{node.type}</Badge>
+            <EchelonRoleBadge role={node.role ?? null} testId="badge-site-echelon" />
             <Badge variant={node.optempo === 'HEIGHTENED' ? 'destructive' : 'secondary'}>{node.optempo}</Badge>
           </div>
           <div className="flex items-center text-sm text-muted-foreground gap-2">

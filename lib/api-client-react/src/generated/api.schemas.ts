@@ -195,6 +195,21 @@ export interface CatalogPage {
   items: CatalogEntry[];
 }
 
+/**
+ * Echelon-of-care tag for demand nodes. role_1 = aid station,
+role_2 = forward surgical, role_3 = combat support hospital.
+NULL for non-demand sites (suppliers, hubs, prime vendors).
+
+ * @nullable
+ */
+export type NodeRole = (typeof NodeRole)[keyof typeof NodeRole] | null;
+
+export const NodeRole = {
+  role_1: "role_1",
+  role_2: "role_2",
+  role_3: "role_3",
+} as const;
+
 export interface Node {
   id: string;
   name: string;
@@ -210,6 +225,14 @@ export interface Node {
   upstreamNode?: string | null;
   /** @nullable */
   countryCode?: string | null;
+  /**
+   * Echelon-of-care tag for demand nodes. role_1 = aid station,
+role_2 = forward surgical, role_3 = combat support hospital.
+NULL for non-demand sites (suppliers, hubs, prime vendors).
+
+   * @nullable
+   */
+  role?: NodeRole;
 }
 
 export type RoutePriority = (typeof RoutePriority)[keyof typeof RoutePriority];
@@ -419,6 +442,20 @@ on the per-site bloodReadiness object.
   bloodReadinessByNode?: NetworkSnapshotBloodReadinessByNodeItem[];
 }
 
+/**
+ * Echelon-of-care tag (role_1/2/3) for demand nodes; null for non-demand sites.
+ * @nullable
+ */
+export type SiteSummaryRole =
+  | (typeof SiteSummaryRole)[keyof typeof SiteSummaryRole]
+  | null;
+
+export const SiteSummaryRole = {
+  role_1: "role_1",
+  role_2: "role_2",
+  role_3: "role_3",
+} as const;
+
 export interface SiteSummary {
   nodeId: string;
   name: string;
@@ -435,6 +472,11 @@ export interface SiteSummary {
   criticalShortItems?: number;
   latitude?: number;
   longitude?: number;
+  /**
+   * Echelon-of-care tag (role_1/2/3) for demand nodes; null for non-demand sites.
+   * @nullable
+   */
+  role?: SiteSummaryRole;
 }
 
 export interface DemandProfile {
@@ -645,6 +687,30 @@ export interface RecommendationSplitAllocation {
   etaDays: number;
 }
 
+export type CompanionItemTier =
+  (typeof CompanionItemTier)[keyof typeof CompanionItemTier];
+
+export const CompanionItemTier = {
+  primary: "primary",
+  secondary: "secondary",
+  tertiary: "tertiary",
+} as const;
+
+export interface CompanionItem {
+  itemId: string;
+  itemName: string;
+  tier: CompanionItemTier;
+  quantityPerEvent: number;
+  /** @nullable */
+  unit?: string | null;
+  /** @nullable */
+  onHandAtNode?: number | null;
+  /** @nullable */
+  procedureId?: string | null;
+  /** @nullable */
+  procedureName?: string | null;
+}
+
 export interface Recommendation {
   id: string;
   kind: string;
@@ -689,6 +755,12 @@ proportional to capacity.
   scenarioId?: string | null;
   /** @nullable */
   promotedOrderId?: string | null;
+  /** Primary-tier supply dependents drawn from the procedure(s) that
+consume this item. Used by the Recommendations rail to show a
+"+N companion supplies" chip and by the Promote dialog to bundle
+the dependents into one multi-line order.
+ */
+  companionItems?: CompanionItem[];
 }
 
 export interface HistoryPoint {
@@ -1362,6 +1434,97 @@ export interface ScenarioResult {
   kind?: string;
 }
 
+export type ProcedureSummaryRolesItem =
+  (typeof ProcedureSummaryRolesItem)[keyof typeof ProcedureSummaryRolesItem];
+
+export const ProcedureSummaryRolesItem = {
+  role_1: "role_1",
+  role_2: "role_2",
+  role_3: "role_3",
+} as const;
+
+export interface ProcedureSummary {
+  id: string;
+  slug: string;
+  name: string;
+  description?: string;
+  clinicalCategory: string;
+  roles: ProcedureSummaryRolesItem[];
+  primaryCount: number;
+  secondaryCount: number;
+  tertiaryCount: number;
+}
+
+export type ProcedureSupplyEntryTier =
+  (typeof ProcedureSupplyEntryTier)[keyof typeof ProcedureSupplyEntryTier];
+
+export const ProcedureSupplyEntryTier = {
+  primary: "primary",
+  secondary: "secondary",
+  tertiary: "tertiary",
+} as const;
+
+export interface ProcedureSupplyEntry {
+  itemId: string;
+  itemName: string;
+  /** @nullable */
+  unit?: string | null;
+  /** @nullable */
+  category?: string | null;
+  /** @nullable */
+  criticality?: string | null;
+  tier: ProcedureSupplyEntryTier;
+  quantityPerEvent: number;
+  /** @nullable */
+  notes?: string | null;
+}
+
+export type ProcedureDetailRolesItem =
+  (typeof ProcedureDetailRolesItem)[keyof typeof ProcedureDetailRolesItem];
+
+export const ProcedureDetailRolesItem = {
+  role_1: "role_1",
+  role_2: "role_2",
+  role_3: "role_3",
+} as const;
+
+export interface ProcedureDetail {
+  id: string;
+  slug: string;
+  name: string;
+  description: string;
+  clinicalCategory: string;
+  roles: ProcedureDetailRolesItem[];
+  supplies: ProcedureSupplyEntry[];
+}
+
+export type ProcedureUsageTier =
+  (typeof ProcedureUsageTier)[keyof typeof ProcedureUsageTier];
+
+export const ProcedureUsageTier = {
+  primary: "primary",
+  secondary: "secondary",
+  tertiary: "tertiary",
+} as const;
+
+export type ProcedureUsageRolesItem =
+  (typeof ProcedureUsageRolesItem)[keyof typeof ProcedureUsageRolesItem];
+
+export const ProcedureUsageRolesItem = {
+  role_1: "role_1",
+  role_2: "role_2",
+  role_3: "role_3",
+} as const;
+
+export interface ProcedureUsage {
+  procedureId: string;
+  procedureName: string;
+  slug: string;
+  tier: ProcedureUsageTier;
+  quantityPerEvent?: number;
+  roles?: ProcedureUsageRolesItem[];
+}
+
 export type PromoteRecommendationOverridesPriority =
   (typeof PromoteRecommendationOverridesPriority)[keyof typeof PromoteRecommendationOverridesPriority];
 
@@ -1378,6 +1541,12 @@ export interface PromoteRecommendationOverrides {
   /** @minimum 0 */
   etaDays?: number;
   priority?: PromoteRecommendationOverridesPriority;
+  /** When true, the promoted purchase order also includes one line per
+companion supply item (items that share a procedure tier with the
+recommended item). Each line uses the companion's recommended
+quantity and a covering supplier. Defaults to false.
+ */
+  includeCompanionSupplies?: boolean;
 }
 
 export interface ForecastInput {
@@ -2189,6 +2358,22 @@ export type ListCatalogItemsParams = {
   search?: string;
   limit?: number;
 };
+
+export type ListProceduresParams = {
+  /**
+   * Optional role filter (role_1, role_2, role_3).
+   */
+  role?: ListProceduresRole;
+};
+
+export type ListProceduresRole =
+  (typeof ListProceduresRole)[keyof typeof ListProceduresRole];
+
+export const ListProceduresRole = {
+  role_1: "role_1",
+  role_2: "role_2",
+  role_3: "role_3",
+} as const;
 
 export type ListInventoryBalancesParams = {
   nodeId?: string;

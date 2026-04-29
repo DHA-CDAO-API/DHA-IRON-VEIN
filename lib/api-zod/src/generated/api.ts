@@ -202,6 +202,17 @@ export const ListNodesResponseItem = zod.object({
   regionalHub: zod.string().nullish(),
   upstreamNode: zod.string().nullish(),
   countryCode: zod.string().nullish(),
+  role: zod
+    .union([
+      zod.literal("role_1"),
+      zod.literal("role_2"),
+      zod.literal("role_3"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Echelon-of-care tag for demand nodes. role_1 = aid station,\nrole_2 = forward surgical, role_3 = combat support hospital.\nNULL for non-demand sites (suppliers, hubs, prime vendors).\n",
+    ),
 });
 export const ListNodesResponse = zod.array(ListNodesResponseItem);
 
@@ -240,6 +251,17 @@ export const GetNetworkSnapshotResponse = zod.object({
       regionalHub: zod.string().nullish(),
       upstreamNode: zod.string().nullish(),
       countryCode: zod.string().nullish(),
+      role: zod
+        .union([
+          zod.literal("role_1"),
+          zod.literal("role_2"),
+          zod.literal("role_3"),
+          zod.literal(null),
+        ])
+        .nullish()
+        .describe(
+          "Echelon-of-care tag for demand nodes. role_1 = aid station,\nrole_2 = forward surgical, role_3 = combat support hospital.\nNULL for non-demand sites (suppliers, hubs, prime vendors).\n",
+        ),
     }),
   ),
   routes: zod.array(
@@ -431,6 +453,17 @@ export const ListSitesResponseItem = zod.object({
   criticalShortItems: zod.number().optional(),
   latitude: zod.number().optional(),
   longitude: zod.number().optional(),
+  role: zod
+    .union([
+      zod.literal("role_1"),
+      zod.literal("role_2"),
+      zod.literal("role_3"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      "Echelon-of-care tag (role_1\/2\/3) for demand nodes; null for non-demand sites.",
+    ),
 });
 export const ListSitesResponse = zod.array(ListSitesResponseItem);
 
@@ -451,6 +484,17 @@ export const GetSiteDetailResponse = zod.object({
     regionalHub: zod.string().nullish(),
     upstreamNode: zod.string().nullish(),
     countryCode: zod.string().nullish(),
+    role: zod
+      .union([
+        zod.literal("role_1"),
+        zod.literal("role_2"),
+        zod.literal("role_3"),
+        zod.literal(null),
+      ])
+      .nullish()
+      .describe(
+        "Echelon-of-care tag for demand nodes. role_1 = aid station,\nrole_2 = forward surgical, role_3 = combat support hospital.\nNULL for non-demand sites (suppliers, hubs, prime vendors).\n",
+      ),
   }),
   demandProfile: zod.object({
     nodeId: zod.string(),
@@ -627,6 +671,23 @@ export const GetSiteDetailResponse = zod.object({
       confidenceScore: zod.number().optional(),
       scenarioId: zod.string().nullish(),
       promotedOrderId: zod.string().nullish(),
+      companionItems: zod
+        .array(
+          zod.object({
+            itemId: zod.string(),
+            itemName: zod.string(),
+            tier: zod.enum(["primary", "secondary", "tertiary"]),
+            quantityPerEvent: zod.number(),
+            unit: zod.string().nullish(),
+            onHandAtNode: zod.number().nullish(),
+            procedureId: zod.string().nullish(),
+            procedureName: zod.string().nullish(),
+          }),
+        )
+        .optional()
+        .describe(
+          'Primary-tier supply dependents drawn from the procedure(s) that\nconsume this item. Used by the Recommendations rail to show a\n\"+N companion supplies\" chip and by the Promote dialog to bundle\nthe dependents into one multi-line order.\n',
+        ),
     }),
   ),
   history: zod
@@ -1026,6 +1087,23 @@ export const GetItemDetailResponse = zod.object({
       confidenceScore: zod.number().optional(),
       scenarioId: zod.string().nullish(),
       promotedOrderId: zod.string().nullish(),
+      companionItems: zod
+        .array(
+          zod.object({
+            itemId: zod.string(),
+            itemName: zod.string(),
+            tier: zod.enum(["primary", "secondary", "tertiary"]),
+            quantityPerEvent: zod.number(),
+            unit: zod.string().nullish(),
+            onHandAtNode: zod.number().nullish(),
+            procedureId: zod.string().nullish(),
+            procedureName: zod.string().nullish(),
+          }),
+        )
+        .optional()
+        .describe(
+          'Primary-tier supply dependents drawn from the procedure(s) that\nconsume this item. Used by the Recommendations rail to show a\n\"+N companion supplies\" chip and by the Promote dialog to bundle\nthe dependents into one multi-line order.\n',
+        ),
     }),
   ),
   history: zod
@@ -1037,6 +1115,73 @@ export const GetItemDetailResponse = zod.object({
       }),
     )
     .optional(),
+});
+
+/**
+ * @summary Reverse lookup — which procedures use this item, and at what tier.
+ */
+export const ListItemProceduresParams = zod.object({
+  itemId: zod.coerce.string(),
+});
+
+export const ListItemProceduresResponseItem = zod.object({
+  procedureId: zod.string(),
+  procedureName: zod.string(),
+  slug: zod.string(),
+  tier: zod.enum(["primary", "secondary", "tertiary"]),
+  quantityPerEvent: zod.number().optional(),
+  roles: zod.array(zod.enum(["role_1", "role_2", "role_3"])).optional(),
+});
+export const ListItemProceduresResponse = zod.array(
+  ListItemProceduresResponseItem,
+);
+
+/**
+ * @summary List the clinician-curated procedure library.
+ */
+export const ListProceduresQueryParams = zod.object({
+  role: zod
+    .enum(["role_1", "role_2", "role_3"])
+    .optional()
+    .describe("Optional role filter (role_1, role_2, role_3)."),
+});
+
+export const ListProceduresResponseItem = zod.object({
+  id: zod.string(),
+  slug: zod.string(),
+  name: zod.string(),
+  description: zod.string().optional(),
+  clinicalCategory: zod.string(),
+  roles: zod.array(zod.enum(["role_1", "role_2", "role_3"])),
+  primaryCount: zod.number(),
+  secondaryCount: zod.number(),
+  tertiaryCount: zod.number(),
+});
+export const ListProceduresResponse = zod.array(ListProceduresResponseItem);
+
+export const GetProcedureDetailParams = zod.object({
+  procedureId: zod.coerce.string(),
+});
+
+export const GetProcedureDetailResponse = zod.object({
+  id: zod.string(),
+  slug: zod.string(),
+  name: zod.string(),
+  description: zod.string(),
+  clinicalCategory: zod.string(),
+  roles: zod.array(zod.enum(["role_1", "role_2", "role_3"])),
+  supplies: zod.array(
+    zod.object({
+      itemId: zod.string(),
+      itemName: zod.string(),
+      unit: zod.string().nullish(),
+      category: zod.string().nullish(),
+      criticality: zod.string().nullish(),
+      tier: zod.enum(["primary", "secondary", "tertiary"]),
+      quantityPerEvent: zod.number(),
+      notes: zod.string().nullish(),
+    }),
+  ),
 });
 
 export const ListInventoryBalancesQueryParams = zod.object({
@@ -1196,6 +1341,17 @@ export const GetOrderResponse = zod.object({
     regionalHub: zod.string().nullish(),
     upstreamNode: zod.string().nullish(),
     countryCode: zod.string().nullish(),
+    role: zod
+      .union([
+        zod.literal("role_1"),
+        zod.literal("role_2"),
+        zod.literal("role_3"),
+        zod.literal(null),
+      ])
+      .nullish()
+      .describe(
+        "Echelon-of-care tag for demand nodes. role_1 = aid station,\nrole_2 = forward surgical, role_3 = combat support hospital.\nNULL for non-demand sites (suppliers, hubs, prime vendors).\n",
+      ),
   }),
   toNode: zod.object({
     id: zod.string(),
@@ -1209,6 +1365,17 @@ export const GetOrderResponse = zod.object({
     regionalHub: zod.string().nullish(),
     upstreamNode: zod.string().nullish(),
     countryCode: zod.string().nullish(),
+    role: zod
+      .union([
+        zod.literal("role_1"),
+        zod.literal("role_2"),
+        zod.literal("role_3"),
+        zod.literal(null),
+      ])
+      .nullish()
+      .describe(
+        "Echelon-of-care tag for demand nodes. role_1 = aid station,\nrole_2 = forward surgical, role_3 = combat support hospital.\nNULL for non-demand sites (suppliers, hubs, prime vendors).\n",
+      ),
   }),
   item: zod.object({
     id: zod.string(),
@@ -1368,6 +1535,23 @@ export const GetOrderResponse = zod.object({
       confidenceScore: zod.number().optional(),
       scenarioId: zod.string().nullish(),
       promotedOrderId: zod.string().nullish(),
+      companionItems: zod
+        .array(
+          zod.object({
+            itemId: zod.string(),
+            itemName: zod.string(),
+            tier: zod.enum(["primary", "secondary", "tertiary"]),
+            quantityPerEvent: zod.number(),
+            unit: zod.string().nullish(),
+            onHandAtNode: zod.number().nullish(),
+            procedureId: zod.string().nullish(),
+            procedureName: zod.string().nullish(),
+          }),
+        )
+        .optional()
+        .describe(
+          'Primary-tier supply dependents drawn from the procedure(s) that\nconsume this item. Used by the Recommendations rail to show a\n\"+N companion supplies\" chip and by the Promote dialog to bundle\nthe dependents into one multi-line order.\n',
+        ),
     })
     .optional(),
   activity: zod
@@ -1741,6 +1925,23 @@ export const RunScenarioResponse = zod.object({
       confidenceScore: zod.number().optional(),
       scenarioId: zod.string().nullish(),
       promotedOrderId: zod.string().nullish(),
+      companionItems: zod
+        .array(
+          zod.object({
+            itemId: zod.string(),
+            itemName: zod.string(),
+            tier: zod.enum(["primary", "secondary", "tertiary"]),
+            quantityPerEvent: zod.number(),
+            unit: zod.string().nullish(),
+            onHandAtNode: zod.number().nullish(),
+            procedureId: zod.string().nullish(),
+            procedureName: zod.string().nullish(),
+          }),
+        )
+        .optional()
+        .describe(
+          'Primary-tier supply dependents drawn from the procedure(s) that\nconsume this item. Used by the Recommendations rail to show a\n\"+N companion supplies\" chip and by the Promote dialog to bundle\nthe dependents into one multi-line order.\n',
+        ),
     }),
   ),
   timeline: zod.array(
@@ -2007,6 +2208,23 @@ export const GetScenarioResponse = zod.object({
       confidenceScore: zod.number().optional(),
       scenarioId: zod.string().nullish(),
       promotedOrderId: zod.string().nullish(),
+      companionItems: zod
+        .array(
+          zod.object({
+            itemId: zod.string(),
+            itemName: zod.string(),
+            tier: zod.enum(["primary", "secondary", "tertiary"]),
+            quantityPerEvent: zod.number(),
+            unit: zod.string().nullish(),
+            onHandAtNode: zod.number().nullish(),
+            procedureId: zod.string().nullish(),
+            procedureName: zod.string().nullish(),
+          }),
+        )
+        .optional()
+        .describe(
+          'Primary-tier supply dependents drawn from the procedure(s) that\nconsume this item. Used by the Recommendations rail to show a\n\"+N companion supplies\" chip and by the Promote dialog to bundle\nthe dependents into one multi-line order.\n',
+        ),
     }),
   ),
   timeline: zod.array(
@@ -2407,6 +2625,23 @@ export const PreviewScenarioResponse = zod.object({
       confidenceScore: zod.number().optional(),
       scenarioId: zod.string().nullish(),
       promotedOrderId: zod.string().nullish(),
+      companionItems: zod
+        .array(
+          zod.object({
+            itemId: zod.string(),
+            itemName: zod.string(),
+            tier: zod.enum(["primary", "secondary", "tertiary"]),
+            quantityPerEvent: zod.number(),
+            unit: zod.string().nullish(),
+            onHandAtNode: zod.number().nullish(),
+            procedureId: zod.string().nullish(),
+            procedureName: zod.string().nullish(),
+          }),
+        )
+        .optional()
+        .describe(
+          'Primary-tier supply dependents drawn from the procedure(s) that\nconsume this item. Used by the Recommendations rail to show a\n\"+N companion supplies\" chip and by the Promote dialog to bundle\nthe dependents into one multi-line order.\n',
+        ),
     }),
   ),
   timeline: zod.array(
@@ -2763,6 +2998,23 @@ export const GetRecommendationsResponseItem = zod.object({
   confidenceScore: zod.number().optional(),
   scenarioId: zod.string().nullish(),
   promotedOrderId: zod.string().nullish(),
+  companionItems: zod
+    .array(
+      zod.object({
+        itemId: zod.string(),
+        itemName: zod.string(),
+        tier: zod.enum(["primary", "secondary", "tertiary"]),
+        quantityPerEvent: zod.number(),
+        unit: zod.string().nullish(),
+        onHandAtNode: zod.number().nullish(),
+        procedureId: zod.string().nullish(),
+        procedureName: zod.string().nullish(),
+      }),
+    )
+    .optional()
+    .describe(
+      'Primary-tier supply dependents drawn from the procedure(s) that\nconsume this item. Used by the Recommendations rail to show a\n\"+N companion supplies\" chip and by the Promote dialog to bundle\nthe dependents into one multi-line order.\n',
+    ),
 });
 export const GetRecommendationsResponse = zod.array(
   GetRecommendationsResponseItem,
@@ -2782,6 +3034,12 @@ export const PromoteRecommendationToOrderBody = zod.object({
     .min(promoteRecommendationToOrderBodyEtaDaysMin)
     .optional(),
   priority: zod.enum(["ROUTINE", "URGENT", "FLASH"]).optional(),
+  includeCompanionSupplies: zod
+    .boolean()
+    .optional()
+    .describe(
+      "When true, the promoted purchase order also includes one line per\ncompanion supply item (items that share a procedure tier with the\nrecommended item). Each line uses the companion's recommended\nquantity and a covering supplier. Defaults to false.\n",
+    ),
 });
 
 export const ListConversationsResponseItem = zod.object({
@@ -2979,6 +3237,17 @@ export const GetRiskBoardResponse = zod.object({
       criticalShortItems: zod.number().optional(),
       latitude: zod.number().optional(),
       longitude: zod.number().optional(),
+      role: zod
+        .union([
+          zod.literal("role_1"),
+          zod.literal("role_2"),
+          zod.literal("role_3"),
+          zod.literal(null),
+        ])
+        .nullish()
+        .describe(
+          "Echelon-of-care tag (role_1\/2\/3) for demand nodes; null for non-demand sites.",
+        ),
     }),
   ),
   topRiskItems: zod.array(

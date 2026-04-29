@@ -5,6 +5,7 @@
  * Predictive Sustainment Platform API for INDOPACOM medical logistics decision support.
  * OpenAPI spec version: 1.0.0
  */
+import type { NodeRole } from "./nodeRole";
 
 export interface Node {
   id: string;
@@ -21,4 +22,12 @@ export interface Node {
   upstreamNode?: string | null;
   /** @nullable */
   countryCode?: string | null;
+  /**
+   * Echelon-of-care tag for demand nodes. role_1 = aid station,
+role_2 = forward surgical, role_3 = combat support hospital.
+NULL for non-demand sites (suppliers, hubs, prime vendors).
+
+   * @nullable
+   */
+  role?: NodeRole;
 }

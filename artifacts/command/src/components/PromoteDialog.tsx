@@ -21,13 +21,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Loader2 } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Loader2, Package } from "lucide-react";
 
 export type PromoteOverrides = {
   quantity: number;
   supplierId: string;
   etaDays: number;
   priority: "ROUTINE" | "URGENT" | "FLASH";
+  includeCompanionSupplies: boolean;
 };
 
 export function defaultPriorityForKind(
@@ -69,6 +71,7 @@ export function PromoteDialog({
         priority:
           (rec.priority?.toUpperCase() as PromoteOverrides["priority"]) ??
           defaultPriorityForKind(rec.kind),
+        includeCompanionSupplies: false,
       };
       setDraft(initial);
       setQtyText(String(initial.quantity));
@@ -237,6 +240,37 @@ export function PromoteDialog({
                 </SelectContent>
               </Select>
             </div>
+
+            {Array.isArray(rec.companionItems) &&
+            rec.companionItems.length > 0 ? (
+              <label
+                className="flex items-start gap-2 rounded-md border border-border/60 bg-muted/30 px-3 py-2 text-xs cursor-pointer"
+                data-testid="promote-bundle-companion-label"
+              >
+                <Checkbox
+                  data-testid="promote-bundle-companion"
+                  checked={draft.includeCompanionSupplies}
+                  onCheckedChange={(v) =>
+                    setDraft({
+                      ...draft,
+                      includeCompanionSupplies: v === true,
+                    })
+                  }
+                  className="mt-0.5"
+                />
+                <span className="space-y-0.5">
+                  <span className="flex items-center gap-1.5 font-medium">
+                    <Package className="h-3.5 w-3.5 text-primary" />
+                    Bundle {rec.companionItems.length} companion suppl
+                    {rec.companionItems.length === 1 ? "y" : "ies"}
+                  </span>
+                  <span className="text-muted-foreground block">
+                    Add the items clinicians use alongside this one (same
+                    procedure tier) to the same purchase order.
+                  </span>
+                </span>
+              </label>
+            ) : null}
 
             {validationError ? (
               <div className="text-xs text-destructive">{validationError}</div>

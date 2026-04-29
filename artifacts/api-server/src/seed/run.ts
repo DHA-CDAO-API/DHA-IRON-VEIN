@@ -34,6 +34,9 @@ import {
   patientItemRequirements,
   eventTypes,
   eventPatientMix,
+  procedures as proceduresTable,
+  procedureSupplies,
+  procedureRoles,
 } from "@workspace/db";
 import { sql } from "drizzle-orm";
 import { logger } from "../lib/logger";
@@ -429,6 +432,52 @@ const PRESET_EVENTS = [
   },
 ];
 
+/**
+ * Map free-text node `type` strings (e.g. "Theater hub", "Large MTF",
+ * "Forward node", "BAS") into a canonical role_1/role_2/role_3 tag for
+ * demand nodes. Returns null for non-demand sites (suppliers, hubs,
+ * prime vendors) so the role badge stays empty there.
+ */
+function roleForNodeType(nodeType: string): string | null {
+  const t = (nodeType ?? "").toLowerCase();
+  if (!t) return null;
+  // Role 3: combat support hospital / large MTF / theater hub field hospitals
+  if (
+    t.includes("field hospital") ||
+    t.includes("large mtf") ||
+    t.includes("theater hub") ||
+    t.includes("combat support hospital") ||
+    t === "csh"
+  ) {
+    return "role_3";
+  }
+  // Role 2: forward surgical / standard MTF / forward node / hospital ship
+  if (
+    t.includes("forward surgical") ||
+    t.includes("forward resuscitative") ||
+    t.includes("standard mtf") ||
+    t.includes("forward node") ||
+    t.includes("hospital ship") ||
+    t === "ship" ||
+    t === "hospital"
+  ) {
+    return "role_2";
+  }
+  // Role 1: BAS / aid station / forward clinic / clinic
+  if (
+    t.includes("bas") ||
+    t.includes("aid station") ||
+    t.includes("forward clinic") ||
+    t.includes("battalion aid") ||
+    t === "clinic" ||
+    t.includes("treatment node")
+  ) {
+    return "role_1";
+  }
+  // Non-demand sites (supplier, prime vendor, regional hub, port, depot)
+  return null;
+}
+
 function operationalStressScale(nodeType: string, optempo: string): number {
   const t = nodeType.toLowerCase();
   if (t.includes("supplier") || t.includes("prime")) return 1;
@@ -482,7 +531,8 @@ export async function runSeed(opts: SeedOptions = {}): Promise<void> {
       suppliers, items,
       routes, nodes, catalog_entries, app_settings, profiles,
       blood_lots, cold_chain_assets, donor_pools, temperature_events,
-      tag_assignments, tags
+      tag_assignments, tags,
+      procedure_supplies, procedure_roles, procedures
       RESTART IDENTITY`);
   }
 
@@ -864,10 +914,11 @@ export async function runSeed(opts: SeedOptions = {}): Promise<void> {
   await db.insert(nodes).values(
     nodeRows.map((r) => {
       const id = asString(r.id);
+      const type = asString(r.type, "Site");
       return {
         id,
         name: asString(r.name),
-        type: asString(r.type, "Site"),
+        type,
         latitude: asNumber(r.latitude),
         longitude: asNumber(r.longitude),
         population: asNumber(r.population, 0),
@@ -876,6 +927,7 @@ export async function runSeed(opts: SeedOptions = {}): Promise<void> {
         regionalHub: hubByAppNode.get(id) ?? null,
         upstreamNode: upstreamByAppNode.get(id) ?? null,
         countryCode: inferCountry(id, asString(r.name)),
+        role: roleForNodeType(type),
       };
     }),
   );
@@ -912,6 +964,7 @@ export async function runSeed(opts: SeedOptions = {}): Promise<void> {
       regionalHub: n.regionalHub ?? null,
       upstreamNode: n.regionalHub ?? null,
       countryCode: n.countryCode,
+      role: roleForNodeType(n.type),
     })),
   );
 
@@ -1188,6 +1241,9 @@ export async function runSeed(opts: SeedOptions = {}): Promise<void> {
   // ---- Settings + profile ----
   await db.insert(appSettings).values({});
   await db.insert(profiles).values({});
+
+  // ---- Medical procedures (clinician-curated reference library) ----
+  await seedMedicalProcedures();
 
   // ---- Preset events ----
   await db.insert(presetEvents).values(PRESET_EVENTS);
@@ -2073,5 +2129,320 @@ async function seedBloodReadiness(): Promise<void> {
       tempEvents: tempEventInserts.length,
     },
     "seed: blood-readiness foundation populated",
+  );
+}
+
+/**
+ * Seed the clinician-curated medical-procedure library. Each procedure is a
+ * read-only reference entry with a Primary/Secondary/Tertiary supply kit
+ * and one or more echelon-of-care role tags (role_1/2/3). The catalog covers
+ * the activities most relevant to the INDOPACOM blood-readiness scenario:
+ * transfusion, phlebotomy, IV access, surgical prep, wound care, airway
+ * management, mass-casualty triage, cold-chain handling, and routine
+ * encounters.
+ *
+ * Item ids must already exist in the items table — we only reference IDs
+ * from ITEM_CATALOG above.
+ */
+async function seedMedicalProcedures(): Promise<void> {
+  type Tier = "primary" | "secondary" | "tertiary";
+  type Role = "role_1" | "role_2" | "role_3";
+  type Kit = Array<{ itemId: string; tier: Tier; quantityPerEvent: number; notes?: string }>;
+  type ProcedureSeed = {
+    id: string;
+    slug: string;
+    name: string;
+    description: string;
+    clinicalCategory: string;
+    roles: Role[];
+    supplies: Kit;
+  };
+
+  const PROCEDURES: ProcedureSeed[] = [
+    {
+      id: "proc-whole-blood-transfusion",
+      slug: "whole-blood-transfusion",
+      name: "Whole Blood Transfusion",
+      description:
+        "Resuscitative transfusion of low-titer O whole blood (cold-stored or fresh from a Walking Blood Bank). Used in massive hemorrhage and damage-control resuscitation.",
+      clinicalCategory: "transfusion",
+      roles: ["role_2", "role_3"],
+      supplies: [
+        { itemId: "ltow_pos", tier: "primary", quantityPerEvent: 1, notes: "Primary product when O+ recipient" },
+        { itemId: "iv_set", tier: "primary", quantityPerEvent: 1, notes: "170 µm blood filter required" },
+        { itemId: "abo_kit", tier: "primary", quantityPerEvent: 1 },
+        { itemId: "crossmatch", tier: "primary", quantityPerEvent: 1 },
+        { itemId: "gloves", tier: "primary", quantityPerEvent: 2 },
+        { itemId: "warmer", tier: "secondary", quantityPerEvent: 1, notes: "Strongly recommended for >2 units" },
+        { itemId: "pressure_inf", tier: "secondary", quantityPerEvent: 1 },
+        { itemId: "transfusion_band", tier: "secondary", quantityPerEvent: 1 },
+        { itemId: "antiseptic", tier: "secondary", quantityPerEvent: 1 },
+        { itemId: "biohazard_bag", tier: "tertiary", quantityPerEvent: 1 },
+        { itemId: "mask", tier: "tertiary", quantityPerEvent: 1 },
+      ],
+    },
+    {
+      id: "proc-component-transfusion",
+      slug: "component-transfusion",
+      name: "Component Transfusion (PRBC + FFP)",
+      description:
+        "Balanced 1:1 packed-red-cell and plasma transfusion at a Role 3 facility with a functional blood bank.",
+      clinicalCategory: "transfusion",
+      roles: ["role_3"],
+      supplies: [
+        { itemId: "prbc_o", tier: "primary", quantityPerEvent: 1 },
+        { itemId: "ffp_ab", tier: "primary", quantityPerEvent: 1 },
+        { itemId: "iv_set", tier: "primary", quantityPerEvent: 1 },
+        { itemId: "abo_kit", tier: "primary", quantityPerEvent: 1 },
+        { itemId: "crossmatch", tier: "primary", quantityPerEvent: 1 },
+        { itemId: "gloves", tier: "primary", quantityPerEvent: 2 },
+        { itemId: "warmer", tier: "secondary", quantityPerEvent: 1 },
+        { itemId: "transfusion_band", tier: "secondary", quantityPerEvent: 1 },
+        { itemId: "id_screen", tier: "secondary", quantityPerEvent: 1 },
+        { itemId: "platelets", tier: "tertiary", quantityPerEvent: 1, notes: "Add for MTP activation" },
+      ],
+    },
+    {
+      id: "proc-phlebotomy",
+      slug: "phlebotomy",
+      name: "Phlebotomy / Blood Draw",
+      description:
+        "Diagnostic venipuncture and Walking Blood Bank donor collection. Uses standard collection kit and PPE.",
+      clinicalCategory: "collection",
+      roles: ["role_1", "role_2", "role_3"],
+      supplies: [
+        { itemId: "tubes", tier: "primary", quantityPerEvent: 4 },
+        { itemId: "butterfly", tier: "primary", quantityPerEvent: 1 },
+        { itemId: "gloves", tier: "primary", quantityPerEvent: 1 },
+        { itemId: "antiseptic", tier: "primary", quantityPerEvent: 1 },
+        { itemId: "tourniquet", tier: "primary", quantityPerEvent: 1 },
+        { itemId: "gauze", tier: "secondary", quantityPerEvent: 2 },
+        { itemId: "alcohol", tier: "secondary", quantityPerEvent: 2 },
+        { itemId: "labels", tier: "secondary", quantityPerEvent: 4 },
+        { itemId: "bags", tier: "secondary", quantityPerEvent: 1 },
+        { itemId: "sharps", tier: "tertiary", quantityPerEvent: 1 },
+        { itemId: "biohazard_bag", tier: "tertiary", quantityPerEvent: 1 },
+      ],
+    },
+    {
+      id: "proc-walking-blood-bank-donation",
+      slug: "walking-blood-bank-donation",
+      name: "Walking Blood Bank Donation",
+      description:
+        "Whole-blood collection from a pre-screened low-titer O donor for emergency transfusion. Uses CPD-A1 collection bag and barcode chain-of-custody.",
+      clinicalCategory: "collection",
+      roles: ["role_2", "role_3"],
+      supplies: [
+        { itemId: "collection_bag", tier: "primary", quantityPerEvent: 1 },
+        { itemId: "antiseptic", tier: "primary", quantityPerEvent: 1 },
+        { itemId: "gloves", tier: "primary", quantityPerEvent: 1 },
+        { itemId: "tourniquet", tier: "primary", quantityPerEvent: 1 },
+        { itemId: "labels", tier: "primary", quantityPerEvent: 2 },
+        { itemId: "tubes", tier: "secondary", quantityPerEvent: 2, notes: "Held for ABO confirm + ID screen" },
+        { itemId: "id_screen", tier: "secondary", quantityPerEvent: 1 },
+        { itemId: "abo_kit", tier: "secondary", quantityPerEvent: 1 },
+        { itemId: "bags", tier: "tertiary", quantityPerEvent: 1 },
+        { itemId: "sharps", tier: "tertiary", quantityPerEvent: 1 },
+      ],
+    },
+    {
+      id: "proc-iv-access",
+      slug: "iv-access",
+      name: "IV Access & Fluid Resuscitation",
+      description:
+        "Peripheral IV placement and crystalloid infusion for hypovolemia, sepsis, dehydration, or burn resuscitation.",
+      clinicalCategory: "vascular_access",
+      roles: ["role_1", "role_2", "role_3"],
+      supplies: [
+        { itemId: "iv_set", tier: "primary", quantityPerEvent: 1 },
+        { itemId: "iv_fluid_lr", tier: "primary", quantityPerEvent: 1 },
+        { itemId: "antiseptic", tier: "primary", quantityPerEvent: 1 },
+        { itemId: "gloves", tier: "primary", quantityPerEvent: 1 },
+        { itemId: "iv_fluid_ns", tier: "secondary", quantityPerEvent: 1, notes: "When LR contraindicated" },
+        { itemId: "tourniquet", tier: "secondary", quantityPerEvent: 1 },
+        { itemId: "gauze", tier: "secondary", quantityPerEvent: 1 },
+        { itemId: "alcohol", tier: "tertiary", quantityPerEvent: 2 },
+        { itemId: "sharps", tier: "tertiary", quantityPerEvent: 1 },
+      ],
+    },
+    {
+      id: "proc-surgical-prep",
+      slug: "surgical-prep",
+      name: "Damage-Control Surgical Prep",
+      description:
+        "Pre-operative skin antisepsis, draping, and instrument prep for damage-control surgery at a Role 2/3 facility.",
+      clinicalCategory: "surgical",
+      roles: ["role_2", "role_3"],
+      supplies: [
+        { itemId: "antiseptic", tier: "primary", quantityPerEvent: 4 },
+        { itemId: "gloves", tier: "primary", quantityPerEvent: 4, notes: "Sterile pairs per surgical team" },
+        { itemId: "gown", tier: "primary", quantityPerEvent: 3 },
+        { itemId: "mask", tier: "primary", quantityPerEvent: 3 },
+        { itemId: "suture_kit", tier: "primary", quantityPerEvent: 2 },
+        { itemId: "shield", tier: "secondary", quantityPerEvent: 3 },
+        { itemId: "antibiotic_iv", tier: "secondary", quantityPerEvent: 2, notes: "Pre-incision dose" },
+        { itemId: "trauma_dressing", tier: "secondary", quantityPerEvent: 4 },
+        { itemId: "biohazard_bag", tier: "tertiary", quantityPerEvent: 2 },
+        { itemId: "sharps", tier: "tertiary", quantityPerEvent: 1 },
+      ],
+    },
+    {
+      id: "proc-wound-care",
+      slug: "wound-care",
+      name: "Basic Wound Care",
+      description:
+        "Cleansing, hemostasis, and dressing of a non-surgical wound. The bread-and-butter of Role 1 sick call.",
+      clinicalCategory: "wound_care",
+      roles: ["role_1", "role_2"],
+      supplies: [
+        { itemId: "gauze", tier: "primary", quantityPerEvent: 4 },
+        { itemId: "antiseptic", tier: "primary", quantityPerEvent: 1 },
+        { itemId: "gloves", tier: "primary", quantityPerEvent: 1 },
+        { itemId: "pressure_dressing", tier: "primary", quantityPerEvent: 1 },
+        { itemId: "suture_kit", tier: "secondary", quantityPerEvent: 1 },
+        { itemId: "antibiotic_po", tier: "secondary", quantityPerEvent: 7, notes: "5–7 day course PRN" },
+        { itemId: "trauma_dressing", tier: "secondary", quantityPerEvent: 1 },
+        { itemId: "alcohol", tier: "tertiary", quantityPerEvent: 2 },
+        { itemId: "biohazard_bag", tier: "tertiary", quantityPerEvent: 1 },
+      ],
+    },
+    {
+      id: "proc-hemorrhage-control",
+      slug: "hemorrhage-control",
+      name: "Tactical Hemorrhage Control",
+      description:
+        "Tourniquet application, hemostatic packing, and wound pressure for life-threatening external hemorrhage (TCCC).",
+      clinicalCategory: "trauma",
+      roles: ["role_1", "role_2"],
+      supplies: [
+        { itemId: "tq_cat", tier: "primary", quantityPerEvent: 2 },
+        { itemId: "hemo_dressing", tier: "primary", quantityPerEvent: 1 },
+        { itemId: "pressure_dressing", tier: "primary", quantityPerEvent: 2 },
+        { itemId: "gloves", tier: "primary", quantityPerEvent: 1 },
+        { itemId: "trauma_dressing", tier: "secondary", quantityPerEvent: 2 },
+        { itemId: "gauze", tier: "secondary", quantityPerEvent: 4 },
+        { itemId: "splint_sam", tier: "secondary", quantityPerEvent: 1 },
+        { itemId: "analgesic_morphine", tier: "tertiary", quantityPerEvent: 1 },
+      ],
+    },
+    {
+      id: "proc-airway-management",
+      slug: "airway-management",
+      name: "Advanced Airway Management",
+      description:
+        "Cricothyrotomy or endotracheal intubation for airway compromise, severe burn, or polytrauma.",
+      clinicalCategory: "airway",
+      roles: ["role_2", "role_3"],
+      supplies: [
+        { itemId: "airway_kit", tier: "primary", quantityPerEvent: 1 },
+        { itemId: "gloves", tier: "primary", quantityPerEvent: 1 },
+        { itemId: "iv_set", tier: "primary", quantityPerEvent: 1, notes: "Sedation access" },
+        { itemId: "analgesic_ketamine", tier: "secondary", quantityPerEvent: 1, notes: "Dissociative induction" },
+        { itemId: "antiseptic", tier: "secondary", quantityPerEvent: 1 },
+        { itemId: "mask", tier: "secondary", quantityPerEvent: 1 },
+        { itemId: "shield", tier: "secondary", quantityPerEvent: 1 },
+        { itemId: "n95", tier: "tertiary", quantityPerEvent: 1, notes: "If aerosol-generating procedure" },
+        { itemId: "suture_kit", tier: "tertiary", quantityPerEvent: 1, notes: "Cric tie-in" },
+      ],
+    },
+    {
+      id: "proc-mascal-triage",
+      slug: "mascal-triage",
+      name: "MASCAL Triage & Stabilization",
+      description:
+        "Mass-casualty triage with immediate life-saving interventions: airway, breathing, circulation, hemorrhage, hypothermia.",
+      clinicalCategory: "triage",
+      roles: ["role_1", "role_2", "role_3"],
+      supplies: [
+        { itemId: "tq_cat", tier: "primary", quantityPerEvent: 2 },
+        { itemId: "iv_set", tier: "primary", quantityPerEvent: 1 },
+        { itemId: "iv_fluid_lr", tier: "primary", quantityPerEvent: 1 },
+        { itemId: "gloves", tier: "primary", quantityPerEvent: 2 },
+        { itemId: "trauma_dressing", tier: "primary", quantityPerEvent: 2 },
+        { itemId: "chest_seal", tier: "secondary", quantityPerEvent: 1 },
+        { itemId: "airway_kit", tier: "secondary", quantityPerEvent: 1 },
+        { itemId: "analgesic_morphine", tier: "secondary", quantityPerEvent: 1 },
+        { itemId: "antiemetic", tier: "secondary", quantityPerEvent: 1 },
+        { itemId: "splint_sam", tier: "tertiary", quantityPerEvent: 1 },
+        { itemId: "labels", tier: "tertiary", quantityPerEvent: 2 },
+      ],
+    },
+    {
+      id: "proc-cold-chain-handling",
+      slug: "cold-chain-handling",
+      name: "Cold-Chain Handling & Transport",
+      description:
+        "Receiving and dispatching blood products in a validated cold chain (2–6 °C). Required for any inter-facility blood movement.",
+      clinicalCategory: "logistics",
+      roles: ["role_2", "role_3"],
+      supplies: [
+        { itemId: "cooler", tier: "primary", quantityPerEvent: 1 },
+        { itemId: "coolant", tier: "primary", quantityPerEvent: 4 },
+        { itemId: "chain_log", tier: "primary", quantityPerEvent: 1 },
+        { itemId: "labels", tier: "secondary", quantityPerEvent: 4 },
+        { itemId: "bags", tier: "secondary", quantityPerEvent: 1 },
+        { itemId: "gloves", tier: "tertiary", quantityPerEvent: 1 },
+      ],
+    },
+    {
+      id: "proc-routine-encounter",
+      slug: "routine-encounter",
+      name: "Routine Sick-Call Encounter",
+      description:
+        "Steady-state outpatient encounter — vitals, basic assessment, prescription, and minor wound care.",
+      clinicalCategory: "encounter",
+      roles: ["role_1", "role_2"],
+      supplies: [
+        { itemId: "gloves", tier: "primary", quantityPerEvent: 1 },
+        { itemId: "antiseptic", tier: "primary", quantityPerEvent: 1 },
+        { itemId: "gauze", tier: "primary", quantityPerEvent: 2 },
+        { itemId: "antibiotic_po", tier: "secondary", quantityPerEvent: 5 },
+        { itemId: "oral_rehydration", tier: "secondary", quantityPerEvent: 2 },
+        { itemId: "antiemetic", tier: "tertiary", quantityPerEvent: 1 },
+        { itemId: "alcohol", tier: "tertiary", quantityPerEvent: 1 },
+      ],
+    },
+  ];
+
+  // Insert procedures, supplies, roles. Order matters only for FK clarity —
+  // the schema does not declare hard FKs, but we still keep the dependency
+  // order so the data is coherent if any are added later.
+  await db.insert(proceduresTable).values(
+    PROCEDURES.map((p) => ({
+      id: p.id,
+      slug: p.slug,
+      name: p.name,
+      description: p.description,
+      clinicalCategory: p.clinicalCategory,
+    })),
+  );
+
+  const supplyRows = PROCEDURES.flatMap((p) =>
+    p.supplies.map((s) => ({
+      procedureId: p.id,
+      itemId: s.itemId,
+      tier: s.tier,
+      quantityPerEvent: s.quantityPerEvent,
+      notes: s.notes ?? "",
+    })),
+  );
+  if (supplyRows.length > 0) {
+    await db.insert(procedureSupplies).values(supplyRows);
+  }
+
+  const roleRows = PROCEDURES.flatMap((p) =>
+    p.roles.map((role) => ({ procedureId: p.id, role })),
+  );
+  if (roleRows.length > 0) {
+    await db.insert(procedureRoles).values(roleRows);
+  }
+
+  logger.info(
+    {
+      procedures: PROCEDURES.length,
+      supplyLinks: supplyRows.length,
+      roleLinks: roleRows.length,
+    },
+    "seed: medical-procedure library populated",
   );
 }

@@ -19,6 +19,7 @@ import {
   type CategoryFilter,
 } from "@/lib/format";
 import { CategoryFilterToggle } from "@/components/CategoryFilterToggle";
+import { EchelonRoleBadge } from "@/components/EchelonRoleBadge";
 
 function threatTier(riskScore: number): { label: string; cls: string } {
   if (riskScore >= 70) return { label: "TIER 1", cls: "border-destructive text-destructive bg-destructive/10" };
@@ -58,6 +59,7 @@ type SiteRow = {
   nodeId: string;
   name: string;
   type: string;
+  role?: string | null;
   country: string;
   riskScore: number;
   daysOfSupply: number;
@@ -134,6 +136,7 @@ export default function Locations() {
         nodeId: s.nodeId,
         name: s.name,
         type: s.type,
+        role: s.role,
         country: meta?.country ?? "—",
         riskScore: s.riskScore,
         daysOfSupply: s.daysOfSupply ?? 999,
@@ -275,6 +278,12 @@ export default function Locations() {
                       {r.type}
                     </Badge>
                   ),
+                },
+                {
+                  key: "role",
+                  label: "Role",
+                  sortAccessor: (r) => r.role ?? "zzz",
+                  render: (r) => <EchelonRoleBadge role={r.role ?? null} />,
                 },
                 {
                   key: "country",
