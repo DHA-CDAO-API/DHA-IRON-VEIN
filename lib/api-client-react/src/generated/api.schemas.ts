@@ -988,6 +988,7 @@ export interface Item {
   shelfLifeDays?: number;
   baseDemandPerEvent?: number;
   wasteAdjustedDemand?: number;
+  unitPriceUsd?: number;
   trigger?: string;
   niinOrSku?: string;
   source?: ItemSource;

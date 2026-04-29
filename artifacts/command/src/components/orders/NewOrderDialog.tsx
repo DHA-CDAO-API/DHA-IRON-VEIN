@@ -53,6 +53,7 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
+import { formatCurrency } from "@/lib/format";
 import { AlertTriangle, Check, ChevronsUpDown, Loader2 } from "lucide-react";
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -312,6 +313,19 @@ export function NewOrderDialog({ open, onOpenChange, prefill }: NewOrderDialogPr
   }, [supplierCarriesItem, acknowledgeNoCoverage]);
 
   const qtyNum = Number(quantity);
+  // Pull the catalog price for the chosen item so we can preview the line
+  // total before submission and refuse to submit when no catalog price is
+  // set (the server enforces the same rule by returning a 400 — see
+  // POST /orders in the API; task #222). Treating non-numeric values as 0
+  // keeps the disabled-submit guard correct even if the API client emits
+  // null/undefined for legacy rows.
+  const unitPriceUsd =
+    selectedItem && Number.isFinite(Number((selectedItem as { unitPriceUsd?: number }).unitPriceUsd))
+      ? Number((selectedItem as { unitPriceUsd?: number }).unitPriceUsd)
+      : 0;
+  const estimatedTotalUsd =
+    Number.isFinite(qtyNum) && qtyNum > 0 ? unitPriceUsd * qtyNum : 0;
+  const hasCatalogPrice = unitPriceUsd > 0;
   const baseValid =
     !!itemId &&
     !!toNodeId &&
@@ -321,7 +335,9 @@ export function NewOrderDialog({ open, onOpenChange, prefill }: NewOrderDialogPr
     !!priority &&
     !!requestedDeliveryAt;
   const isValid =
-    baseValid && (supplierCarriesItem || acknowledgeNoCoverage);
+    baseValid &&
+    hasCatalogPrice &&
+    (supplierCarriesItem || acknowledgeNoCoverage);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -867,6 +883,53 @@ export function NewOrderDialog({ open, onOpenChange, prefill }: NewOrderDialogPr
               />
             </div>
           </div>
+
+          {selectedItem && (
+            <div
+              data-testid="new-order-price-summary"
+              className="rounded border border-border/60 bg-muted/30 px-3 py-2 text-xs"
+            >
+              {hasCatalogPrice ? (
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-muted-foreground">
+                    Unit price (catalog)
+                  </span>
+                  <span
+                    className="font-medium tabular-nums"
+                    data-testid="new-order-unit-price"
+                  >
+                    {formatCurrency(unitPriceUsd)} /{" "}
+                    {selectedItem.unitOfIssue ?? selectedItem.unit}
+                  </span>
+                </div>
+              ) : (
+                <div
+                  className="flex items-start gap-2 text-amber-700 dark:text-amber-300"
+                  data-testid="new-order-no-price"
+                >
+                  <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                  <span>
+                    No catalog price is set for this item. The server will
+                    reject a $0 order — pick a different item or seed a
+                    price first.
+                  </span>
+                </div>
+              )}
+              {hasCatalogPrice && Number.isFinite(qtyNum) && qtyNum > 0 && (
+                <div className="flex items-center justify-between gap-2 mt-1.5 pt-1.5 border-t border-border/60">
+                  <span className="text-muted-foreground">
+                    Estimated total
+                  </span>
+                  <span
+                    className="font-semibold tabular-nums"
+                    data-testid="new-order-estimated-total"
+                  >
+                    {formatCurrency(estimatedTotalUsd)}
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
 
           {itemId && (
             <CompanionProceduresPanel itemId={itemId} />

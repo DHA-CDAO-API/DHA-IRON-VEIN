@@ -1681,6 +1681,10 @@ components:
         shelfLifeDays: { type: number }
         baseDemandPerEvent: { type: number }
         wasteAdjustedDemand: { type: number }
+        # Catalog unit price in USD. The order-create handler uses this to
+        # compute total_usd server-side and rejects POs whose total is $0
+        # (task #222). Defaults to 0 only for legacy / unpriced rows.
+        unitPriceUsd: { type: number }
         trigger: { type: string }
         niinOrSku: { type: string }
         # Provenance: 'seed' for the curated catalog, 'supply_demo_v2' for

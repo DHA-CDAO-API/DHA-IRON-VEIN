@@ -12,12 +12,20 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { AlertTriangle, Loader2, ShoppingBag } from "lucide-react";
+import { formatCurrency } from "@/lib/format";
 
 export interface BulkOrderLine {
   itemId: string;
   itemName: string;
   quantity: number;
   unitOfIssue: string;
+  /**
+   * Catalog unit price in USD. The bulk-confirm dialog renders real
+   * currency subtotals from this field (closes #209) and warns when the
+   * value is 0 — the order-create handler refuses to write a $0 PO so
+   * lines without a catalog price are flagged here before submission.
+   */
+  unitPriceUsd: number;
 }
 
 export interface BulkOrderGroup {
@@ -123,6 +131,23 @@ export function BulkOrderConfirmDialog({
     (sum, g) => sum + g.lines.reduce((s, l) => s + l.quantity, 0),
     0,
   );
+  // Real-currency grand subtotal across selected lines. The server
+  // recomputes the same number from its catalog when each PO is written
+  // (task #222) — we mirror it here so the operator sees the cost
+  // implication of the consolidated batch before sending. Lines whose
+  // catalog price is 0 contribute 0 and surface the per-line warning.
+  const totalSelectedUsd = trimmedGroups.reduce(
+    (sum, g) =>
+      sum +
+      g.lines.reduce(
+        (s, l) => s + (Number(l.unitPriceUsd) || 0) * l.quantity,
+        0,
+      ),
+    0,
+  );
+  const trimmedHasMissingPrice = trimmedGroups.some((g) =>
+    g.lines.some((l) => !(Number(l.unitPriceUsd) > 0)),
+  );
 
   const handleConfirm = async () => {
     if (trimmedGroups.length === 0) return;
@@ -181,6 +206,13 @@ export function BulkOrderConfirmDialog({
               const selectedSupplierUnits = group.lines
                 .filter((l) => selected[lineKey(group.supplierId, l.itemId)])
                 .reduce((s, l) => s + l.quantity, 0);
+              const selectedSupplierUsd = group.lines
+                .filter((l) => selected[lineKey(group.supplierId, l.itemId)])
+                .reduce(
+                  (s, l) =>
+                    s + (Number(l.unitPriceUsd) || 0) * l.quantity,
+                  0,
+                );
               const supplierToggleId = `bulk-order-supplier-${group.supplierId}`;
               return (
                 <Card
@@ -231,14 +263,27 @@ export function BulkOrderConfirmDialog({
                               {supplierLines} line
                               {supplierLines === 1 ? "" : "s"} ·{" "}
                               {supplierUnits.toLocaleString()} unit
-                              {supplierUnits === 1 ? "" : "s"} total
+                              {supplierUnits === 1 ? "" : "s"} ·{" "}
+                              <span
+                                className="font-medium text-foreground"
+                                data-testid={`bulk-order-supplier-subtotal-usd-${group.supplierId}`}
+                              >
+                                {formatCurrency(selectedSupplierUsd)}
+                              </span>
                             </>
                           ) : (
                             <>
                               {selectedSupplierLines} of {supplierLines} line
                               {supplierLines === 1 ? "" : "s"} ·{" "}
                               {selectedSupplierUnits.toLocaleString()} unit
-                              {selectedSupplierUnits === 1 ? "" : "s"} selected
+                              {selectedSupplierUnits === 1 ? "" : "s"} ·{" "}
+                              <span
+                                className="font-medium text-foreground"
+                                data-testid={`bulk-order-supplier-subtotal-usd-${group.supplierId}`}
+                              >
+                                {formatCurrency(selectedSupplierUsd)}
+                              </span>{" "}
+                              selected
                             </>
                           )}
                         </div>
@@ -251,6 +296,9 @@ export function BulkOrderConfirmDialog({
                         const key = lineKey(group.supplierId, line.itemId);
                         const isSelected = !!selected[key];
                         const lineToggleId = `bulk-order-line-${group.supplierId}-${line.itemId}`;
+                        const unitPrice = Number(line.unitPriceUsd) || 0;
+                        const lineTotal = unitPrice * line.quantity;
+                        const hasPrice = unitPrice > 0;
                         return (
                           <li
                             key={line.itemId}
@@ -279,15 +327,34 @@ export function BulkOrderConfirmDialog({
                                 }
                               >
                                 <div className="truncate">{line.itemName}</div>
+                                {!hasPrice && (
+                                  <div
+                                    className="text-[10px] uppercase tracking-wide text-amber-600 dark:text-amber-400 flex items-center gap-1 mt-0.5"
+                                    data-testid={`bulk-order-line-no-price-${group.supplierId}-${line.itemId}`}
+                                  >
+                                    <AlertTriangle className="h-3 w-3 shrink-0" />
+                                    <span>No catalog price</span>
+                                  </div>
+                                )}
                               </div>
                               <div
                                 className={
-                                  "text-xs tabular-nums shrink-0" +
+                                  "text-xs tabular-nums shrink-0 text-right" +
                                   (isSelected ? "" : " line-through opacity-60")
                                 }
                               >
-                                {line.quantity.toLocaleString()}{" "}
-                                {line.unitOfIssue}
+                                <div>
+                                  {line.quantity.toLocaleString()}{" "}
+                                  {line.unitOfIssue}
+                                </div>
+                                <div
+                                  className="text-[11px] text-muted-foreground"
+                                  data-testid={`bulk-order-line-subtotal-${group.supplierId}-${line.itemId}`}
+                                >
+                                  {hasPrice
+                                    ? `${formatCurrency(unitPrice)} × ${line.quantity.toLocaleString()} = ${formatCurrency(lineTotal)}`
+                                    : "—"}
+                                </div>
                               </div>
                             </label>
                           </li>
@@ -303,19 +370,36 @@ export function BulkOrderConfirmDialog({
 
         <DialogFooter className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
           <div
-            className="text-xs text-muted-foreground tabular-nums"
+            className="text-xs text-muted-foreground tabular-nums space-y-0.5"
             data-testid="bulk-order-grand-subtotal"
           >
             {trimmedGroups.length === 0 ? (
               <>Nothing selected</>
             ) : (
               <>
-                Sending {trimmedGroups.length} order
-                {trimmedGroups.length === 1 ? "" : "s"} ·{" "}
-                {totalSelectedLines} line
-                {totalSelectedLines === 1 ? "" : "s"} ·{" "}
-                {totalSelectedUnits.toLocaleString()} unit
-                {totalSelectedUnits === 1 ? "" : "s"}
+                <div>
+                  Sending {trimmedGroups.length} order
+                  {trimmedGroups.length === 1 ? "" : "s"} ·{" "}
+                  {totalSelectedLines} line
+                  {totalSelectedLines === 1 ? "" : "s"} ·{" "}
+                  {totalSelectedUnits.toLocaleString()} unit
+                  {totalSelectedUnits === 1 ? "" : "s"}
+                </div>
+                <div
+                  className="text-foreground font-semibold"
+                  data-testid="bulk-order-grand-subtotal-usd"
+                >
+                  {formatCurrency(totalSelectedUsd)} estimated
+                </div>
+                {trimmedHasMissingPrice && (
+                  <div
+                    className="text-[11px] text-amber-600 dark:text-amber-400"
+                    data-testid="bulk-order-missing-price-warning"
+                  >
+                    Some lines have no catalog price and will be rejected
+                    by the server.
+                  </div>
+                )}
               </>
             )}
           </div>

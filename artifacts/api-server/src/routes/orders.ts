@@ -218,8 +218,7 @@ router.post("/orders", async (req, res, next) => {
     }
     const lineInputs = isMultiLine
       ? body.lines
-      : [{ itemId: body.itemId, quantity: body.quantity, unitPriceUsd: 0 }];
-    const totalUsd = lineInputs.reduce((sum, l) => sum + (l.unitPriceUsd ?? 0) * l.quantity, 0);
+      : [{ itemId: body.itemId, quantity: body.quantity, unitPriceUsd: undefined }];
 
     if (!supplierId) {
       return res.status(400).json({ error: "supplierId or fromNodeId required" });
@@ -227,14 +226,23 @@ router.post("/orders", async (req, res, next) => {
 
     // Validate that every referenced itemId exists in the catalog up-front so
     // we don't silently create orders with dangling item references that later
-    // break OrderDetail.
+    // break OrderDetail. We also use the same lookup to read the catalog
+    // unitPriceUsd for each line — clients are NOT trusted to supply prices.
+    // Task #222 changed the contract so total_usd is always computed
+    // server-side from the live catalog, and any PO whose total would be $0
+    // is rejected up-front with `missingPriceItemIds` so the UI can point
+    // operators at the unpriced rows.
     const requestedItemIds = Array.from(new Set(lineInputs.map((l) => l.itemId)));
+    const priceById = new Map<string, number>();
     if (requestedItemIds.length > 0) {
       const existing = await db
-        .select({ id: items.id })
+        .select({ id: items.id, unitPriceUsd: items.unitPriceUsd })
         .from(items)
         .where(inArray(items.id, requestedItemIds));
       const knownIds = new Set(existing.map((r) => r.id));
+      for (const row of existing) {
+        priceById.set(row.id, Number(row.unitPriceUsd) || 0);
+      }
       const unknown = requestedItemIds.filter((id) => !knownIds.has(id));
       if (unknown.length > 0) {
         return res.status(400).json({
@@ -243,6 +251,34 @@ router.post("/orders", async (req, res, next) => {
           unknownItemIds: unknown,
         });
       }
+    }
+
+    // Resolve each line's price from the catalog and compute the line/order
+    // totals. Lines whose catalog price is 0 are tracked so the 400 response
+    // can name them.
+    const pricedLines = lineInputs.map((l) => {
+      const unitPriceUsd = priceById.get(l.itemId) ?? 0;
+      return {
+        itemId: l.itemId,
+        quantity: l.quantity,
+        unitPriceUsd,
+        lineTotalUsd: unitPriceUsd * l.quantity,
+      };
+    });
+    const totalUsd = pricedLines.reduce((sum, l) => sum + l.lineTotalUsd, 0);
+    const missingPriceItemIds = Array.from(
+      new Set(pricedLines.filter((l) => l.unitPriceUsd <= 0).map((l) => l.itemId)),
+    );
+
+    if (totalUsd <= 0) {
+      return res.status(400).json({
+        error: "zero_total_order",
+        message:
+          missingPriceItemIds.length > 0
+            ? `Cannot submit a $0 purchase order — the catalog has no price for: ${missingPriceItemIds.join(", ")}`
+            : "Cannot submit a $0 purchase order — total_usd computed to 0",
+        missingPriceItemIds,
+      });
     }
 
     await db.insert(orders).values({
@@ -256,14 +292,14 @@ router.post("/orders", async (req, res, next) => {
       totalUsd,
       notes,
     });
-    if (lineInputs.length > 0) {
+    if (pricedLines.length > 0) {
       await db.insert(orderLines).values(
-        lineInputs.map((l) => ({
+        pricedLines.map((l) => ({
           orderId,
           itemId: l.itemId,
           quantity: l.quantity,
-          unitPriceUsd: l.unitPriceUsd ?? 0,
-          lineTotalUsd: (l.unitPriceUsd ?? 0) * l.quantity,
+          unitPriceUsd: l.unitPriceUsd,
+          lineTotalUsd: l.lineTotalUsd,
         })),
       );
     }
@@ -273,7 +309,7 @@ router.post("/orders", async (req, res, next) => {
       message: `Order ${orderNo} created for ${nodeId}`,
       refType: "order",
       refId: orderId,
-      meta: { totalUsd, lines: lineInputs.length },
+      meta: { totalUsd, lines: pricedLines.length },
     });
     invalidateSimCache();
 

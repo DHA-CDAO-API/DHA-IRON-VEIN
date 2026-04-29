@@ -5,7 +5,9 @@ import {
   useListEventTypes,
   useEvaluateCasualtyDemand,
   useListSites,
+  useListItems,
   useCreateOrder,
+  getListItemsQueryKey,
   getListOrdersQueryKey,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -140,6 +142,22 @@ export default function CasualtyPlanner() {
   const { data: eventTypes = [], isLoading: loadingEvt } =
     useListEventTypes();
   const { data: sites = [] } = useListSites();
+  // Pull the catalog so the bulk-order confirm dialog can render real
+  // currency subtotals — we look up `unitPriceUsd` per shortfall row so
+  // operators see the cost implication of the consolidated batch before
+  // sending. Backed by the same /items endpoint the rest of the app uses.
+  const { data: catalogItems = [] } = useListItems({
+    query: { queryKey: getListItemsQueryKey() },
+  });
+  const unitPriceById = React.useMemo(() => {
+    const map = new Map<string, number>();
+    for (const it of catalogItems) {
+      const raw = (it as { unitPriceUsd?: number }).unitPriceUsd;
+      const num = Number(raw);
+      if (Number.isFinite(num)) map.set(it.id, num);
+    }
+    return map;
+  }, [catalogItems]);
 
   const [eventTypeId, setEventTypeId] = React.useState<string | null>(null);
   const initialSiteId = React.useMemo(() => {
@@ -339,6 +357,11 @@ export default function CasualtyPlanner() {
         quantity: row.shortfallQty,
         itemName: row.itemName,
         unitOfIssue: row.unitOfIssue,
+        // Catalog price feeds the dialog's currency subtotal column. Falls
+        // back to 0 if the catalog has no price set — the bulk dialog
+        // surfaces a "no catalog price" warning, and the server enforces
+        // the same rule by rejecting $0 POs (task #222).
+        unitPriceUsd: unitPriceById.get(row.itemId) ?? 0,
       };
       if (existing) {
         existing.lines.push(line);

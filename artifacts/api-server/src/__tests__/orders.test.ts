@@ -14,6 +14,7 @@ import {
 } from "@workspace/db";
 import { eq, inArray } from "drizzle-orm";
 import ordersRouter from "../routes/orders";
+import { backfillZeroTotalOrders } from "../lib/backfill-order-prices";
 
 // Unique per-run prefix so parallel test runs (and any stray leftover rows
 // from a previous failed run) do not collide. Cleanup at the end of the
@@ -28,6 +29,9 @@ const SUPPLIER_B = `${RUN_ID}-supB`;
 const ITEM_1 = `${RUN_ID}-item1`;
 const ITEM_2 = `${RUN_ID}-item2`;
 const ITEM_3 = `${RUN_ID}-item3`;
+// Catalog has no price for ITEM_NO_PRICE — the order-create handler must
+// reject any PO whose total computes to $0 because of it (task #222).
+const ITEM_NO_PRICE = `${RUN_ID}-item-noprice`;
 
 let server: Server;
 let baseUrl: string;
@@ -71,9 +75,18 @@ before(async () => {
     { id: SUPPLIER_B, name: "Test Supplier B", channel: "Commercial" },
   ]);
   await db.insert(items).values([
-    { id: ITEM_1, name: "Test Item 1", unitOfIssue: "ea" },
-    { id: ITEM_2, name: "Test Item 2", unitOfIssue: "ea" },
-    { id: ITEM_3, name: "Test Item 3", unitOfIssue: "ea" },
+    // Distinct prices per item so the assertions can verify the server
+    // computed totals from the catalog instead of summing identical values
+    // by accident.
+    { id: ITEM_1, name: "Test Item 1", unitOfIssue: "ea", unitPriceUsd: 10 },
+    { id: ITEM_2, name: "Test Item 2", unitOfIssue: "ea", unitPriceUsd: 25 },
+    { id: ITEM_3, name: "Test Item 3", unitOfIssue: "ea", unitPriceUsd: 4 },
+    {
+      id: ITEM_NO_PRICE,
+      name: "Test Item No Price",
+      unitOfIssue: "ea",
+      unitPriceUsd: 0,
+    },
   ]);
 });
 
@@ -91,7 +104,7 @@ after(async () => {
   }
   await db
     .delete(items)
-    .where(inArray(items.id, [ITEM_1, ITEM_2, ITEM_3]));
+    .where(inArray(items.id, [ITEM_1, ITEM_2, ITEM_3, ITEM_NO_PRICE]));
   await db
     .delete(suppliers)
     .where(inArray(suppliers.id, [SUPPLIER_A, SUPPLIER_B]));
@@ -204,4 +217,126 @@ test("POST /api/orders bulk shape: two suppliers with overlapping items produce 
   const secondQtyForOverlap = secondLines.find((l) => l.itemId === ITEM_2)?.quantity;
   assert.equal(firstQtyForOverlap, 2, "supplier A keeps its own qty for the overlapping item");
   assert.equal(secondQtyForOverlap, 6, "supplier B keeps its own qty for the overlapping item");
+});
+
+test("POST /api/orders computes total_usd from the catalog and ignores client-supplied prices", async () => {
+  // The client used to control prices on each line, which let an honest
+  // bug or a tampered request push a PO through with a fake total. Task
+  // #222 made the server authoritative — the catalog is the only source.
+  // ITEM_1=$10 (qty 3) + ITEM_2=$25 (qty 2) = $80, regardless of the
+  // bogus 9999 the request sends below.
+  const { status, body } = await postOrder({
+    toNodeId: TO_NODE_ID,
+    supplierId: SUPPLIER_A,
+    priority: "URGENT",
+    rationale: "server-side pricing test",
+    lines: [
+      { itemId: ITEM_1, quantity: 3, unitPriceUsd: 9999 },
+      { itemId: ITEM_2, quantity: 2, unitPriceUsd: 9999 },
+    ],
+  });
+
+  assert.equal(status, 201, `expected 201, got ${status}: ${JSON.stringify(body)}`);
+  const orderId = body.id as string;
+
+  assert.equal(body.totalUsd, 80, "envelope totalUsd should reflect catalog * qty");
+  assert.equal(body.totalCost, 80, "legacy totalCost mirror should match");
+
+  const lineRows = await db
+    .select()
+    .from(orderLines)
+    .where(eq(orderLines.orderId, orderId));
+  const byItem = new Map(lineRows.map((l) => [l.itemId, l]));
+  assert.equal(
+    Number(byItem.get(ITEM_1)!.unitPriceUsd),
+    10,
+    "stored line price must come from the catalog, not the request body",
+  );
+  assert.equal(Number(byItem.get(ITEM_1)!.lineTotalUsd), 30);
+  assert.equal(Number(byItem.get(ITEM_2)!.unitPriceUsd), 25);
+  assert.equal(Number(byItem.get(ITEM_2)!.lineTotalUsd), 50);
+});
+
+test("POST /api/orders rejects a $0 PO with missingPriceItemIds when the catalog has no price", async () => {
+  // Catalog has no price for ITEM_NO_PRICE. The handler must refuse the
+  // PO with HTTP 400 and surface the offending item ids so the UI can
+  // tell the operator exactly which line is unpriced (task #222).
+  const { status, body } = await postOrder({
+    toNodeId: TO_NODE_ID,
+    supplierId: SUPPLIER_A,
+    priority: "URGENT",
+    rationale: "zero-total rejection test",
+    lines: [{ itemId: ITEM_NO_PRICE, quantity: 5 }],
+  });
+
+  assert.equal(status, 400, `expected 400, got ${status}: ${JSON.stringify(body)}`);
+  assert.equal(body.error, "zero_total_order");
+  assert.ok(Array.isArray(body.missingPriceItemIds), "should return missingPriceItemIds array");
+  assert.ok(
+    (body.missingPriceItemIds as string[]).includes(ITEM_NO_PRICE),
+    "the unpriced item id must appear in the response",
+  );
+
+  // And the rejection must be a true rollback — no order or lines may be
+  // persisted for a request that failed pricing validation.
+  const stranded = await db
+    .select()
+    .from(orderLines)
+    .where(eq(orderLines.itemId, ITEM_NO_PRICE));
+  assert.equal(stranded.length, 0, "no orderLines should leak through on a rejected PO");
+});
+
+test("backfillZeroTotalOrders repairs a legacy $0 order from the live catalog", async () => {
+  // Simulate a pre-task-#222 row: an order with totalUsd=0 and a line
+  // whose unit price was never set. After running the backfill, both the
+  // line and the parent order should be repriced from the catalog and an
+  // ORDER_BACKFILLED activity entry should be written.
+  const orderId = `${RUN_ID}-legacy-order`;
+  const orderNo = `PO-LEGACY-${RUN_ID}`;
+  await db.insert(orders).values({
+    id: orderId,
+    orderNo,
+    supplierId: SUPPLIER_A,
+    nodeId: TO_NODE_ID,
+    priority: "URGENT",
+    status: "PENDING",
+    totalUsd: 0,
+    requestedDeliveryAt: new Date(),
+  });
+  createdOrderIds.push(orderId);
+  await db.insert(orderLines).values([
+    // ITEM_1 = $10 * 4 = $40, ITEM_3 = $4 * 2 = $8 → total $48.
+    { orderId, itemId: ITEM_1, quantity: 4, unitPriceUsd: 0, lineTotalUsd: 0 },
+    { orderId, itemId: ITEM_3, quantity: 2, unitPriceUsd: 0, lineTotalUsd: 0 },
+  ]);
+
+  const result = await backfillZeroTotalOrders();
+  assert.ok(result.scanned >= 1, "backfill should scan at least our seeded row");
+  assert.ok(result.repaired >= 1, "backfill should repair at least our seeded row");
+
+  const [repaired] = await db
+    .select()
+    .from(orders)
+    .where(eq(orders.id, orderId));
+  assert.ok(repaired, "the legacy order should still exist");
+  assert.equal(Number(repaired!.totalUsd), 48, "totalUsd should be repriced from catalog");
+
+  const repairedLines = await db
+    .select()
+    .from(orderLines)
+    .where(eq(orderLines.orderId, orderId));
+  const byItem = new Map(repairedLines.map((l) => [l.itemId, l]));
+  assert.equal(Number(byItem.get(ITEM_1)!.unitPriceUsd), 10);
+  assert.equal(Number(byItem.get(ITEM_1)!.lineTotalUsd), 40);
+  assert.equal(Number(byItem.get(ITEM_3)!.unitPriceUsd), 4);
+  assert.equal(Number(byItem.get(ITEM_3)!.lineTotalUsd), 8);
+
+  const activity = await db
+    .select()
+    .from(activityEntries)
+    .where(eq(activityEntries.refId, orderId));
+  assert.ok(
+    activity.some((a) => a.kind === "ORDER_BACKFILLED"),
+    "an ORDER_BACKFILLED activity entry should be written",
+  );
 });

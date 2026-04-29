@@ -20,6 +20,12 @@ export const items = pgTable(
     criticality: text("criticality").notNull().default("medium"),
     leadTimeDays: integer("lead_time_days").notNull().default(7),
     shelfLifeDays: integer("shelf_life_days").notNull().default(365),
+    // Catalog unit price in USD. The order-create handler reads this column
+    // to compute `total_usd` server-side instead of trusting client-supplied
+    // prices, and refuses to write any PO whose computed total is $0.
+    // Default 0 keeps the migration safe for legacy rows; the seed is the
+    // authority for setting realistic prices on every catalog item.
+    unitPriceUsd: doublePrecision("unit_price_usd").notNull().default(0),
     baseDemandPerEvent: doublePrecision("base_demand_per_event")
       .notNull()
       .default(1),
