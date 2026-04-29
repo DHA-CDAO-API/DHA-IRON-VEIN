@@ -23,7 +23,7 @@ The combined effect is to drop the most-likely 3-year TCO from **~$18.7M (full p
 
 ## 1. Executive Summary (read this page only if nothing else)
 
-IRONVEIN is a working medical-logistics decision-support web application — React + Vite frontend, Node.js 24 + Express 5 API, PostgreSQL with `pgcrypto` column-level encryption, Replit OIDC sign-in plus TOTP MFA, an AI orchestrator that calls OpenAI and Anthropic via Replit's AI Integrations proxy, and a Deck.gl + MapLibre map fed by a public CartoDB tile style. To run the same capability against actual CUI mission data on a DoW-accredited platform, every Replit-specific dependency must be swapped, the system must be hardened to DISA STIGs, and the system must complete an RMF authorization. The MVP profile cuts cost by inheriting DHA / Advana hosting and DISA ICAM identity, and by running with a 2–3 person cleared team.
+IRONVEIN is a working medical-logistics decision-support web application — React + Vite frontend, Node.js 24 + Express 5 API, PostgreSQL with `pgcrypto` column-level encryption, Replit OIDC sign-in plus TOTP MFA, an AI orchestrator that calls OpenAI and Google Gemini via Replit's AI Integrations proxy, and a Deck.gl + MapLibre map fed by a public CartoDB tile style. To run the same capability against actual CUI mission data on a DoW-accredited platform, every Replit-specific dependency must be swapped, the system must be hardened to DISA STIGs, and the system must complete an RMF authorization. The MVP profile cuts cost by inheriting DHA / Advana hosting and DISA ICAM identity, and by running with a 2–3 person cleared team.
 
 | What | Low (ROM) | Most Likely (ROM) | High (ROM) | Notes |
 |---|---:|---:|---:|---|
@@ -37,10 +37,10 @@ IRONVEIN is a working medical-logistics decision-support web application — Rea
 ### Top three risks (one-line each)
 1. **Single-thread cleared team capacity.** A 2–3 person cleared team is a single point of failure: any departure, illness, or clearance-suspension event stops the program. **Mitigation: contract through a cleared integrator with bench depth, even at the smaller team size, so backfill is a phone call away.**
 2. **Inheritance dependency on DHA / Advana platform decisions.** When the host platform updates its boundary configuration, its STIG cycle, or its inherited control set, IRONVEIN inherits the change whether or not it is convenient. **Mitigation: subscribe to the platform's change-control bulletin, treat the platform as an upstream dependency, and budget ~80 hours / quarter of cleared engineering for inheritance maintenance.**
-3. **GenAI authorization lag.** The IRONVEIN AI orchestrator currently calls OpenAI and Anthropic via the Replit proxy. Public commercial endpoints are **not authorized for IL5 / CUI**. The IL5-authorized GenAI surface is narrower than commercial. **Mitigation: target Amazon Bedrock with the IL5-authorized Claude 3.5 Sonnet on day 1; accept a small reasoning-quality regression vs. the current `claude-sonnet-4-6` default. Skip the self-hosted GPU fallback in the MVP.**
+3. **GenAI authorization lag.** The IRONVEIN AI orchestrator currently calls OpenAI and Google Gemini via the Replit proxy. Public commercial endpoints are **not authorized for IL5 / CUI**. The IL5-authorized GenAI surface is narrower than commercial. **Mitigation: target Azure OpenAI Service in Azure Government (IL5-authorized) as the primary path with a GPT-4-class model, and Vertex AI Gemini in Google Cloud Assured Workloads for US Government (IL5) as the secondary path; accept a small reasoning-quality regression vs. the bleeding-edge commercial `gpt-5.4` and `gemini-2.5-pro` defaults. Skip the self-hosted GPU fallback in the MVP.**
 
 ### One-paragraph recommendation
-Stand the IL5 MVP up **on the platform that offers IRONVEIN the most ATO inheritance** — recommended order: **(1) Advana (highest inheritance, most boilerplate available, IL5 by design, includes data-platform services IRONVEIN can leverage)**, **(2) DHA-hosted enclave on AWS GovCloud (US) High** (good inheritance, DHA mission alignment, slightly more bespoke). Replace Replit Auth with **DoD CAC / PIV via the existing DISA ICAM (milIdM) federation — sunk-cost ATO, no PKI build**. Replace the Replit AI proxy with **Amazon Bedrock (Claude 3.5 Sonnet)** as the only GenAI path; defer self-hosted GPU and self-hosted tile servers until a real operational need is documented. Run with a **3-person cleared team (1 ISSO + 2 cleared full-stack engineers, one doubling as DevSecOps)** through a cleared integrator (BAH / Leidos / SAIC / GDIT / Accenture Federal / Palantir FedStart). Pursue **IATT at month 7–8** on real CUI data with a constrained user list, then full ATO at month 14. **Most-likely budget: $1.5M one-time + $1.0M / yr; 3-year TCO ~$4.5M; 5-year TCO ~$6.5M.**
+Stand the IL5 MVP up **on the platform that offers IRONVEIN the most ATO inheritance** — recommended order: **(1) Advana (highest inheritance, most boilerplate available, IL5 by design, includes data-platform services IRONVEIN can leverage)**, **(2) DHA-hosted enclave on AWS GovCloud (US) High** (good inheritance, DHA mission alignment, slightly more bespoke). Replace Replit Auth with **DoD CAC / PIV via the existing DISA ICAM (milIdM) federation — sunk-cost ATO, no PKI build**. Replace the Replit AI proxy with **Azure OpenAI Service in Azure Government (IL5) as primary and Vertex AI Gemini in Google Cloud Assured Workloads for US Government (IL5) as secondary** — both reached as the orchestrator's two providers, no third-party keys; defer self-hosted GPU and self-hosted tile servers until a real operational need is documented. Run with a **3-person cleared team (1 ISSO + 2 cleared full-stack engineers, one doubling as DevSecOps)** through a cleared integrator (BAH / Leidos / SAIC / GDIT / Accenture Federal / Palantir FedStart). Pursue **IATT at month 7–8** on real CUI data with a constrained user list, then full ATO at month 14. **Most-likely budget: $1.5M one-time + $1.0M / yr; 3-year TCO ~$4.5M; 5-year TCO ~$6.5M.**
 
 ---
 
@@ -56,7 +56,7 @@ This table is the foundation for every cost line later in the document. Every ro
 | **Auth (browser identity)** | Replit OIDC (PKCE, code flow), 12-hour absolute session, sessions stored in Postgres. | **DoD CAC / PIV via DISA ICAM (milIdM) federation, inheriting the existing PKI ATO (sunk cost).** IRONVEIN writes one SAML or OIDC federation adapter; the entire PKI / OCSP / CRL / DoD Root CA layer is *already* operating and authorized, and IRONVEIN consumes its identity tokens. | **Major MVP saving — no PKI build. ~3 weeks of engineering instead of ~12.** |
 | **MFA** | TOTP (`otplib`, Microsoft Authenticator), per-user secret encrypted at rest, 10 single-use bcrypt-hashed recovery codes, `mfa_audit` trail, rate-limited. | The CAC itself satisfies the MFA requirement (PKI-based authentication is multi-factor by inherent design — something-you-have + something-you-know via the PIN). TOTP demoted to **break-glass admin only**, code retained but disabled in steady state. | No incremental cost — TOTP code already exists. |
 | **RBAC** | Server-enforced `requireRole("commander", "logistician")` on all order-mutating routes; client `useCanWrite()` is a UX courtesy. | Carries over unchanged. RBAC tied to CAC claims rather than Replit user IDs; trivial mapping change. | Negligible cost. |
-| **AI orchestrator** | `lib/ai-orchestrator` provider-agnostic wrapper. **OpenAI** (default `gpt-5.4`) via Replit proxy. **Anthropic** (default `claude-sonnet-4-6`) via Replit proxy. | **Amazon Bedrock with Claude 3.5 Sonnet (IL5-authorized).** Single provider, single model. Skip the self-hosted GPU fallback in the MVP. | **Major MVP saving — no $200K–$300K / yr GPU spend.** |
+| **AI orchestrator** | `lib/ai-orchestrator` provider-agnostic wrapper. **OpenAI** (default `gpt-5.4`) via Replit proxy. **Google Gemini** (default `gemini-2.5-pro`) via Replit proxy. | **Azure OpenAI Service in Azure Government (IL5) as primary** (GPT-4-class model) and **Vertex AI Gemini in Google Cloud Assured Workloads for US Government (IL5) as secondary**. Two-provider abstraction preserved end-to-end. Skip the self-hosted GPU fallback in the MVP. | **Major MVP saving — no $200K–$300K / yr GPU spend.** |
 | **Mapping** | `@deck.gl/*`, `maplibre-gl`, `react-map-gl/maplibre`. **Tile source: public CartoDB CDN.** | **For MVP:** swap to NGA-provided GVS tile service if the platform has it pre-integrated (most likely on Advana), otherwise use a **single, statically-cached vector tile bundle** (regional INDOPACOM AOR only, ~6 GB) shipped with the app. Defer the dynamic self-hosted PostGIS + tegola tile server until needed. | **Major MVP saving — ~$30K–$300K / yr tile-server line eliminated.** |
 | **Object storage** | None at runtime (ingest is local file). | Provision only if the supply-import upload becomes user-driven; defer for MVP. | $0 in MVP. |
 | **Secrets** | Replit Secrets — `DATABASE_URL`, `DATA_ENCRYPTION_KEY`, AI provider keys, etc. | Platform-provided secrets store (Advana-provided Vault or AWS Secrets Manager inside the DHA enclave). | Negligible cost — platform-inherited. |
@@ -79,7 +79,7 @@ This table is the foundation for every cost line later in the document. Every ro
 - **Cleared team: 2–3 cleared individuals**, contracted through a cleared integrator. ISSM oversight is GFE / fractional.
 - **Hosting platform: Advana (recommended) or DHA enclave** — both treated as **government-furnished hosting**, with inheritable IL5 ATO controls and no separate cloud subscription invoice to this program. Some platforms charge back compute / storage to using programs; that charge-back is in the recurring tables (modest).
 - **DISA login / PKI ATO (DISA ICAM / milIdM federation, OCSP / CRL, DoD Root CA) treated as a SUNK COST** — IRONVEIN inherits without paying for the standup or the ongoing operation.
-- **GenAI: Bedrock + Claude 3.5 Sonnet ONLY.** No self-hosted GPU fallback. Accept the model-quality delta vs. `claude-sonnet-4-6`.
+- **GenAI: Azure OpenAI Service (IL5) + Vertex AI Gemini in Google Cloud Assured Workloads (IL5) ONLY.** No self-hosted GPU fallback. Accept the model-quality delta vs. the bleeding-edge commercial `gpt-5.4` and `gemini-2.5-pro` defaults.
 - **CI/CD: Platform One / Big Bang on Iron Bank** — government-furnished.
 - **Schedule starts from contract / authority to proceed (ATP).**
 
@@ -89,7 +89,7 @@ This table is the foundation for every cost line later in the document. Every ro
 - **SCIF facility costs.**
 - **Mobile / fully disconnected (DDIL — Disconnected, Degraded, Intermittent, Limited bandwidth) operation.** Deferred follow-on.
 - **Cross-region DR** (active-active or pilot-light in a second IL5 region). Add ~30–45% to recurring infra if required.
-- **Self-hosted GPU / open-weights LLM fallback.** Deferred until a Bedrock model gap is documented.
+- **Self-hosted GPU / open-weights LLM fallback.** Deferred until an Azure OpenAI / Vertex AI Gemini model gap is documented.
 - **Dynamic self-hosted vector tile server.** Statically-bundled INDOPACOM AOR tile pack used in MVP.
 - **Building the actual SSP, POA&M, eMASS package.** Document prices what they cost; does not produce them.
 - **Re-pricing the existing INDOPACOM mission cost** or a quantified ROI study.
@@ -170,22 +170,27 @@ At **$220 / hour** fully-burdened cleared engineering rate:
 
 CAC PKI is inherently multi-factor (something-you-have + something-you-know-PIN). TOTP code stays in the codebase as a break-glass for emergency administrator access. **No incremental cost.**
 
-### 6.3 Replit AI Integrations proxy → Amazon Bedrock (Claude 3.5 Sonnet) only
+### 6.3 Replit AI Integrations proxy → Azure OpenAI Service (IL5) + Vertex AI Gemini in Google Cloud Assured Workloads (IL5)
 
-**Today.** OpenAI default `gpt-5.4` and Anthropic default `claude-sonnet-4-6` via Replit proxy.
+**Today.** OpenAI default `gpt-5.4` and Google Gemini default `gemini-2.5-pro` via Replit proxy.
 
-**MVP target.** **Amazon Bedrock in AWS GovCloud (US) High** (or the equivalent Bedrock surface that the host platform exposes — both Advana and DHA enclave can reach Bedrock). Use **Claude 3.5 Sonnet** (the strongest IL5-authorized model on Bedrock as of analysis date) as the single primary path.
+**MVP target.** Two IL5-authorized providers, exactly mirroring the existing two-provider abstraction in `lib/ai-orchestrator`:
+- **Primary: Azure OpenAI Service in Azure Government (IL5-authorized).** GPT-4-class model (e.g., `gpt-4o` or the latest IL5-authorized GPT-4 family entry on Azure Gov). Reached via Azure AD federated identity from the host platform's compute identity — no static key required.
+- **Secondary: Vertex AI Gemini in Google Cloud Assured Workloads for US Government (IL5).** Gemini Pro family model (e.g., `gemini-1.5-pro` or the latest IL5-authorized Gemini entry). Reached via Google Cloud workload identity federation from the host platform's compute identity — no static key required.
+
+The `provider: "openai" | "gemini"` field already in the orchestrator stays exactly the same; only the underlying base URLs and credential mechanism change. The Replit AI Integrations proxy modules are replaced with two thin SDK adapters.
 
 | Aspect | MVP choice |
 |---|---|
-| Primary model | Claude 3.5 Sonnet (`anthropic.claude-3-5-sonnet-20241022-v2:0`) |
-| Token rate (GovCloud Bedrock list, ~30–40% premium over commercial) | ~$4 / 1M input tok, ~$20 / 1M output tok |
+| Primary provider / model | Azure OpenAI Service (Azure Government, IL5) — GPT-4-class (`gpt-4o` or latest IL5-authorized) |
+| Secondary provider / model | Vertex AI Gemini (Google Cloud Assured Workloads for US Gov, IL5) — `gemini-1.5-pro` (or latest IL5-authorized Gemini entry) |
+| Token rate (Gov-tier list, ~25–40% premium over commercial) | ~$5 / 1M input tok, ~$15 / 1M output tok (blended across the two providers) |
 | Daily volume (assumed) | 2M in / 400K out |
 | Daily cost | ~$16 / day |
 | **Annual GenAI cost** | **~$5.8K / yr** |
 | Self-hosted GPU fallback | **Skipped in MVP** — eliminated $200K–$300K / yr line |
 
-**Engineering effort.** ~2 weeks. The orchestrator is already provider-abstracted (`lib/ai-orchestrator`); add a Bedrock adapter analogous to `lib/integrations-anthropic-ai`, point at the Bedrock endpoint, switch auth from a Replit-injected key to the platform's IAM-role-assumed credential.
+**Engineering effort.** ~2 weeks. The orchestrator is already provider-abstracted (`lib/ai-orchestrator`); replace the two Replit-proxy adapters with one Azure OpenAI adapter and one Vertex AI Gemini adapter, switch auth from Replit-injected keys to the platform's federated workload identity (Azure AD for the OpenAI side, GCP workload identity federation for the Gemini side).
 
 **Cost (one-time).** ~**$15K–$30K**.
 **Cost (recurring).** **~$5.8K / year** GenAI inference + **$0** GPU.
@@ -204,7 +209,7 @@ Provision only if user-driven uploads go live; deferred for MVP. **$0 in MVP.**
 
 ### 6.6 Replit Secrets → Platform-provided vault
 
-Move `DATABASE_URL`, `DATA_ENCRYPTION_KEY`, the AI provider key (Bedrock IAM is preferred — no static key needed), `OWNER_USER_ID` to the platform's vault.
+Move `DATABASE_URL`, `DATA_ENCRYPTION_KEY`, the AI provider credentials (Azure AD federated identity for the OpenAI side and GCP workload identity federation for the Gemini side are preferred — no static keys needed), `OWNER_USER_ID` to the platform's vault.
 **Engineering effort.** ~3 days.
 **Cost (one-time).** ~**$5K**. **Cost (recurring).** **$0** — platform-furnished.
 
@@ -230,7 +235,7 @@ Platform One is government-furnished; no per-seat license. Pipelines emit Cosign
 |---|---|---:|---:|
 | Replit OIDC | DISA ICAM federation (sunk-cost ATO inherited) | $30K–$60K | $0 |
 | TOTP | Break-glass only; CAC primary | included | $0 |
-| Replit AI proxy (OpenAI + Anthropic) | Bedrock + Claude 3.5 Sonnet only | $15K–$30K | $5.8K / yr |
+| Replit AI proxy (OpenAI + Gemini) | Azure OpenAI Service (IL5) + Vertex AI Gemini in Google Cloud Assured Workloads (IL5) | $15K–$30K | $5.8K / yr |
 | Replit-managed Postgres | Platform Postgres or RDS in DHA enclave | $15K–$30K | $0–$14K / yr |
 | Replit Object Storage | Deferred until needed | $0 | $0 |
 | Replit Secrets | Platform vault | $5K | $0 |
@@ -325,7 +330,7 @@ gantt
     Step 2 Select (overlay tailoring)    :b2, after b1, 35d
     section RMF — Implement (overlay only)
     DISA ICAM federation adapter         :c1, 2026-06-15, 25d
-    Bedrock LLM swap                     :c2, 2026-07-01, 14d
+    Azure OpenAI + Vertex AI Gemini swap :c2, 2026-07-01, 14d
     Postgres migration + pgcrypto        :c3, 2026-07-01, 14d
     Platform One / Big Bang pipeline     :c4, 2026-07-01, 21d
     Static AOR tile pack                 :c5, 2026-07-15, 14d
@@ -373,7 +378,7 @@ All numbers are **planning ROMs** — Low / Most Likely / High.
 | RMF Step 1 — Categorize | $40K | $60K | $80K | M/M/M. |
 | RMF Step 2 — Select (overlay tailoring) | $50K | $80K | $100K | ~80–110 system-specific controls. |
 | RMF Step 3 — Implement (cleared engineering, IRONVEIN-owned controls only) | $280K | $380K | $550K | 3–4 months across 2 engineers. |
-| Replit-dependency swap (DISA ICAM federation, Bedrock, Postgres, vault, P1 pipeline, static tiles) | $115K | $170K | $245K | §6.9 |
+| Replit-dependency swap (DISA ICAM federation, Azure OpenAI + Vertex AI Gemini, Postgres, vault, P1 pipeline, static tiles) | $115K | $170K | $245K | §6.9 |
 | STIG hardening on IRONVEIN-owned STIGs | $86K | $136K | $207K | §5 totals × $220/hr. |
 | RMF Step 4 — SCA assessment (overlay) + pen test | $150K | $200K | $260K | 3–5 wk SCA + IRONVEIN-app-only pen test. |
 | RMF Step 5 — Authorize support (IATT + full ATO) | $30K | $40K | $60K | Two AO decisions. |
@@ -389,7 +394,7 @@ All numbers are **planning ROMs** — Low / Most Likely / High.
 |---|---:|---:|---:|---|
 | **Cleared sustainment labor** (1× ISSO + 1× full-stack/DevSecOps + 0.5× full-stack steady state + 0.10× ISSM) | $580K | $760K | $980K | Year 2+ steady state; year 1 is ~$905K. |
 | Hosting platform charge-back (Advana baseline) | $30K | $60K | $120K | §4. DHA enclave: ~$50K–$120K. |
-| GenAI inference (Bedrock + Claude 3.5 Sonnet only) | $4K | $6K | $10K | §6.3 — 2M in / 400K out per day. |
+| GenAI inference (Azure OpenAI Service + Vertex AI Gemini, IL5) | $4K | $6K | $10K | §6.3 — 2M in / 400K out per day, blended across the two providers. |
 | Postgres (RDS if DHA enclave; included in platform if Advana) | $0 | $10K | $14K | Advana: $0; DHA enclave: ~$12K. |
 | Identity (DISA ICAM — GFE) | $0 | $0 | $0 | Sunk-cost ATO inherited. |
 | CI/CD (Platform One / Big Bang — GFE) | $0 | $0 | $0 | Government-furnished. |
@@ -438,14 +443,14 @@ Likelihood (L) and Impact (I) on a 1–5 scale; risk score = L × I.
 |---|---|:-:|:-:|:-:|---|
 | 1 | **Single-thread cleared team capacity.** Loss of 1 of 3 cleared engineers stops 1/3 of the program; loss of the ISSO stops authorization. | 4 | 5 | 20 | Contract through cleared integrator with bench depth — backfill in days, not months. Cross-train all engineers on STIG + dev + DevSecOps. |
 | 2 | **Inheritance dependency on host platform.** Platform STIG cycle, boundary changes, or upstream control regressions can break IRONVEIN's deployed posture without warning. | 4 | 3 | 12 | Subscribe to platform change-control bulletin. Budget ~80 hours / quarter for inheritance maintenance (already in cleared sustainment line). |
-| 3 | **GenAI authorization lag** — Bedrock IL5-authorized model list lags commercial; `claude-sonnet-4-6` parity unavailable on day 1. | 5 | 3 | 15 | Plan for Claude 3.5 Sonnet on day 1; document the reasoning-quality delta in user-acceptance criteria so leadership doesn't expect parity. |
+| 3 | **GenAI authorization lag** — Azure OpenAI (Azure Gov) and Vertex AI Gemini (Google Cloud Assured Workloads) IL5-authorized model lists lag commercial; bleeding-edge `gpt-5.4` and `gemini-2.5-pro` parity unavailable on day 1. | 5 | 3 | 15 | Plan for the latest IL5-authorized GPT-4-class and Gemini Pro models on day 1; document the reasoning-quality delta in user-acceptance criteria so leadership doesn't expect parity. |
 | 4 | **Platform onboarding queue.** Advana and DHA both have onboarding queues and may not start IRONVEIN at month 0. | 3 | 4 | 12 | Engage platform program office before contract award; have a ready alternate (DHA enclave if Advana queues; standalone GovCloud only as a last resort). |
 | 5 | **STIG quarterly churn breaks deployments.** Even on the smaller IRONVEIN-owned STIG surface, quarterly updates can break a release. | 4 | 3 | 12 | CI gate on STIG re-scan before promotion; allow controlled exceptions via POA&M. |
 | 6 | **POA&M overflow at SCA** — too many open findings at Assess. | 3 | 4 | 12 | Run an internal pre-SCA 4 weeks before formal SCA; close low-hanging items first. |
 | 7 | **Funding stop-and-start across fiscal years.** MVP IATT-to-ATO bridge straddles two FY budget cycles. | 3 | 4 | 12 | Structure contract with base + options; pre-fund the IATT-to-ATO bridge in the base period. |
 | 8 | **Static tile pack staleness.** Quarterly tile rebuild may lag operational map updates (e.g., new airfield, port). | 2 | 2 | 4 | Document the refresh cadence; make it a 2-day cleared-engineering chore. Defer dynamic tile server until a documented operational gap. |
 | 9 | **DISA ICAM federation registration delay.** Even though PKI is sunk, the act of registering IRONVEIN as a relying-party application can take 3–6 weeks. | 3 | 3 | 9 | Begin federation registration in week 1, in parallel with categorization. |
-| 10 | **Single GenAI provider (Bedrock) outage.** No fallback to a self-hosted LLM in MVP. | 2 | 3 | 6 | Accept as residual risk for MVP; document Bedrock SLA in the contingency plan; degrade Copilot gracefully when Bedrock is unavailable. |
+| 10 | **Concurrent outage of both GenAI providers (Azure OpenAI Gov and Vertex AI Gemini in Assured Workloads).** No fallback to a self-hosted LLM in MVP. | 1 | 3 | 3 | Accept as residual risk for MVP; document both providers' SLAs in the contingency plan; the orchestrator already supports per-request provider selection so a single-provider outage degrades automatically to the other; degrade Copilot gracefully when both are unavailable. |
 
 ---
 
@@ -456,7 +461,7 @@ Likelihood (L) and Impact (I) on a 1–5 scale; risk score = L × I.
 **Recommendation.**
 1. **Host on Advana.** Maximum control inheritance. DHA enclave is the strong fallback.
 2. **Federate to DISA ICAM (sunk-cost ATO).** No PKI build.
-3. **Use Bedrock with Claude 3.5 Sonnet only.** No GPU fallback in MVP.
+3. **Use Azure OpenAI Service (IL5) and Vertex AI Gemini in Google Cloud Assured Workloads (IL5) only.** No GPU fallback in MVP.
 4. **Run a 3-person cleared team through a cleared integrator** for continuity-of-personnel. Drop to 2.5 FTE in steady state.
 5. **Use Platform One / Big Bang** for CI/CD — government-furnished.
 6. **Statically bundle the INDOPACOM AOR tile pack.** Defer dynamic tile server.
@@ -471,7 +476,7 @@ Likelihood (L) and Impact (I) on a 1–5 scale; risk score = L × I.
 
 ## 13. IL6 / SIPR delta (one paragraph, for context only — not priced)
 
-Moving from IL5 to IL6 (Secret / SIPR) would still benefit from the inheritance pattern in this MVP — there is a SIPR-side equivalent of Advana (the OUSD(R&E) SIPR data platform) and DISA does provide a SIPR PKI / login federation analogous to the ICAM sunk-cost relied on here. The MVP-style cost uplift to IL6 is therefore narrower than the program-of-record uplift: roughly **+30–50% over the IL5 MVP numbers** (cleared labor moves to TS-eligible at minimum, SCIF facility is needed for any non-platform-furnished workspace, and Bedrock has no IL6 surface so a self-hosted LLM is forced back into scope). A standalone IL6 MVP analysis is the right way to firm this up.
+Moving from IL5 to IL6 (Secret / SIPR) would still benefit from the inheritance pattern in this MVP — there is a SIPR-side equivalent of Advana (the OUSD(R&E) SIPR data platform) and DISA does provide a SIPR PKI / login federation analogous to the ICAM sunk-cost relied on here. The MVP-style cost uplift to IL6 is therefore narrower than the program-of-record uplift: roughly **+30–50% over the IL5 MVP numbers** (cleared labor moves to TS-eligible at minimum, SCIF facility is needed for any non-platform-furnished workspace, and neither Azure OpenAI Service nor Vertex AI Gemini has an IL6 surface today, so a self-hosted LLM is forced back into scope). A standalone IL6 MVP analysis is the right way to firm this up.
 
 ---
 
@@ -499,11 +504,12 @@ Moving from IL5 to IL6 (Secret / SIPR) would still benefit from the inheritance 
 - **DISA STIG Document Library** — App Sec & Dev STIG, PostgreSQL STIG, RHEL/Ubuntu STIG, Container Image STIG, Web Server STIG, Web Browser STIG. https://public.cyber.mil/stigs/downloads/
 
 ### FedRAMP / IL5 marketplace
-- **FedRAMP Marketplace** — current authorization status of AWS GovCloud, Amazon Bedrock, Azure Government, Azure OpenAI Service, Amazon RDS. https://marketplace.fedramp.gov/
+- **FedRAMP Marketplace** — current authorization status of Azure Government, Azure OpenAI Service, Google Cloud Assured Workloads for US Government (Vertex AI Gemini), AWS GovCloud, Amazon RDS. https://marketplace.fedramp.gov/
 
 ### Public Gov-cloud pricing pages used as anchors for §4 and §10
 - **AWS GovCloud (US) pricing** — https://aws.amazon.com/govcloud-us/pricing/
-- **Amazon Bedrock pricing** — https://aws.amazon.com/bedrock/pricing/
+- **Azure OpenAI Service pricing** — https://azure.microsoft.com/en-us/pricing/details/cognitive-services/openai-service/
+- **Google Vertex AI Gemini pricing** — https://cloud.google.com/vertex-ai/generative-ai/pricing
 - **Amazon RDS for PostgreSQL pricing** — https://aws.amazon.com/rds/postgresql/pricing/
 
 ### Reference rates and labor categories
