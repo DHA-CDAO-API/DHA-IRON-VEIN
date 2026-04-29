@@ -3,7 +3,7 @@ import { Link, useLocation } from "wouter";
 import { 
   Activity, Map as MapIcon, Box, ShoppingCart, PlayCircle, 
   MessageSquare, Database, Settings, UserCircle, Search,
-  Building2, Truck, Tag as TagIcon
+  Building2, Truck, Tag as TagIcon, HeartPulse
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import RoleBadge from "@/components/RoleBadge";
@@ -177,13 +177,18 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       matches: (p) => p === "/suppliers" || p.startsWith("/suppliers/"),
     },
     { href: "/orders", label: "Orders", icon: ShoppingCart },
-    { href: "/casualty", label: "Casualty Planner", icon: Activity },
+    { href: "/casualty", label: "Casualty Planner", icon: HeartPulse },
     { href: "/scenarios", label: "Scenarios", icon: PlayCircle },
-    { href: "/tags", label: "Tags", icon: TagIcon, matches: (p) => p === "/tags" || p.startsWith("/tags/") },
     { href: "/copilot", label: "Copilot", icon: MessageSquare },
   ];
 
-  const bottomItems = [
+  const bottomItems: Array<{
+    href: string;
+    label: string;
+    icon: typeof Activity;
+    matches?: (path: string) => boolean;
+  }> = [
+    { href: "/tags", label: "Tags", icon: TagIcon, matches: (p) => p === "/tags" || p.startsWith("/tags/") },
     { href: "/data", label: "Data", icon: Database },
     { href: "/settings", label: "Settings", icon: Settings },
     { href: "/profile", label: "Profile", icon: UserCircle },
