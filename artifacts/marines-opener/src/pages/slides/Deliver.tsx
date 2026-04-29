@@ -110,7 +110,7 @@ export default function Deliver() {
                   Constraint cascade
                 </div>
                 <div className="font-body text-[1.05vw] text-muted leading-snug mt-[0.4vh]">
-                  Hub loss, reagent &rarr; WBB haircut
+                  Hub loss, reagent &rarr; WBB capacity reduction
                 </div>
               </div>
               <div>
