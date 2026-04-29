@@ -32,13 +32,71 @@ export type RiskNodeSummary = {
   lastShipmentOutAt: string | null;
 };
 
+// Site-level tier rollup thresholds. Exposed as named constants so they can
+// be tuned without hunting through the function body.
+//
+// The rollup is intentionally *less* sensitive than item-level alerts: a
+// single critical-DOS item should still flag the item itself (and surface
+// in the Site Detail / DOS chips / Alerts rail), but it should NOT be
+// enough on its own to paint the whole site card or its node on the map
+// CRITICAL. The map's job is to point at sites that are genuinely in
+// trouble, not at every site that has one short item.
+//
+// A site rolls up to CRITICAL when the combined signal is strong:
+//   - the risk score is already in the upper band, OR
+//   - there are multiple open critical alerts, OR
+//   - the open critical alerts cover a meaningful share of the site's
+//     stocked catalog (so a small forward node with one short blood
+//     item doesn't flip, but a hub with several broad-class shortages
+//     does).
+//
+// HEIGHTENED is the warning tier — anything that needs a look but isn't
+// yet a fire. NOMINAL is everything else.
+export const TIER_CRITICAL_RISK_SCORE = 70;
+export const TIER_HEIGHTENED_RISK_SCORE = 35;
+export const TIER_CRITICAL_MIN_ALERTS = 2;
+export const TIER_CRITICAL_CATALOG_SHARE = 0.1;
+export const TIER_HEIGHTENED_MIN_WARNINGS = 3;
+
 export function deriveTier(args: {
   riskScore: number;
   openAlertsCritical: number;
   openAlertsWarning: number;
+  /**
+   * Size of the site's stocked catalog (number of items the demand
+   * snapshot considered for this node). Used together with the critical
+   * alert count to compute the catalog-share signal — a hub stocking
+   * many items needs more than one or two short items to flip CRITICAL,
+   * while a small forward node with a handful of items requires fewer
+   * absolute alerts (but still at least the configured floor).
+   */
+  nodeCatalogSize?: number;
 }): ThreatTier {
-  if (args.riskScore >= 70 || args.openAlertsCritical > 0) return "critical";
-  if (args.riskScore >= 35 || args.openAlertsWarning > 0) return "heightened";
+  const catalogSize = args.nodeCatalogSize ?? 0;
+  // `requiredCriticalAlerts` is the minimum number of open critical alerts
+  // needed to flip a site to CRITICAL on the alert axis. We always require
+  // at least TIER_CRITICAL_MIN_ALERTS (so a single short item never flips
+  // a site by itself); for larger catalogs we additionally require the
+  // share threshold so a deep hub doesn't go CRITICAL on a couple of
+  // unrelated minor shortages. The risk-score axis is independent — a site
+  // can still flip CRITICAL purely from a high score (e.g. dragged up by
+  // upstream route degradation).
+  const requiredCriticalAlerts =
+    catalogSize > 0
+      ? Math.max(
+          TIER_CRITICAL_MIN_ALERTS,
+          Math.ceil(catalogSize * TIER_CRITICAL_CATALOG_SHARE),
+        )
+      : TIER_CRITICAL_MIN_ALERTS;
+  const isCritical =
+    args.riskScore >= TIER_CRITICAL_RISK_SCORE ||
+    args.openAlertsCritical >= requiredCriticalAlerts;
+  if (isCritical) return "critical";
+  const isHeightened =
+    args.riskScore >= TIER_HEIGHTENED_RISK_SCORE ||
+    args.openAlertsCritical > 0 ||
+    args.openAlertsWarning >= TIER_HEIGHTENED_MIN_WARNINGS;
+  if (isHeightened) return "heightened";
   return "nominal";
 }
 
@@ -185,6 +243,7 @@ export async function computeRiskByNode(): Promise<{
       riskScore: score,
       openAlertsCritical: alertsForNode.critical,
       openAlertsWarning: alertsForNode.warning,
+      nodeCatalogSize: nodeItems.length,
     });
     const topCriticalItems = perItem
       .sort((a, b) => a.daysOfSupply - b.daysOfSupply)
