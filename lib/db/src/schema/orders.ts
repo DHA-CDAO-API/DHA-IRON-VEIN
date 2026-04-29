@@ -1,4 +1,18 @@
-import { pgTable, text, integer, doublePrecision, timestamp, serial } from "drizzle-orm/pg-core";
+import {
+  pgTable,
+  text,
+  doublePrecision,
+  timestamp,
+  serial,
+  customType,
+  varchar,
+} from "drizzle-orm/pg-core";
+
+const bytea = customType<{ data: Buffer; default: false }>({
+  dataType() {
+    return "bytea";
+  },
+});
 
 export const orders = pgTable("orders", {
   id: text("id").primaryKey(),
@@ -10,8 +24,13 @@ export const orders = pgTable("orders", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   requestedDeliveryAt: timestamp("requested_delivery_at", { withTimezone: true }).notNull(),
   totalUsd: doublePrecision("total_usd").notNull().default(0),
-  notes: text("notes"),
+  // Operator-entered free text (notes/rationale/contact). Encrypted at rest
+  // with pgcrypto via the encryption helper.
+  notesEnc: bytea("notes_enc"),
   promotedFromRecommendationId: text("promoted_from_recommendation_id"),
+  // Audit trail of who placed the order.
+  createdByUserId: varchar("created_by_user_id"),
+  createdByRole: text("created_by_role"),
 });
 
 export const orderLines = pgTable("order_lines", {

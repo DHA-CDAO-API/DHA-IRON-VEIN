@@ -1,4 +1,4 @@
-# INDOPACOM Predictive Sustainment Platform
+# INDOPACOM IRONVEIN — Resilient Operational Network for Vital Expeditionary Inventory Nodes
 
 End-to-end medical logistics decision-support system for the **Modern Marine 2026 hackathon**, demonstrating how a hub-and-spoke INDOPACOM medical supply network can be made *visible, predictable, and actionable* for commanders, logisticians, medical planners, and analysts.
 

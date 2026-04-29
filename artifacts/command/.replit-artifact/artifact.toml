@@ -1,6 +1,6 @@
 kind = "web"
 previewPath = "/"
-title = "INDOPACOM Predictive Sustainment"
+title = "INDOPACOM IRONVEIN"
 version = "1.0.0"
 id = "artifacts/command"
 router = "path"

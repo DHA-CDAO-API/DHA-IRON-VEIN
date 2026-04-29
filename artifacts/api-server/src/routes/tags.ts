@@ -23,6 +23,7 @@ import {
   suggestTagsForEntity,
   type AIProvider,
 } from "@workspace/ai-orchestrator";
+import { decryptText } from "../lib/crypto";
 
 const router: IRouter = Router();
 
@@ -188,7 +189,12 @@ async function buildEntitySummary(
     }
     case "scenario": {
       const [row] = await db
-        .select()
+        .select({
+          id: scenariosTable.id,
+          name: scenariosTable.name,
+          kind: scenariosTable.kind,
+          summaryPlain: decryptText(scenariosTable.summaryEnc),
+        })
         .from(scenariosTable)
         .where(eq(scenariosTable.id, entityId));
       if (!row) return null;
@@ -196,7 +202,7 @@ async function buildEntitySummary(
 - id: ${row.id}
 - name: ${row.name}
 - kind: ${row.kind}
-- summary: ${row.summary}`;
+- summary: ${row.summaryPlain ?? ""}`;
       return { label: row.name, sublabel: row.kind, summary };
     }
     case "alert": {

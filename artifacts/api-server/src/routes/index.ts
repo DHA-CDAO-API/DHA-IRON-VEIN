@@ -1,5 +1,7 @@
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
 import healthRouter from "./health";
+import authRouter from "./auth";
+import mfaRouter from "./mfa";
 import adminRouter from "./admin";
 import catalogRouter from "./catalog";
 import networkRouter from "./network";
@@ -22,10 +24,28 @@ import adminSupplyImportRouter from "./admin-supply-import";
 import tagsRouter from "./tags";
 import casualtyRouter from "./casualty";
 import proceduresRouter from "./procedures";
+import { requireAuth, requireMfa } from "../middlewares/authMiddleware";
 
 const router: IRouter = Router();
 
+// Public — no auth required (health probe + auth flow + MFA challenge).
 router.use(healthRouter);
+router.use(authRouter);
+// MFA endpoints handle their own auth/mfa gating internally so the user
+// can enroll/verify before any other API works.
+router.use(mfaRouter);
+
+/**
+ * Everything below the gate requires (1) a valid session and (2) a
+ * passed MFA challenge in this session. The MFA gate is the security
+ * boundary — without it, even an authenticated user cannot read or
+ * write business data.
+ */
+function appGate(req: Request, res: Response, next: NextFunction) {
+  return requireAuth(req, res, () => requireMfa(req, res, next));
+}
+router.use(appGate);
+
 router.use(adminRouter);
 router.use(catalogRouter);
 router.use(networkRouter);

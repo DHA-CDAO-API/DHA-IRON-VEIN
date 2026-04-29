@@ -7,6 +7,7 @@
     ".": "./src/index.ts"
   },
   "devDependencies": {
-    "xlsx": "^0.18.5"
+    "xlsx": "^0.18.5",
+    "@types/node": "catalog:"
   }
 }

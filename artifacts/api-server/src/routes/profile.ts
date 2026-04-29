@@ -1,6 +1,12 @@
 import { Router, type IRouter } from "express";
 import { db, profiles } from "@workspace/db";
 import { eq } from "drizzle-orm";
+import {
+  ensureProfileForUser,
+  loadDecryptedProfile,
+} from "../middlewares/authMiddleware";
+import { encryptText } from "../lib/crypto";
+import { audit } from "../lib/audit";
 
 const router: IRouter = Router();
 
@@ -35,30 +41,29 @@ const ROLES = [
   },
 ];
 
-async function ensureProfile() {
-  const rows = await db.select().from(profiles);
-  if (rows.length === 0) {
-    await db.insert(profiles).values({});
-    return (await db.select().from(profiles))[0];
-  }
-  return rows[0];
-}
+const VALID_ROLES = new Set(ROLES.map((r) => r.id));
 
-function toApiProfile(row: typeof profiles.$inferSelect) {
-  return {
-    name: row.displayName,
-    role: row.role,
-    base: row.theaterAssignment,
-    avatar: null,
-    lastActiveAt: new Date().toISOString(),
-  };
-}
-
-router.get("/profile", async (_req, res, next) => {
+router.get("/profile", async (req, res, next) => {
   try {
-    const cur = await ensureProfile();
-    if (!cur) return res.status(500).json({ error: "profile not initialised" });
-    res.json(toApiProfile(cur));
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ error: "auth_required" });
+    }
+    await ensureProfileForUser({
+      id: req.user.id,
+      firstName: req.user.firstName,
+      lastName: req.user.lastName,
+      email: req.user.email,
+    });
+    const profile = await loadDecryptedProfile(req.user.id);
+    if (!profile) return res.status(500).json({ error: "profile not initialised" });
+    res.json({
+      name: profile.displayName,
+      role: profile.role,
+      base: profile.theaterAssignment,
+      contactEmail: profile.contactEmail,
+      avatar: req.user.profileImageUrl,
+      lastActiveAt: new Date().toISOString(),
+    });
   } catch (err) {
     next(err);
   }
@@ -66,21 +71,50 @@ router.get("/profile", async (_req, res, next) => {
 
 router.patch("/profile", async (req, res, next) => {
   try {
-    const cur = await ensureProfile();
-    if (!cur) return res.status(500).json({ error: "profile not initialised" });
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ error: "auth_required" });
+    }
+    await ensureProfileForUser({
+      id: req.user.id,
+      firstName: req.user.firstName,
+      lastName: req.user.lastName,
+      email: req.user.email,
+    });
+
     const body = (req.body ?? {}) as Record<string, unknown>;
     const update: Record<string, unknown> = {};
-    if (typeof body.name === "string") update.displayName = body.name;
+    const displayName =
+      typeof body.name === "string" ? body.name : typeof body.displayName === "string" ? body.displayName : undefined;
+    if (displayName !== undefined) update.displayNameEnc = encryptText(displayName);
     if (typeof body.base === "string") update.theaterAssignment = body.base;
-    if (typeof body.role === "string") update.role = body.role;
-    if (typeof body.displayName === "string") update.displayName = body.displayName;
-    if (typeof body.theaterAssignment === "string") update.theaterAssignment = body.theaterAssignment;
-    if (typeof body.contactEmail === "string") update.contactEmail = body.contactEmail;
-    if (Object.keys(update).length > 0) {
-      await db.update(profiles).set(update).where(eq(profiles.id, cur.id));
+    if (typeof body.theaterAssignment === "string")
+      update.theaterAssignment = body.theaterAssignment;
+    if (typeof body.contactEmail === "string") update.contactEmailEnc = encryptText(body.contactEmail);
+    if (typeof body.role === "string" && VALID_ROLES.has(body.role)) {
+      update.role = body.role;
+      audit({
+        event: "profile.role.change",
+        outcome: "success",
+        actorId: req.user.id,
+        actorRole: req.user.role,
+        subject: req.user.id,
+        detail: { from: req.user.role, to: body.role },
+      });
     }
-    const next_ = await ensureProfile();
-    res.json(next_ ? toApiProfile(next_) : null);
+
+    if (Object.keys(update).length > 0) {
+      await db.update(profiles).set(update).where(eq(profiles.userId, req.user.id));
+    }
+    const next = await loadDecryptedProfile(req.user.id);
+    if (!next) return res.status(500).json({ error: "profile not initialised" });
+    res.json({
+      name: next.displayName,
+      role: next.role,
+      base: next.theaterAssignment,
+      contactEmail: next.contactEmail,
+      avatar: req.user.profileImageUrl,
+      lastActiveAt: new Date().toISOString(),
+    });
   } catch (err) {
     next(err);
   }

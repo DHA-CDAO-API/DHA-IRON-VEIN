@@ -24,6 +24,13 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { Loader2, Package } from "lucide-react";
 import { formatCurrency } from "@/lib/format";
+import { useCanWrite } from "@/components/auth/useCanWrite";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 export type PromoteOverrides = {
   quantity: number;
@@ -55,6 +62,7 @@ export function PromoteDialog({
   onCancel: () => void;
   onConfirm: (overrides: PromoteOverrides) => void;
 }) {
+  const { canWrite, reason: writeReason } = useCanWrite();
   const [draft, setDraft] = React.useState<PromoteOverrides | null>(null);
   const [qtyText, setQtyText] = React.useState<string>("");
   const [etaText, setEtaText] = React.useState<string>("");
@@ -322,20 +330,33 @@ export function PromoteDialog({
           >
             Cancel
           </Button>
-          <Button
-            onClick={handleSubmit}
-            disabled={isSubmitting || !draft}
-            data-testid="promote-confirm"
-          >
-            {isSubmitting ? (
-              <>
-                <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
-                Submitting…
-              </>
-            ) : (
-              "Confirm & Submit"
-            )}
-          </Button>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span>
+                  <Button
+                    onClick={handleSubmit}
+                    disabled={isSubmitting || !draft || !canWrite}
+                    data-testid="promote-confirm"
+                  >
+                    {isSubmitting ? (
+                      <>
+                        <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                        Submitting…
+                      </>
+                    ) : (
+                      "Confirm & Submit"
+                    )}
+                  </Button>
+                </span>
+              </TooltipTrigger>
+              {!canWrite && (
+                <TooltipContent>
+                  Requires Logistician or Commander role
+                </TooltipContent>
+              )}
+            </Tooltip>
+          </TooltipProvider>
         </DialogFooter>
       </DialogContent>
     </Dialog>

@@ -78,6 +78,7 @@ import {
 } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { usePrefersReducedMotion } from '@/hooks/use-reduced-motion';
+import { useCanWrite } from '@/components/auth/useCanWrite';
 
 const CATEGORY_META: Record<
   SupplyCategory,
@@ -362,6 +363,7 @@ export default function NetworkMapPage() {
   });
   const ackAlert = useAcknowledgeAlert();
   const createOrder = useCreateOrder();
+  const { canWrite, reason: writeReason } = useCanWrite();
 
   // Layer panel state. `selectedSubLayerKeys` holds keys of the form
   // `${groupId}:${sublayerId}`. Empty set === "show everything" (the panel
@@ -1547,8 +1549,10 @@ export default function NetworkMapPage() {
                   onClick={handleResupply}
                   disabled={
                     createOrder.isPending ||
-                    !(selectedRisk?.topCriticalItems && selectedRisk.topCriticalItems.length > 0)
+                    !(selectedRisk?.topCriticalItems && selectedRisk.topCriticalItems.length > 0) ||
+                    !canWrite
                   }
+                  title={!canWrite ? writeReason : undefined}
                 >
                   <Package className="h-3.5 w-3.5 mr-2" />
                   {createOrder.isPending ? 'Creating order…' : 'Order resupply'}

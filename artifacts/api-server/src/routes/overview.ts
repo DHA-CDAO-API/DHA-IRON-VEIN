@@ -1167,7 +1167,7 @@ router.get("/overview/ai-brief", async (req, res, next) => {
 
     try {
       const system =
-        "You are the INDOPACOM Predictive Sustainment commander brief assistant. " +
+        "You are the INDOPACOM IRONVEIN (Resilient Operational Network for Vital Expeditionary Inventory Nodes) commander brief assistant. " +
         "Produce a terse, action-oriented 3-bullet brief for a senior sustainment officer. " +
         "Output strictly as compact JSON: {\"topRisk\":\"...\",\"recommendedAction\":\"...\",\"change\":\"...\"}. " +
         "Each bullet must be a single declarative sentence under 30 words.";

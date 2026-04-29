@@ -47,6 +47,13 @@ import { SortableTable } from "@/components/ui/sortable-table";
 import { categoryMatches, formatNumber, type CategoryFilter } from "@/lib/format";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { useCanWrite } from "@/components/auth/useCanWrite";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import {
   Activity,
   AlertTriangle,
@@ -283,6 +290,7 @@ export default function CasualtyPlanner() {
   ]);
 
   const createOrder = useCreateOrder();
+  const { canWrite, reason: writeReason } = useCanWrite();
 
   // Preview dialog state. We build the supplier-grouped POs up front so the
   // operator can review (and trim) before anything is actually submitted.
@@ -501,32 +509,46 @@ export default function CasualtyPlanner() {
         </div>
         <div className="flex items-center gap-3 flex-wrap justify-end">
           <CategoryFilterToggle value={filter} onChange={setFilter} />
-          <Button
-            variant="default"
-            size="sm"
-            className="gap-2"
-            onClick={handleOpenBulkOrder}
-            disabled={
-              !result?.sufficiency ||
-              !bulkOrderDestinationSiteId ||
-              createOrder.isPending ||
-              bulkSubmitting ||
-              shortageCount === 0
-            }
-            data-testid="button-bulk-order"
-          >
-            {createOrder.isPending || bulkSubmitting ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <ShoppingBag className="h-4 w-4" />
-            )}
-            Bulk Order Shortfalls
-            {shortageCount > 0 && (
-              <span className="ml-1 inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-primary-foreground/20 px-1.5 text-[10px] font-mono">
-                {shortageCount}
-              </span>
-            )}
-          </Button>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span>
+                  <Button
+                    variant="default"
+                    size="sm"
+                    className="gap-2"
+                    onClick={handleOpenBulkOrder}
+                    disabled={
+                      !result?.sufficiency ||
+                      !bulkOrderDestinationSiteId ||
+                      createOrder.isPending ||
+                      bulkSubmitting ||
+                      shortageCount === 0 ||
+                      !canWrite
+                    }
+                    data-testid="button-bulk-order"
+                  >
+                    {createOrder.isPending || bulkSubmitting ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <ShoppingBag className="h-4 w-4" />
+                    )}
+                    Bulk Order Shortfalls
+                    {shortageCount > 0 && (
+                      <span className="ml-1 inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-primary-foreground/20 px-1.5 text-[10px] font-mono">
+                        {shortageCount}
+                      </span>
+                    )}
+                  </Button>
+                </span>
+              </TooltipTrigger>
+              {!canWrite && (
+                <TooltipContent>
+                  Read-only role
+                </TooltipContent>
+              )}
+            </Tooltip>
+          </TooltipProvider>
         </div>
       </div>
 

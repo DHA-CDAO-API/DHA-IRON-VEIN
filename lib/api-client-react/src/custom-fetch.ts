@@ -322,6 +322,22 @@ async function parseSuccessBody(
   }
 }
 
+/** Read a non-HttpOnly cookie value (used for the CSRF double-submit token). */
+function readCookie(name: string): string | null {
+  if (typeof document === "undefined") return null;
+  const target = `${name}=`;
+  for (const part of document.cookie.split(";")) {
+    const trimmed = part.trim();
+    if (trimmed.startsWith(target)) {
+      return decodeURIComponent(trimmed.slice(target.length));
+    }
+  }
+  return null;
+}
+
+const CSRF_COOKIE = "csrf";
+const MUTATION_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+
 export async function customFetch<T = unknown>(
   input: RequestInfo | URL,
   options: CustomFetchOptions = {},
@@ -358,9 +374,20 @@ export async function customFetch<T = unknown>(
     }
   }
 
+  // CSRF double-submit: mirror the cookie value into a header on mutations.
+  // The server compares the header to the session-bound secret stored
+  // server-side and rejects mismatches with 403.
+  if (MUTATION_METHODS.has(method) && !headers.has("x-csrf-token")) {
+    const csrf = readCookie(CSRF_COOKIE);
+    if (csrf) headers.set("x-csrf-token", csrf);
+  }
+
   const requestInfo = { method, url: resolveUrl(input) };
 
-  const response = await fetch(input, { ...init, method, headers });
+  // Always send the session cookie. Without `credentials: "include"` the
+  // browser strips cookies on cross-origin and even some same-origin XHR.
+  const credentials: RequestCredentials = init.credentials ?? "include";
+  const response = await fetch(input, { ...init, method, headers, credentials });
 
   if (!response.ok) {
     const errorData = await parseErrorBody(response, method);

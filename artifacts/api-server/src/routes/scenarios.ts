@@ -31,6 +31,26 @@ import {
   type SupplierImpact,
 } from "@workspace/sim";
 import { completeChat, resolveModel, SCENARIO_BRIEF_SYSTEM } from "@workspace/ai-orchestrator";
+import { decryptText, encryptText } from "../lib/crypto";
+
+// Reusable Drizzle column projection — decrypt summary_enc/coa_brief_enc
+// at the SELECT layer so callers see plaintext .summary/.coaBrief while
+// the bytes on disk stay encrypted.
+function selectScenarioShape() {
+  return {
+    id: scenariosTable.id,
+    name: scenariosTable.name,
+    summary: decryptText(scenariosTable.summaryEnc),
+    coaBrief: decryptText(scenariosTable.coaBriefEnc),
+    kind: scenariosTable.kind,
+    runAt: scenariosTable.runAt,
+    inputs: scenariosTable.inputs,
+    result: scenariosTable.result,
+    aiProvider: scenariosTable.aiProvider,
+    aiModel: scenariosTable.aiModel,
+    createdByUserId: scenariosTable.createdByUserId,
+  };
+}
 
 // Ray-casting point-in-polygon test. Polygon is a list of [lon, lat] pairs.
 function pointInPolygon(lon: number, lat: number, polygon: number[][]): boolean {
@@ -174,7 +194,11 @@ function severityFromKind(kind: string): string {
 
 router.get("/scenarios", async (_req, res, next) => {
   try {
-    const rows = await db.select().from(scenariosTable).orderBy(desc(scenariosTable.runAt)).limit(50);
+    const rows = await db
+      .select(selectScenarioShape())
+      .from(scenariosTable)
+      .orderBy(desc(scenariosTable.runAt))
+      .limit(50);
     res.json(
       rows.map((s) => ({
         id: s.id,
@@ -237,7 +261,7 @@ router.patch("/scenarios/:scenarioId", async (req, res, next) => {
     }
     const id = req.params.scenarioId;
     const [existing] = await db
-      .select()
+      .select(selectScenarioShape())
       .from(scenariosTable)
       .where(eq(scenariosTable.id, id));
     if (!existing) return res.status(404).json({ error: "scenario not found" });
@@ -260,7 +284,7 @@ router.patch("/scenarios/:scenarioId", async (req, res, next) => {
       });
     }
     const [row] = await db
-      .select()
+      .select(selectScenarioShape())
       .from(scenariosTable)
       .where(eq(scenariosTable.id, id));
     if (!row) return res.status(404).json({ error: "scenario not found" });
@@ -285,7 +309,7 @@ router.delete("/scenarios/:scenarioId", async (req, res, next) => {
   try {
     const id = req.params.scenarioId;
     const [existing] = await db
-      .select()
+      .select(selectScenarioShape())
       .from(scenariosTable)
       .where(eq(scenariosTable.id, id));
     if (!existing) return res.status(404).json({ error: "scenario not found" });
@@ -310,7 +334,7 @@ router.delete("/scenarios/:scenarioId", async (req, res, next) => {
 router.get("/scenarios/:scenarioId", async (req, res, next) => {
   try {
     const [row] = await db
-      .select()
+      .select(selectScenarioShape())
       .from(scenariosTable)
       .where(eq(scenariosTable.id, req.params.scenarioId));
     if (!row) return res.status(404).json({ error: "scenario not found" });
@@ -343,7 +367,7 @@ router.get("/scenarios/:scenarioId", async (req, res, next) => {
     const envelope = buildScenarioResultEnvelope({
       id: row.id,
       name: row.name,
-      summary: row.summary,
+      summary: row.summary ?? "",
       kind: row.kind,
       runAt: row.runAt,
       result: row.result as ReturnType<typeof runScenario>,
@@ -645,13 +669,14 @@ router.post("/scenarios", async (req, res, next) => {
     await db.insert(scenariosTable).values({
       id,
       name: body.name,
-      summary,
+      summaryEnc: encryptText(summary) as unknown as Buffer | undefined,
       kind: body.kind,
       inputs: { perturbation, horizonDays, ...(presetMeta ?? {}) },
       result,
       aiProvider,
       aiModel,
-      coaBrief,
+      coaBriefEnc: encryptText(coaBrief) as unknown as Buffer | undefined,
+      createdByUserId: req.user?.id ?? null,
     });
     await db.insert(activityEntries).values({
       kind: "SCENARIO_RUN",

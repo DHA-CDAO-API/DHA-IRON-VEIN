@@ -15,11 +15,41 @@ import { z } from "zod";
 import { invalidateSimCache } from "../lib/ctx";
 import { logger } from "../lib/logger";
 import { mapSupplierToApi } from "../lib/mappers";
+import { decryptText, encryptText } from "../lib/crypto";
+import { requireRole } from "../middlewares/authMiddleware";
+import { audit } from "../lib/audit";
 
 const router: IRouter = Router();
 
-type RawOrder = typeof orders.$inferSelect;
+// "Write" actions on Class VIII purchase orders are restricted: analysts
+// and medical_planners get read-only views. Only commander + logistician
+// can create, modify, or progress an order.
+const requireOrdersWriteRole = requireRole("commander", "logistician");
+
+type RawOrder = typeof orders.$inferSelect & { notes?: string | null };
 type RawLine = typeof orderLines.$inferSelect;
+
+// Reusable Drizzle column projection that decrypts the notes_enc bytea
+// column into a string (or NULL). Use everywhere we SELECT from orders.
+const notesPlain = decryptText(orders.notesEnc);
+function selectOrderShape() {
+  return {
+    id: orders.id,
+    orderNo: orders.orderNo,
+    nodeId: orders.nodeId,
+    supplierId: orders.supplierId,
+    status: orders.status,
+    priority: orders.priority,
+    createdAt: orders.createdAt,
+    requestedDeliveryAt: orders.requestedDeliveryAt,
+    totalUsd: orders.totalUsd,
+    notes: notesPlain,
+    notesEnc: orders.notesEnc,
+    promotedFromRecommendationId: orders.promotedFromRecommendationId,
+    createdByUserId: orders.createdByUserId,
+    createdByRole: orders.createdByRole,
+  };
+}
 
 interface EnvelopeContext {
   itemNamesById?: Map<string, string>;
@@ -52,6 +82,7 @@ function buildOrderEnvelope(
   const fromAi = !!o.promotedFromRecommendationId;
   const triggerSource = fromAi ? "ai" : "manual";
   const triggerNote = o.notes ?? null;
+  const createdByRole = (o as { createdByRole?: string | null }).createdByRole ?? null;
 
   return {
     id: o.id,
@@ -76,7 +107,7 @@ function buildOrderEnvelope(
     triggerNote,
     triggerSource,
     createdAt: o.createdAt.toISOString(),
-    createdByRole: null,
+    createdByRole,
     sourceRecommendationId: o.promotedFromRecommendationId ?? null,
     // Legacy fields kept for PurchaseOrder/ItemDetail callers
     orderNo: o.orderNo,
@@ -111,8 +142,8 @@ router.get("/orders", async (req, res, next) => {
     if (status) conds.push(eq(orders.status, status));
     if (nodeId) conds.push(eq(orders.nodeId, nodeId));
     const rows = conds.length
-      ? await db.select().from(orders).where(and(...conds)).orderBy(desc(orders.createdAt)).limit(limit)
-      : await db.select().from(orders).orderBy(desc(orders.createdAt)).limit(limit);
+      ? await db.select(selectOrderShape()).from(orders).where(and(...conds)).orderBy(desc(orders.createdAt)).limit(limit)
+      : await db.select(selectOrderShape()).from(orders).orderBy(desc(orders.createdAt)).limit(limit);
 
     const allLines = await db.select().from(orderLines);
     const linesByOrder = new Map<string, RawLine[]>();
@@ -175,7 +206,7 @@ const CreateOrderInput = z.union([
   }),
 ]);
 
-router.post("/orders", async (req, res, next) => {
+router.post("/orders", requireOrdersWriteRole, async (req, res, next) => {
   try {
     const parsed = CreateOrderInput.safeParse(req.body);
     if (!parsed.success) {
@@ -290,7 +321,9 @@ router.post("/orders", async (req, res, next) => {
       priority,
       requestedDeliveryAt: requested,
       totalUsd,
-      notes,
+      notesEnc: encryptText(notes ?? null) as unknown as Buffer | undefined,
+      createdByUserId: req.user!.id,
+      createdByRole: req.user!.role,
     });
     if (pricedLines.length > 0) {
       await db.insert(orderLines).values(
@@ -305,15 +338,28 @@ router.post("/orders", async (req, res, next) => {
     }
     await db.insert(activityEntries).values({
       kind: "ORDER_CREATED",
-      actor: "operator",
+      actor: req.user!.role,
       message: `Order ${orderNo} created for ${nodeId}`,
       refType: "order",
       refId: orderId,
-      meta: { totalUsd, lines: pricedLines.length },
+      meta: {
+        totalUsd,
+        lines: pricedLines.length,
+        actorUserId: req.user!.id,
+        actorRole: req.user!.role,
+      },
+    });
+    audit({
+      event: "order.create",
+      outcome: "success",
+      actorId: req.user!.id,
+      actorRole: req.user!.role,
+      subject: orderId,
+      detail: { orderNo, nodeId, supplierId, totalUsd, lines: pricedLines.length },
     });
     invalidateSimCache();
 
-    const [created] = await db.select().from(orders).where(eq(orders.id, orderId));
+    const [created] = await db.select(selectOrderShape()).from(orders).where(eq(orders.id, orderId));
     const createdLines = await db.select().from(orderLines).where(eq(orderLines.orderId, orderId));
     const ctx = await loadEnvelopeContext();
     res.status(201).json(buildOrderEnvelope(created!, createdLines, ctx));
@@ -326,7 +372,7 @@ router.post("/orders", async (req, res, next) => {
 router.get("/orders/:orderId", async (req, res, next) => {
   try {
     const id = req.params.orderId;
-    const [order] = await db.select().from(orders).where(eq(orders.id, id));
+    const [order] = await db.select(selectOrderShape()).from(orders).where(eq(orders.id, id));
     if (!order) return res.status(404).json({ error: "order not found" });
     const lines = await db.select().from(orderLines).where(eq(orderLines.orderId, id));
 
@@ -537,16 +583,17 @@ const UpdateOrderInput = z
     message: "must include status or priority",
   });
 
-router.patch("/orders/:orderId", async (req, res, next) => {
+router.patch("/orders/:orderId", requireOrdersWriteRole, async (req, res, next) => {
   try {
     const parsed = UpdateOrderInput.safeParse(req.body);
     if (!parsed.success) {
       return res.status(400).json({ error: "invalid order patch payload", details: parsed.error.flatten() });
     }
-    const id = req.params.orderId;
+    // ParamsDictionary types path params as string|string[]; coerce.
+    const id = String(req.params.orderId);
     const { status, priority, note } = parsed.data;
 
-    const [existing] = await db.select().from(orders).where(eq(orders.id, id));
+    const [existing] = await db.select(selectOrderShape()).from(orders).where(eq(orders.id, id));
     if (!existing) return res.status(404).json({ error: "order not found" });
 
     const patch: Partial<typeof orders.$inferInsert> = {};
@@ -555,9 +602,17 @@ router.patch("/orders/:orderId", async (req, res, next) => {
 
     if (Object.keys(patch).length > 0) {
       await db.update(orders).set(patch).where(eq(orders.id, id));
+      audit({
+        event: "order.update",
+        outcome: "success",
+        actorId: req.user!.id,
+        actorRole: req.user!.role,
+        subject: id,
+        detail: patch,
+      });
     }
 
-    const [order] = await db.select().from(orders).where(eq(orders.id, id));
+    const [order] = await db.select(selectOrderShape()).from(orders).where(eq(orders.id, id));
     if (!order) return res.status(404).json({ error: "order not found" });
 
     if (patch.status === "IN_TRANSIT") {

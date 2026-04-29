@@ -21,6 +21,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
+import { IronVeinBrand } from "@/components/brand/IronVeinBrand";
 import {
   Save,
   Settings2,
@@ -209,7 +210,14 @@ export default function Settings() {
             <CardDescription>What this solution is and what it's running on.</CardDescription>
           </CardHeader>
           <CardContent>
-            <InfoRow label="Solution" value="DHA: IRON-VEIN — INDOPACOM Predictive Sustainment" />
+            <InfoRow
+              label="Solution"
+              value={
+                <span>
+                  DHA: IRON-VEIN — <IronVeinBrand />
+                </span>
+              }
+            />
             <InfoRow
               label="Description"
               value="Predictive medical-logistics common operating picture for INDOPACOM."

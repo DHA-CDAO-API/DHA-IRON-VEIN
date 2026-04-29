@@ -40,6 +40,7 @@ import {
 } from "@workspace/db";
 import { sql } from "drizzle-orm";
 import { logger } from "../lib/logger";
+import { encryptText } from "../lib/crypto";
 import {
   computeDailyDemand,
   generateRecommendations,
@@ -1245,9 +1246,10 @@ export async function runSeed(opts: SeedOptions = {}): Promise<void> {
     await ingestCsvCatalog(csvPath);
   }
 
-  // ---- Settings + profile ----
+  // ---- Settings ----
+  // Per-user profiles are now created lazily on first sign-in and bound
+  // to the authenticated user's id. Don't seed a placeholder row.
   await db.insert(appSettings).values({});
-  await db.insert(profiles).values({});
 
   // ---- Medical procedures (clinician-curated reference library) ----
   await seedMedicalProcedures();
@@ -1629,7 +1631,7 @@ async function generateSampleOrders(): Promise<void> {
       createdAt,
       requestedDeliveryAt: requested,
       totalUsd: rec.suggestedQty * 1.5,
-      notes: rec.reason,
+      notesEnc: encryptText(rec.reason) as unknown as Buffer | undefined,
       promotedFromRecommendationId: recId,
     });
     linesToInsert.push({

@@ -14,6 +14,7 @@ import { AiBadge } from "@/components/ui/ai-badge";
 import { formatNumber, formatShortDate } from "@/lib/format";
 import { orderStatusBadgeClass, type OrderStatusKey } from "@/lib/orderStatus";
 import { NewOrderDialog } from "@/components/orders/NewOrderDialog";
+import { useCanWrite } from "@/components/auth/useCanWrite";
 
 type EnrichedOrder = Order & {
   toNodeName?: string | null;
@@ -229,6 +230,7 @@ export default function OrdersBoard() {
     },
   );
   const [newOrderOpen, setNewOrderOpen] = useState(false);
+  const { canWrite, reason: writeReason } = useCanWrite();
 
   if (isLoading || !orders) {
     return (
@@ -249,7 +251,10 @@ export default function OrdersBoard() {
             variant="outline"
             size="sm"
             onClick={() => setNewOrderOpen(true)}
+            disabled={!canWrite}
+            title={!canWrite ? writeReason : undefined}
             className="border-primary text-primary hover:bg-primary/15 hover:text-primary"
+            data-testid="button-new-order"
           >
             <Plus className="h-4 w-4 mr-1" />
             New Order

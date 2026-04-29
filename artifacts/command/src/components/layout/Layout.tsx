@@ -3,7 +3,7 @@ import { Link, useLocation } from "wouter";
 import { 
   Activity, Map as MapIcon, Box, ShoppingCart, PlayCircle, 
   MessageSquare, Database, Settings, UserCircle, Search,
-  Building2, Truck, Tag as TagIcon, BriefcaseMedical
+  Building2, Truck, Tag as TagIcon, BriefcaseMedical, Stethoscope, LogOut
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import RoleBadge from "@/components/RoleBadge";
@@ -11,13 +11,12 @@ import AlertsRail from "@/components/AlertsRail";
 import LiveClock from "@/components/layout/LiveClock";
 import FpconPill from "@/components/layout/FpconPill";
 import { SearchPalette, useSearchPalette } from "@/components/SearchPalette";
-import { useGetProfile } from "@workspace/api-client-react";
 import dhaSeal from "@assets/Seal_of_War_Health_Agency_1777349167048.png";
+import { IronVeinBrand } from "@/components/brand/IronVeinBrand";
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
   const palette = useSearchPalette();
-  const { data: profile } = useGetProfile();
 
   // Per-item accent colors. Each row owns a distinct hue so users can scan
   // the rail at a glance and immediately know where they are. Class strings
@@ -124,16 +123,6 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       hoverText: "hover:text-blue-100",
       ring: "focus-visible:ring-blue-400",
     },
-    "/tags": {
-      iconActive: "text-fuchsia-300",
-      iconInactive: "text-fuchsia-400/65",
-      iconHover: "group-hover:text-fuchsia-200",
-      activeBg: "bg-fuchsia-400/15",
-      activeText: "text-fuchsia-100",
-      hoverBg: "hover:bg-fuchsia-400/10",
-      hoverText: "hover:text-fuchsia-100",
-      ring: "focus-visible:ring-fuchsia-400",
-    },
     "/data": {
       iconActive: "text-lime-300",
       iconInactive: "text-lime-400/65",
@@ -164,8 +153,17 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       hoverText: "hover:text-indigo-100",
       ring: "focus-visible:ring-indigo-400",
     },
+    "/tags": {
+      iconActive: "text-cyan-300",
+      iconInactive: "text-cyan-400/65",
+      iconHover: "group-hover:text-cyan-200",
+      activeBg: "bg-cyan-400/15",
+      activeText: "text-cyan-100",
+      hoverBg: "hover:bg-cyan-400/10",
+      hoverText: "hover:text-cyan-100",
+      ring: "focus-visible:ring-cyan-400",
+    },
   };
-
   const NAV_COLOR_FALLBACK: NavColor = {
     iconActive: "text-slate-200",
     iconInactive: "text-slate-400/60",
@@ -176,6 +174,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     hoverText: "hover:text-slate-100",
     ring: "focus-visible:ring-slate-400",
   };
+
+  const FALLBACK_NAV_COLOR = NAV_COLOR_FALLBACK;
 
   const navItems: Array<{
     href: string;
@@ -236,18 +236,9 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               <span className="font-bold text-primary tracking-widest text-xs uppercase truncate">
                 DHA: IRON-VEIN
               </span>
-              <span
-                className="text-[8.5px] text-muted-foreground/80 tracking-wide leading-snug truncate"
-                title="INDOPACOM Resilient Operational Network for Vital Expeditionary Inventory Nodes"
-              >
-                INDOPACOM Resilient Operational Network
-              </span>
-              <span
-                className="text-[8.5px] text-muted-foreground/80 tracking-wide leading-snug truncate"
-                title="INDOPACOM Resilient Operational Network for Vital Expeditionary Inventory Nodes"
-              >
-                for Vital Expeditionary Inventory Nodes
-              </span>
+              <IronVeinBrand
+                className="block text-[8.5px] text-muted-foreground/80 tracking-wide leading-snug uppercase whitespace-normal"
+              />
             </div>
           </Link>
           <nav className="flex flex-col gap-1 p-2 mt-4">
@@ -255,7 +246,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               const active = item.matches
                 ? item.matches(location)
                 : location === item.href || (item.href !== "/" && location.startsWith(item.href));
-              const c = NAV_COLORS[item.href] ?? NAV_COLOR_FALLBACK;
+              const c = NAV_COLORS[item.href] ?? FALLBACK_NAV_COLOR;
               return (
                 <Link
                   key={item.href}
@@ -281,7 +272,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         <div className="p-2 border-t border-border flex flex-col gap-1 shrink-0">
           {bottomItems.map((item) => {
             const active = location === item.href;
-            const c = NAV_COLORS[item.href] ?? NAV_COLOR_FALLBACK;
+            const c = NAV_COLORS[item.href] ?? FALLBACK_NAV_COLOR;
             return (
               <Link
                 key={item.href}
@@ -302,6 +293,20 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               </Link>
             );
           })}
+          <button
+            type="button"
+            onClick={() => {
+              const base = import.meta.env.BASE_URL.replace(/\/+$/, "") || "";
+              window.location.href = `${base}/api/logout`;
+            }}
+            data-testid="button-logout"
+            title="Sign out"
+            aria-label="Sign out"
+            className="group flex items-center gap-3 px-3 py-2 rounded-md transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-slate-400 text-muted-foreground hover:bg-slate-400/10 hover:text-slate-100 text-left"
+          >
+            <LogOut className="h-5 w-5 shrink-0 transition-colors text-slate-400/60 group-hover:text-slate-200" />
+            <span className="hidden md:inline text-sm font-medium">Sign out</span>
+          </button>
         </div>
       </div>
 
@@ -330,13 +335,6 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             <div className="h-6 w-px bg-border mx-1"></div>
             <LiveClock />
             <AlertsRail />
-            <div className="h-6 w-px bg-border"></div>
-            <Link href="/profile" className="flex items-center gap-2 text-sm font-medium hover:text-primary transition-colors">
-              <div className="w-8 h-8 rounded-full bg-secondary flex items-center justify-center border border-border">
-                <UserCircle className="h-5 w-5" />
-              </div>
-              <span className="hidden sm:inline">{profile?.name || "Loading..."}</span>
-            </Link>
           </div>
         </header>
 

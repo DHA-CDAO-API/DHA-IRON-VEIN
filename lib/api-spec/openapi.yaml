@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: Api
   version: 1.0.0
-  description: Predictive Sustainment Platform API for INDOPACOM medical logistics decision support.
+  description: INDOPACOM IRONVEIN (Resilient Operational Network for Vital Expeditionary Inventory Nodes) API for medical logistics decision support.
 servers:
   - url: /api
 tags:
@@ -27,6 +27,10 @@ tags:
   - name: tags
   - name: casualty
   - name: procedures
+  - name: auth
+    description: Browser authentication endpoints (Replit OIDC).
+  - name: mfa
+    description: Multi-factor authentication (TOTP) endpoints.
 
 paths:
   /healthz:
@@ -1175,8 +1179,223 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/CasualtyEvaluateResult" }
 
+  /auth/user:
+    get:
+      operationId: getCurrentAuthUser
+      tags: [auth]
+      summary: Get the currently authenticated user (with MFA status)
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthUserEnvelope" }
+  /auth/csrf:
+    get:
+      operationId: getCsrfToken
+      tags: [auth]
+      summary: Mint a CSRF token for the current session
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CsrfTokenResponse" }
+  /login:
+    get:
+      operationId: beginBrowserLogin
+      tags: [auth]
+      parameters:
+        - name: returnTo
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        "302":
+          description: Redirect to OIDC authorize.
+  /callback:
+    get:
+      operationId: handleBrowserLoginCallback
+      tags: [auth]
+      responses:
+        "302":
+          description: Redirect to returnTo on success.
+  /logout:
+    get:
+      operationId: logoutBrowserSession
+      tags: [auth]
+      responses:
+        "302":
+          description: Redirect to OIDC logout.
+
+  /mfa/status:
+    get:
+      operationId: getMfaStatus
+      tags: [mfa]
+      summary: Returns whether the user has enrolled an authenticator app and verified this session
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MfaStatusResponse" }
+  /mfa/enroll/start:
+    post:
+      operationId: startMfaEnrollment
+      tags: [mfa]
+      summary: Begin TOTP enrollment — returns secret + otpauth URL + provisioning QR data
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MfaEnrollStartResponse" }
+  /mfa/enroll/verify:
+    post:
+      operationId: verifyMfaEnrollment
+      tags: [mfa]
+      summary: Verify the first TOTP code, finalize enrollment, return recovery codes
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MfaCodeRequest" }
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MfaEnrollVerifyResponse" }
+        "401":
+          description: Bad code or no enrollment in progress.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MfaErrorEnvelope" }
+  /mfa/verify:
+    post:
+      operationId: verifyMfa
+      tags: [mfa]
+      summary: Verify a TOTP code (or recovery code) for the current session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MfaCodeRequest" }
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MfaVerifyResponse" }
+        "401":
+          description: Bad code.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MfaErrorEnvelope" }
+        "429":
+          description: Account temporarily locked.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MfaErrorEnvelope" }
+  /mfa/recovery-codes/regenerate:
+    post:
+      operationId: regenerateMfaRecoveryCodes
+      tags: [mfa]
+      summary: Regenerate recovery codes (invalidates old ones)
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MfaRecoveryCodesResponse" }
+
 components:
   schemas:
+    AuthUser:
+      type: object
+      required: [id, email, firstName, lastName, profileImageUrl, role]
+      properties:
+        id: { type: string }
+        email: { type: ["string", "null"], format: email }
+        firstName: { type: ["string", "null"] }
+        lastName: { type: ["string", "null"] }
+        profileImageUrl: { type: ["string", "null"] }
+        role:
+          type: string
+          enum: [commander, logistician, analyst, medical_planner]
+    AuthUserEnvelope:
+      type: object
+      required: [user, mfa]
+      properties:
+        user:
+          oneOf:
+            - $ref: "#/components/schemas/AuthUser"
+            - type: "null"
+        mfa: { $ref: "#/components/schemas/MfaStatusResponse" }
+    CsrfTokenResponse:
+      type: object
+      required: [csrfToken]
+      properties:
+        csrfToken: { type: string }
+
+    MfaStatusResponse:
+      type: object
+      required: [enrolled, verified, required]
+      properties:
+        enrolled: { type: boolean, description: "User has completed TOTP enrollment." }
+        verified: { type: boolean, description: "Current session has passed MFA challenge." }
+        required: { type: boolean, description: "MFA is required for this user (always true here)." }
+        sessionExpiresAt: { type: ["string", "null"], format: date-time }
+    MfaEnrollStartResponse:
+      type: object
+      required: [secret, otpauthUri, qrSvg, issuer, account]
+      properties:
+        secret: { type: string, description: "Base32-encoded TOTP secret to manually key into the app." }
+        otpauthUri: { type: string, description: "otpauth:// URI for QR encoding." }
+        qrSvg: { type: string, description: "Inline SVG of the QR code for the otpauth URI." }
+        issuer: { type: string }
+        account: { type: string }
+    MfaCodeRequest:
+      type: object
+      required: [code]
+      properties:
+        code:
+          type: string
+          minLength: 6
+          maxLength: 16
+          description: "6-digit TOTP code from authenticator, or single-use recovery code."
+    MfaEnrollVerifyResponse:
+      type: object
+      required: [enrolled, recoveryCodes]
+      properties:
+        enrolled: { type: boolean, const: true }
+        recoveryCodes:
+          type: array
+          items: { type: string }
+          minItems: 8
+          maxItems: 16
+          description: "One-time recovery codes — shown ONCE."
+    MfaVerifyResponse:
+      type: object
+      required: [verified, sessionExpiresAt]
+      properties:
+        verified: { type: boolean, const: true }
+        sessionExpiresAt: { type: string, format: date-time }
+    MfaRecoveryCodesResponse:
+      type: object
+      required: [recoveryCodes]
+      properties:
+        recoveryCodes:
+          type: array
+          items: { type: string }
+    MfaErrorEnvelope:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string }
+        detail: { type: string }
+        retryAfterSeconds: { type: integer }
+
     HealthCheckResponse:
       type: object
       required: [status, ts]

@@ -54,6 +54,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { formatCurrency } from "@/lib/format";
+import { useCanWrite } from "@/components/auth/useCanWrite";
 import { AlertTriangle, Check, ChevronsUpDown, Loader2 } from "lucide-react";
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -122,6 +123,7 @@ export function NewOrderDialog({ open, onOpenChange, prefill }: NewOrderDialogPr
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const createOrder = useCreateOrder();
+  const { canWrite, reason: writeReason } = useCanWrite();
 
   const { data: items } = useListItems({
     query: { queryKey: getListItemsQueryKey(), enabled: open },
@@ -986,7 +988,9 @@ export function NewOrderDialog({ open, onOpenChange, prefill }: NewOrderDialogPr
             </Button>
             <Button
               type="submit"
-              disabled={!isValid || createOrder.isPending}
+              disabled={!isValid || createOrder.isPending || !canWrite}
+              title={!canWrite ? writeReason : undefined}
+              data-testid="submit-order"
             >
               {createOrder.isPending && (
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />

@@ -21,6 +21,9 @@ import {
 import { invalidateSimCache } from "../lib/ctx";
 import { mapRecommendationToApi } from "../lib/mappers";
 import { buildCompanionItemsByItemId } from "../lib/companion-items";
+import { requireRole } from "../middlewares/authMiddleware";
+import { encryptText } from "../lib/crypto";
+import { audit } from "../lib/audit";
 
 const router: IRouter = Router();
 
@@ -187,9 +190,10 @@ router.get("/predictive/recommendations", async (req, res, next) => {
 
 router.post(
   "/predictive/recommendations/:recommendationId/promote",
+  requireRole("commander", "logistician"),
   async (req, res, next) => {
     try {
-      const recId = req.params.recommendationId;
+      const recId = String(req.params.recommendationId);
       const ctx = await loadSimContext();
 
       const overrides = (req.body ?? {}) as {
@@ -425,6 +429,17 @@ router.post(
         notes: includeCompanions
           ? `${rec.reason} (bundled with ${companionLines.length} companion supply line${companionLines.length === 1 ? "" : "s"})`
           : rec.reason,
+        notesEnc: encryptText(rec.reason) as unknown as Buffer | undefined,
+        createdByUserId: req.user!.id,
+        createdByRole: req.user!.role,
+      });
+      audit({
+        event: "recommendation.promote",
+        outcome: "success",
+        actorId: req.user!.id,
+        actorRole: req.user!.role,
+        subject: orderId,
+        detail: { recommendationId: rec.id, orderNo, supplierId: finalSupplierId, totalUsd },
       });
       const primaryLine = {
         orderId,
