@@ -67,6 +67,10 @@ router.get("/network/snapshot", async (_req, res, next) => {
     const filteredRisk = risk.riskByNode.filter((r) =>
       visibleNodeIds.has(r.nodeId),
     );
+    const focusedHubId =
+      risk.focusedHubId && visibleNodeIds.has(risk.focusedHubId)
+        ? risk.focusedHubId
+        : null;
     res.json({
       generatedAt: new Date().toISOString(),
       nodes: nodeRows,
@@ -79,7 +83,7 @@ router.get("/network/snapshot", async (_req, res, next) => {
         createdAt: z.createdAt.toISOString(),
       })),
       aorBoundary: AOR_BOUNDARY,
-      focusedHubId: risk.focusedHubId,
+      focusedHubId,
       operationalState: risk.operationalState,
       bloodReadinessByNode,
     });
