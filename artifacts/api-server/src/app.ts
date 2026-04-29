@@ -169,8 +169,14 @@ app.use((err: unknown, req: Request, res: Response, _next: NextFunction) => {
   if (res.headersSent) return;
   const message = err instanceof Error ? err.message : "internal_error";
   const isProd = process.env.NODE_ENV === "production";
-  const isCopilotRoute = req.originalUrl.startsWith("/api/copilot");
-  if (isProd && !isCopilotRoute) {
+  // Allowlist of route prefixes that surface their real error message in
+  // production for the hackathon demo. Each entry exists because we hit a
+  // prod-only failure that the sanitized "internal_error" body made
+  // impossible to diagnose. Remove this allowlist before any non-demo
+  // deployment and replace with sanitized message + correlation id.
+  const debugAllowList = ["/api/copilot", "/api/scenarios"];
+  const isAllowListed = debugAllowList.some((p) => req.originalUrl.startsWith(p));
+  if (isProd && !isAllowListed) {
     res.status(500).json({ error: "internal_error" });
     return;
   }
