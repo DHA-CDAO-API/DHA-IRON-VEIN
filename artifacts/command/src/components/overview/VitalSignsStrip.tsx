@@ -21,6 +21,11 @@ import {
   tierForValue,
 } from "./tier";
 import { formatNumber } from "@/lib/format";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 type IconType = React.ComponentType<{ className?: string }>;
 
@@ -32,6 +37,10 @@ interface VitalChip {
   unit?: string;
   tier: Tier;
   icon: IconType;
+  /** Plain-language explanation of the metric. */
+  description: string;
+  /** Plain-language summary of what each color tier means. */
+  tierExplanation: string;
 }
 
 interface VitalSignsStripProps {
@@ -79,6 +88,10 @@ export function VitalSignsStrip({
         critical: 250,
         watch: 600,
       }),
+      description:
+        "Total viable blood units (u) on hand across the theater, ready for transfusion.",
+      tierExplanation:
+        "Critical at or below 250 u, Watch at or below 600 u, Nominal above that.",
     },
     {
       id: "blood_dos",
@@ -92,6 +105,10 @@ export function VitalSignsStrip({
         critical: 3,
         watch: 7,
       }),
+      description:
+        "Theater-wide days of blood supply (d) at the current consumption rate.",
+      tierExplanation:
+        "Critical at or below 3 days, Watch at or below 7 days, Nominal above that.",
     },
     {
       id: "cold_chain",
@@ -111,6 +128,10 @@ export function VitalSignsStrip({
             ? "watch"
             : "nominal"
         : "nominal",
+      description:
+        "Percent (%) of cold-chain assets reporting in-spec temperatures right now.",
+      tierExplanation:
+        "Critical below 60%, Watch below 85%, Nominal at 85% or above.",
     },
     {
       id: "wbb_ready",
@@ -123,6 +144,10 @@ export function VitalSignsStrip({
         critical: 50,
         watch: 150,
       }),
+      description:
+        "Walking Blood Bank donors who are screened, typed, and ready to donate on call.",
+      tierExplanation:
+        "Critical at or below 50 donors, Watch at or below 150, Nominal above that.",
     },
     {
       id: "reagent_days",
@@ -136,6 +161,10 @@ export function VitalSignsStrip({
         critical: 3,
         watch: 7,
       }),
+      description:
+        "Days (d) of typing and screening reagents remaining at current burn rate.",
+      tierExplanation:
+        "Critical at or below 3 days, Watch at or below 7 days, Nominal above that.",
     },
     {
       id: "in_flight",
@@ -144,6 +173,10 @@ export function VitalSignsStrip({
       formatted: formatNumber(inFlight),
       icon: Truck,
       tier: "nominal",
+      description:
+        "Number of shipments currently moving across the theater by air, sea, or ground.",
+      tierExplanation:
+        "Informational — this chip stays Nominal regardless of count.",
     },
     {
       id: "open_alerts",
@@ -157,6 +190,10 @@ export function VitalSignsStrip({
           : openAlerts > 0
             ? "watch"
             : "nominal",
+      description:
+        "Total alerts that are currently open and awaiting acknowledgment or action.",
+      tierExplanation:
+        "Critical when any open alert is critical-severity, Watch when alerts exist but none are critical, Nominal when there are zero open alerts.",
     },
     {
       id: "pending_recs",
@@ -165,6 +202,10 @@ export function VitalSignsStrip({
       formatted: formatNumber(pendingRecs),
       icon: Sparkles,
       tier: pendingRecs > 8 ? "watch" : "nominal",
+      description:
+        "AI recommendations queued and waiting for an operator to promote them to action.",
+      tierExplanation:
+        "Watch when more than 8 are pending, Nominal at 8 or fewer.",
     },
   ];
 
@@ -205,31 +246,62 @@ function VitalSignChip({
   delta?: number;
 }) {
   const Icon = chip.icon;
+  const valueWithUnit = chip.unit
+    ? `${chip.formatted} ${chip.unit}`
+    : chip.formatted;
+  const ariaLabel = `${chip.label}: ${valueWithUnit}. ${chip.description} ${chip.tierExplanation}`;
   return (
-    <div
-      data-testid={`vital-${chip.id}`}
-      className={`shrink-0 min-w-[160px] rounded-lg border ${TIER_BORDER[chip.tier]} ${TIER_BG[chip.tier]} px-3 py-2 backdrop-blur`}
-    >
-      <div className="flex items-center justify-between gap-2 mb-1">
-        <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-muted-foreground">
-          <Icon className={`h-3 w-3 ${TIER_TEXT[chip.tier]}`} />
-          <span className="truncate">{chip.label}</span>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          data-testid={`vital-${chip.id}`}
+          aria-label={ariaLabel}
+          className={`shrink-0 min-w-[160px] text-left rounded-lg border ${TIER_BORDER[chip.tier]} ${TIER_BG[chip.tier]} px-3 py-2 backdrop-blur focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background`}
+        >
+          <div className="flex items-center justify-between gap-2 mb-1">
+            <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-muted-foreground">
+              <Icon className={`h-3 w-3 ${TIER_TEXT[chip.tier]}`} />
+              <span className="truncate">{chip.label}</span>
+            </div>
+            <span
+              className={`inline-block w-1.5 h-1.5 rounded-full ${TIER_DOT[chip.tier]}`}
+              aria-hidden
+            />
+          </div>
+          <div className="flex items-baseline gap-1">
+            <span
+              className={`text-lg font-bold font-mono ${TIER_TEXT[chip.tier]}`}
+            >
+              {chip.formatted}
+            </span>
+            {chip.unit && (
+              <span className="text-[11px] text-muted-foreground">
+                {chip.unit}
+              </span>
+            )}
+            <DeltaIndicator delta={delta} />
+          </div>
+        </button>
+      </TooltipTrigger>
+      <TooltipContent
+        side="bottom"
+        className="max-w-[260px] bg-popover text-popover-foreground border border-border shadow-lg"
+      >
+        <div className="text-xs space-y-1">
+          <div className="font-medium text-foreground">{chip.label}</div>
+          <div className={`text-[11px] font-semibold ${TIER_TEXT[chip.tier]}`}>
+            {chip.tier.toUpperCase()} · {valueWithUnit}
+          </div>
+          <div className="text-foreground/80 text-[11px] leading-snug">
+            {chip.description}
+          </div>
+          <div className="text-muted-foreground text-[11px] leading-snug">
+            {chip.tierExplanation}
+          </div>
         </div>
-        <span
-          className={`inline-block w-1.5 h-1.5 rounded-full ${TIER_DOT[chip.tier]}`}
-          aria-hidden
-        />
-      </div>
-      <div className="flex items-baseline gap-1">
-        <span className={`text-lg font-bold font-mono ${TIER_TEXT[chip.tier]}`}>
-          {chip.formatted}
-        </span>
-        {chip.unit && (
-          <span className="text-[11px] text-muted-foreground">{chip.unit}</span>
-        )}
-        <DeltaIndicator delta={delta} />
-      </div>
-    </div>
+      </TooltipContent>
+    </Tooltip>
   );
 }
 
