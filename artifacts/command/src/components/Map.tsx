@@ -1408,14 +1408,15 @@ export default function NetworkGLMap(props: NetworkMapProps) {
   };
 
   // Disable map drag while drawing so clicks register cleanly. Outside
-  // of draw mode we keep all the normal MapController interactions
-  // (drag-pan, drag-rotate, touch, keyboard, double-click zoom) but turn
-  // off scroll-wheel zoom — operators repeatedly complained that trying
-  // to scroll the dashboard would accidentally zoom the embedded theater
-  // map. Holding the cmd/ctrl key still lets you zoom on demand.
+  // of draw mode we leave the full default MapController behaviour
+  // intact (drag-pan, drag-rotate, touch, keyboard, double-click zoom,
+  // and scroll-wheel zoom). The Network Map is a dedicated full-page
+  // surface with no other scrollable content, so scroll-to-zoom is the
+  // expected, "no-friction" interaction; the dashboard-hijack concern
+  // that justified disabling it elsewhere does not apply here.
   const controllerOpts = drawMode !== null
     ? { dragPan: false, doubleClickZoom: false }
-    : ({ scrollZoom: false } as any);
+    : (true as any);
 
   // Build a deck.gl tooltip object for the node currently under the
   // cursor. Returning a small HTML card here is much faster than

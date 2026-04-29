@@ -85,9 +85,29 @@ export default function Copilot() {
     setStreaming({ convId, text: '' });
 
     try {
+      // We hand-roll the fetch (instead of using the generated client)
+      // because this endpoint streams Server-Sent Events and the orval
+      // client buffers the whole body. The CSRF middleware still
+      // requires the double-submit token on POST, so we mirror the
+      // `csrf` cookie into `x-csrf-token` the same way custom-fetch
+      // does for the rest of the app — otherwise the server returns
+      // 403 csrf_token_invalid.
+      const csrf = (() => {
+        if (typeof document === 'undefined') return null;
+        for (const part of document.cookie.split(';')) {
+          const trimmed = part.trim();
+          if (trimmed.startsWith('csrf=')) {
+            return decodeURIComponent(trimmed.slice('csrf='.length));
+          }
+        }
+        return null;
+      })();
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (csrf) headers['x-csrf-token'] = csrf;
       const res = await fetch(`/api/copilot/conversations/${convId}/messages`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        headers,
         body: JSON.stringify({ content: userMsg, provider })
       });
 

@@ -6,7 +6,6 @@ import {
   Building2, Truck, Tag as TagIcon, BriefcaseMedical, Stethoscope, LogOut,
   DollarSign,
 } from "lucide-react";
-import { useGetProfile } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import RoleBadge from "@/components/RoleBadge";
 import AlertsRail from "@/components/AlertsRail";
@@ -19,10 +18,6 @@ import { IronVeinBrand } from "@/components/brand/IronVeinBrand";
 export default function Layout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
   const palette = useSearchPalette();
-  // Profile drives role-gated nav entries (e.g. the admin Prices link
-  // below). Server-side checks remain authoritative — see ADMIN_ROLES in
-  // artifacts/api-server/src/lib/require-admin.ts.
-  const { data: profile } = useGetProfile();
 
   // Per-item accent colors. Each row owns a distinct hue so users can scan
   // the rail at a glance and immediately know where they are. Class strings
@@ -219,13 +214,11 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     { href: "/copilot", label: "Copilot", icon: MessageSquare },
   ];
 
-  // Roles allowed to see the Catalog Prices admin entry. Server enforces
-  // this for real on PATCH /items/:itemId — see ADMIN_ROLES in
-  // artifacts/api-server/src/lib/require-admin.ts. Hiding the nav entry
-  // for non-admins is purely cosmetic and avoids dead links.
-  const ADMIN_ROLES = new Set(["logistician", "commander"]);
-  const isAdmin = !!profile?.role && ADMIN_ROLES.has(profile.role);
-
+  // The Catalog Prices entry is shown to everyone so the capability is
+  // discoverable. The page itself renders an AccessDenied panel for
+  // non-admin roles, and the server still enforces the role check on
+  // PATCH /items/:itemId — see ADMIN_ROLES in
+  // artifacts/api-server/src/lib/require-admin.ts.
   const bottomItems: Array<{
     href: string;
     label: string;
@@ -233,17 +226,13 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     matches?: (path: string) => boolean;
   }> = [
     { href: "/tags", label: "Tags", icon: TagIcon, matches: (p) => p === "/tags" || p.startsWith("/tags/") },
-    ...(isAdmin
-      ? [
-          {
-            href: "/admin/prices",
-            label: "Prices",
-            icon: DollarSign,
-            matches: (p: string) =>
-              p === "/admin/prices" || p.startsWith("/admin/prices"),
-          },
-        ]
-      : []),
+    {
+      href: "/admin/prices",
+      label: "Prices",
+      icon: DollarSign,
+      matches: (p) =>
+        p === "/admin/prices" || p.startsWith("/admin/prices"),
+    },
     { href: "/data", label: "Data", icon: Database },
     { href: "/settings", label: "Settings", icon: Settings },
     { href: "/profile", label: "Profile", icon: UserCircle },
