@@ -43,14 +43,12 @@ export function getIssuer(): string {
 
 export function verifyToken(token: string, secret: string): boolean {
   try {
-    // Allow ±60s of clock skew (2 steps before/after the current window).
-    // otplib's option is `window` (number of 30-second steps), NOT
-    // `epochTolerance` — passing the wrong key was silently ignored,
-    // which left tolerance at 0 and caused production codes to be
-    // rejected whenever there was any clock drift between Microsoft
-    // Authenticator and the server, or whenever a code was entered
-    // close to its rotation boundary.
-    const result = otpVerifySync({ token: token.trim(), secret, window: 2 });
+    // Allow ±90s of clock skew. otplib v13's option is `epochTolerance`
+    // and is measured in SECONDS (not steps). 90s is generous enough to
+    // absorb any realistic clock drift between Microsoft Authenticator
+    // on a phone and the production server, plus the time it takes a
+    // user to read the code and submit it across a slow connection.
+    const result = otpVerifySync({ token: token.trim(), secret, epochTolerance: 90 });
     return result.valid === true;
   } catch {
     return false;
