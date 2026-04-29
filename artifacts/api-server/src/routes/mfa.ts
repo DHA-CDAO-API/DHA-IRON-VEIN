@@ -36,12 +36,14 @@ const router: IRouter = Router();
 router.get("/mfa/status", requireAuth, async (req, res, next) => {
   try {
     const row = await getMfaRow(req.user!.id);
-    const verified = Date.now() < (req.session?.mfaVerifiedUntilMs ?? 0);
+    // Demo bypass: when MFA_BYPASS=true, advertise enrolled+verified so the gate passes.
+    const bypass = process.env.MFA_BYPASS === "true";
+    const verified = bypass || Date.now() < (req.session?.mfaVerifiedUntilMs ?? 0);
     res.json(
       ({
-        enrolled: !!row?.enrolledAt,
+        enrolled: bypass ? true : !!row?.enrolledAt,
         verified,
-        required: true,
+        required: !bypass,
         sessionExpiresAt: req.session
           ? new Date(req.session.absoluteExpireAtMs).toISOString()
           : null,

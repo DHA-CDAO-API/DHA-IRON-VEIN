@@ -94,7 +94,11 @@ router.get("/auth/user", async (req, res, next) => {
     }
     const profile = await loadDecryptedProfile(req.user.id);
     const mfa = await getMfaRow(req.user.id);
-    const verified = Date.now() < (req.session?.mfaVerifiedUntilMs ?? 0);
+    // Demo bypass: when MFA_BYPASS=true, advertise the session as already MFA-verified
+    // so the frontend gate passes through without prompting. The /api/mfa/* routes
+    // remain intact so re-enabling is a one-flag change.
+    const bypass = process.env.MFA_BYPASS === "true";
+    const verified = bypass || Date.now() < (req.session?.mfaVerifiedUntilMs ?? 0);
     res.json({
       user: {
         id: req.user.id,
@@ -105,9 +109,9 @@ router.get("/auth/user", async (req, res, next) => {
         role: profile?.role ?? req.user.role,
       },
       mfa: {
-        enrolled: !!mfa?.enrolledAt,
+        enrolled: bypass ? true : !!mfa?.enrolledAt,
         verified,
-        required: true,
+        required: !bypass,
         sessionExpiresAt: req.session
           ? new Date(req.session.absoluteExpireAtMs).toISOString()
           : null,

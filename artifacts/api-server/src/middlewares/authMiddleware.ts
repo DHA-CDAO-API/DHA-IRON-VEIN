@@ -139,6 +139,12 @@ export function requireMfa(
     res.status(401).json({ error: "auth_required" });
     return;
   }
+  // Demo bypass: when MFA_BYPASS=true, treat any authenticated session as MFA-verified.
+  // Remove this env var (or set to false) to re-enable MFA enforcement.
+  if (process.env.MFA_BYPASS === "true") {
+    next();
+    return;
+  }
   const verifiedUntil = req.session?.mfaVerifiedUntilMs ?? 0;
   if (Date.now() >= verifiedUntil) {
     res.status(401).json({ error: "mfa_required" });
