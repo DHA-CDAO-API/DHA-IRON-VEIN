@@ -15,13 +15,13 @@ import {
   getDecryptedSecret,
   getIssuer,
   getMfaRow,
+  getOrCreatePendingSecret,
   hashRecoveryCodes,
   isLockedOut,
   logAudit,
   recordFailure,
   recordSuccess,
   renderQrSvg,
-  upsertPendingSecret,
   verifyToken,
 } from "../lib/mfa";
 import {
@@ -54,18 +54,42 @@ router.get("/mfa/status", requireAuth, async (req, res, next) => {
 
 router.post("/mfa/enroll/start", requireAuth, async (req, res, next) => {
   try {
-    // Re-enrollment is allowed; it just rotates the pending secret. We log
-    // the event so any rotation is auditable.
-    const secret = generateSecret();
-    await upsertPendingSecret(req.user!.id, secret);
-    const account = req.user!.email || req.user!.id;
+    const userId = req.user!.id;
+
+    // Block accidental re-enrollment of an already-finalized account.
+    // True re-enrollment (e.g. lost-device flow) requires explicit reset
+    // through a separate, audited endpoint — not the standard onboarding
+    // screen.
+    const row = await getMfaRow(userId);
+    if (row?.enrolledAt) {
+      res.status(409).json({ error: "already_enrolled" });
+      return;
+    }
+
+    // Reuse the existing pending secret if one is present so the user's
+    // authenticator entry from a prior page load stays valid. Rotating on
+    // every screen mount silently invalidates whatever they scanned and
+    // shows up as "code didn't match". The helper is atomic across
+    // concurrent calls (StrictMode double-mount, two browser tabs, etc.):
+    // a single SQL statement INSERTs a candidate ON CONFLICT DO NOTHING
+    // and returns whichever secret actually persisted, so all callers
+    // observe the same value.
+    const candidate = generateSecret();
+    const { secret, created } = await getOrCreatePendingSecret(userId, candidate);
+
+    const account = req.user!.email || userId;
     const otpauthUri = buildOtpauthUri(account, secret);
     const qrSvg = await renderQrSvg(otpauthUri);
-    await logAudit(req.user!.id, "mfa.enroll.start", null, getClientIp(req));
+    await logAudit(
+      userId,
+      created ? "mfa.enroll.start" : "mfa.enroll.resume",
+      null,
+      getClientIp(req),
+    );
     audit({
-      event: "mfa.enroll.start",
+      event: created ? "mfa.enroll.start" : "mfa.enroll.resume",
       outcome: "success",
-      actorId: req.user!.id,
+      actorId: userId,
       actorRole: req.user!.role,
       ip: getClientIp(req),
     });

@@ -18,7 +18,13 @@ import { sql, type SQL } from "drizzle-orm";
 const KEY_ENV = "DATA_ENCRYPTION_KEY";
 
 let cachedKey: string | null = null;
-function getKey(): string {
+/**
+ * Read the symmetric encryption key from process env. Exported so other
+ * crypto-aware helpers (e.g. atomic upsert CTEs that need to inline
+ * `pgp_sym_decrypt`) can request the same key without going through the
+ * SQL builders. Treat the returned string as a sealed secret — never log it.
+ */
+export function getKey(): string {
   if (cachedKey) return cachedKey;
   const k = process.env[KEY_ENV];
   if (!k || k.length < 32) {

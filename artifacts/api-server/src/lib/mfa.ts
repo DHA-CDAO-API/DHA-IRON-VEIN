@@ -8,7 +8,7 @@ import crypto from "node:crypto";
 import { sql } from "drizzle-orm";
 import { db, userMfa, mfaAudit } from "@workspace/db";
 import { eq } from "drizzle-orm";
-import { encryptText, decryptText } from "./crypto";
+import { encryptText, decryptText, getKey } from "./crypto";
 
 /**
  * RFC 6238 TOTP enrollment, verification, and recovery codes for use
@@ -119,6 +119,51 @@ export async function getDecryptedSecret(userId: string): Promise<string | null>
     .from(userMfa)
     .where(eq(userMfa.userId, userId));
   return rows[0]?.secret ?? null;
+}
+
+/**
+ * Atomically read-or-create the pending TOTP secret for a user. If a row
+ * already exists (pending or finalized), the stored secret is returned
+ * untouched and `created` is false — this is what makes `/mfa/enroll/start`
+ * idempotent across concurrent calls (e.g. React StrictMode double-mounts
+ * or two browser tabs).
+ *
+ * Implementation: a single statement performs an INSERT with the candidate
+ * secret and `ON CONFLICT (user_id) DO NOTHING`. The CTE then SELECTs the
+ * decrypted secret and `(xmax = 0)` (Postgres trick: xmax is 0 on a freshly
+ * inserted tuple, non-zero when the row already existed and the insert was
+ * skipped). Net result: at most one new row is created per user, and every
+ * caller observes the same persisted secret.
+ */
+export async function getOrCreatePendingSecret(
+  userId: string,
+  candidate: string,
+): Promise<{ secret: string; created: boolean }> {
+  const key = getKey();
+  const result = await db.execute(sql`
+    WITH ins AS (
+      INSERT INTO user_mfa (user_id, secret_enc, enrolled_at, failure_count, recovery_codes_hashes, created_at, updated_at)
+      VALUES (
+        ${userId},
+        pgp_sym_encrypt(${candidate}::text, ${key}, 'cipher-algo=aes256'),
+        NULL,
+        0,
+        NULL,
+        NOW(),
+        NOW()
+      )
+      ON CONFLICT (user_id) DO NOTHING
+      RETURNING user_id, xmax
+    )
+    SELECT
+      pgp_sym_decrypt(m.secret_enc::bytea, ${key}, 'cipher-algo=aes256') AS secret,
+      COALESCE((SELECT xmax = 0 FROM ins), false) AS created
+    FROM user_mfa m
+    WHERE m.user_id = ${userId}
+  `);
+  const row = result.rows[0] as { secret: string | null; created: boolean } | undefined;
+  if (!row?.secret) throw new Error("failed to read pending mfa secret");
+  return { secret: row.secret, created: !!row.created };
 }
 
 /**
