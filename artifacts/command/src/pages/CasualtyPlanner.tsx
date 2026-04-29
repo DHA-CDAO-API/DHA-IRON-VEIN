@@ -55,13 +55,14 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import {
-  Activity,
   AlertTriangle,
   ArrowRight,
+  BriefcaseMedical,
   Check,
   CheckCircle2,
   ChevronsUpDown,
   Loader2,
+  RotateCcw,
   ShoppingBag,
   Users,
   ShieldAlert,
@@ -245,6 +246,45 @@ export default function CasualtyPlanner() {
 
   const evaluate = useEvaluateCasualtyDemand();
   const result = evaluate.data;
+
+  // Reset the entire scenario back to its first-load defaults so an
+  // operator can start fresh without reloading the page. We can't rely on
+  // the auto-fill effect to repopulate counts here — if the operator was
+  // already on the first event template and totalCasualties was already
+  // 40, neither dependency changes and the effect doesn't re-run, leaving
+  // counts empty. So we compute the default patient mix directly and set
+  // it ourselves, mirroring the effect's logic.
+  const handleReset = React.useCallback(() => {
+    const first = eventTypes[0];
+    const defaultTotal = 40;
+    const defaultArrivalWindow = first?.defaultArrivalWindowHours ?? 48;
+    const next: PatientCounts = {};
+    if (first) {
+      let assigned = 0;
+      for (const m of first.defaultPatientMix) {
+        const n = Math.round(defaultTotal * m.defaultShare);
+        if (n > 0) next[m.patientTypeId] = n;
+        assigned += n;
+      }
+      if (assigned !== defaultTotal && first.defaultPatientMix.length > 0) {
+        const top = [...first.defaultPatientMix].sort(
+          (a, b) => b.defaultShare - a.defaultShare,
+        )[0];
+        next[top.patientTypeId] =
+          (next[top.patientTypeId] ?? 0) + (defaultTotal - assigned);
+      }
+    }
+    setEventTypeId(first?.id ?? null);
+    setSiteIds([]);
+    setMultiSiteMode("combined");
+    setPrimarySiteId(null);
+    setArrivalWindowHours(defaultArrivalWindow);
+    setResupplyEtaHours("");
+    setTotalCasualties(defaultTotal);
+    setCounts(next);
+    setFilter("both");
+    setRestrictReroutes(false);
+  }, [eventTypes]);
 
   // Build the request payload from current state. Centralised so the
   // auto-evaluate effect and the post-bulk-order refresh stay in sync.
@@ -497,7 +537,7 @@ export default function CasualtyPlanner() {
       <div className="flex items-start justify-between gap-4 flex-wrap shrink-0 border-b border-border pb-4">
         <div className="min-w-0">
           <div className="flex items-center gap-3 mb-1">
-            <Activity className="h-6 w-6 text-red-300" />
+            <BriefcaseMedical className="h-6 w-6 text-red-300" />
             <h1 className="text-2xl font-bold uppercase tracking-wider">
               Casualty Planner
             </h1>
@@ -509,6 +549,16 @@ export default function CasualtyPlanner() {
         </div>
         <div className="flex items-center gap-3 flex-wrap justify-end">
           <CategoryFilterToggle value={filter} onChange={setFilter} />
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-2"
+            onClick={handleReset}
+            data-testid="button-reset-scenario"
+          >
+            <RotateCcw className="h-4 w-4" />
+            Reset
+          </Button>
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger asChild>
@@ -609,7 +659,10 @@ export default function CasualtyPlanner() {
                     {siteIds.length === 0 ? (
                       <span>Optional — pick one or more sites…</span>
                     ) : (
-                      <span className="flex flex-wrap gap-1 items-center min-w-0 text-left">
+                      <span
+                        className="flex flex-wrap gap-1 items-center min-w-0 text-left max-h-16 overflow-y-auto"
+                        data-testid="site-chip-list"
+                      >
                         {siteIds.map((id) => {
                           const s = sites.find((x) => x.nodeId === id);
                           return (

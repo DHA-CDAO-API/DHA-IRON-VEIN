@@ -9,9 +9,12 @@ import {
   items,
   patientTypes,
   patientItemRequirements,
+  eventTypes,
+  eventPatientMix,
 } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import casualtyRouter from "../routes/casualty";
+import { seedCasualtyReferenceData } from "../seed/casualty-reference";
 
 // The casualty endpoint reads from the simulation context (nodes, items,
 // balances, suppliers — already seeded with the dev INDOPACOM data) plus
@@ -241,4 +244,63 @@ test("POST /api/casualty/evaluate with no sites returns the unscoped requirement
   assert.equal(body.sufficiency, null);
   assert.deepEqual(body.comparison, []);
   assert.ok(Array.isArray(body.requiredItems), "requiredItems should always be present");
+});
+
+// Self-heal regression: truncating only the four casualty reference tables
+// and then calling the helper must end with all four populated. This locks
+// in the boot self-heal contract introduced for task #243 — a future
+// refactor that drops one of the tables (or breaks the per-table empty
+// check) would fail this test.
+//
+// Runs LAST in this file so its truncate doesn't yank the scratch
+// patient_type/requirement that the casualty endpoint tests above rely on.
+// The helper repopulates with the canonical seed data — the trailing
+// `after()` will still no-op-delete the (now-absent) scratch fixture and
+// leave the DB in a clean, fully-seeded state.
+test("seedCasualtyReferenceData heals the four casualty reference tables when empty", async () => {
+  // Truncate inside one statement so we can use CASCADE in case future
+  // schema changes add FK constraints between these tables. RESTART
+  // IDENTITY isn't strictly necessary (these tables use text PKs), but
+  // mirrors the runSeed `truncate: true` pattern.
+  await db.execute(sql`TRUNCATE TABLE
+    event_patient_mix, event_types,
+    patient_item_requirements, patient_types
+    CASCADE`);
+
+  // Sanity: all four tables really are empty before we call the helper.
+  const empty = await Promise.all([
+    db.select({ c: sql<number>`count(*)::int` }).from(patientTypes),
+    db.select({ c: sql<number>`count(*)::int` }).from(patientItemRequirements),
+    db.select({ c: sql<number>`count(*)::int` }).from(eventTypes),
+    db.select({ c: sql<number>`count(*)::int` }).from(eventPatientMix),
+  ]);
+  for (const [{ c }] of empty) assert.equal(c, 0, "table should be empty pre-heal");
+
+  const r = await seedCasualtyReferenceData();
+  assert.equal(r.inserted, true, "first call should report inserted=true");
+  assert.equal(r.patientTypes, 9, "patient_types row count");
+  assert.equal(r.patientItemRequirements, 98, "patient_item_requirements row count");
+  assert.equal(r.eventTypes, 8, "event_types row count");
+  assert.equal(r.eventPatientMix, 40, "event_patient_mix row count");
+
+  // Verify against the database too — guards against a helper that
+  // returns the right shape but doesn't actually insert.
+  const after = await Promise.all([
+    db.select({ c: sql<number>`count(*)::int` }).from(patientTypes),
+    db.select({ c: sql<number>`count(*)::int` }).from(patientItemRequirements),
+    db.select({ c: sql<number>`count(*)::int` }).from(eventTypes),
+    db.select({ c: sql<number>`count(*)::int` }).from(eventPatientMix),
+  ]);
+  assert.equal(after[0]![0]!.c, 9);
+  assert.equal(after[1]![0]!.c, 98);
+  assert.equal(after[2]![0]!.c, 8);
+  assert.equal(after[3]![0]!.c, 40);
+
+  // Idempotency: second call must be a no-op (no extra rows, inserted=false).
+  const r2 = await seedCasualtyReferenceData();
+  assert.equal(r2.inserted, false, "second call should be a no-op");
+  const after2 = await db
+    .select({ c: sql<number>`count(*)::int` })
+    .from(patientTypes);
+  assert.equal(after2[0]!.c, 9, "second call must not double-insert");
 });
