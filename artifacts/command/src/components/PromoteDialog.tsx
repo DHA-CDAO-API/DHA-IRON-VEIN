@@ -234,16 +234,39 @@ export function PromoteDialog({
                   setDraft({ ...draft, supplierId: v })
                 }
               >
-                {/* The trigger's base styles include `[&>span]:line-clamp-1`,
-                    which sets `display:-webkit-box` on the value wrapper and
-                    breaks any inner flex layout. We override it with `!flex`
-                    so the supplier name can truncate while the channel badge
-                    and "suggested" tag stay visible next to the chevron. */}
+                {/* Render the trigger value ourselves instead of relying on
+                    Radix's auto-cloning of SelectItem children. This lets the
+                    trigger show ONLY the supplier name (truncated when long)
+                    plus an optional "suggested" hint, while the dropdown items
+                    keep their richer name + channel + suggested rendering. */}
                 <SelectTrigger
-                  className="h-8 text-sm [&>span]:!flex [&>span]:items-center [&>span]:gap-2 [&>span]:min-w-0 [&>span]:overflow-hidden"
+                  className="h-8 text-sm [&>span]:!flex [&>span]:items-center [&>span]:gap-2 [&>span]:min-w-0 [&>span]:flex-1"
                   data-testid="promote-supplier"
                 >
-                  <SelectValue placeholder="Select supplier" />
+                  {(() => {
+                    const selected = orderedSuppliers.find(
+                      (s) => s.id === draft.supplierId,
+                    );
+                    if (!selected) {
+                      return (
+                        <span className="text-muted-foreground">
+                          Select supplier
+                        </span>
+                      );
+                    }
+                    const isSuggested =
+                      selected.id === rec.suggestedSupplierId;
+                    return (
+                      <span className="flex items-center gap-2 min-w-0 flex-1">
+                        <span className="truncate">{selected.name}</span>
+                        {isSuggested ? (
+                          <span className="text-[10px] uppercase tracking-wider text-primary shrink-0">
+                            suggested
+                          </span>
+                        ) : null}
+                      </span>
+                    );
+                  })()}
                 </SelectTrigger>
                 <SelectContent>
                   {orderedSuppliers.length === 0 ? (
