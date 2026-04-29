@@ -1,6 +1,6 @@
 import { db } from "@workspace/db";
 import { catalogEntries, supplyDemoV2Catalog } from "@workspace/db";
-import { sql, eq, and } from "drizzle-orm";
+import { sql, eq } from "drizzle-orm";
 
 export interface ReconcileSummary {
   startedAt: string;
@@ -175,7 +175,3 @@ export async function deleteReconciledCatalogEntries(): Promise<number> {
     .returning({ id: catalogEntries.id });
   return deleted.length;
 }
-
-// Re-export `and` to avoid an unused import lint failure in case the
-// reconciler grows additional gated conditions later.
-void and;

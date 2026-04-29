@@ -207,8 +207,4 @@ router.post("/admin/supply-import/rollback", async (req, res, next) => {
   }
 });
 
-// Re-export helper imports so unused-imports lint doesn't flag them.
-void deleteReconciledCatalogEntries;
-void deleteMappedFacilityNodes;
-
 export default router;
