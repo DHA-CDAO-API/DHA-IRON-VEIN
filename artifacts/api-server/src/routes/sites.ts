@@ -172,6 +172,9 @@ router.get("/sites/:nodeId", async (req, res, next) => {
       supplierNamesById: new Map(supplierRows.map((s) => [s.id, s.name])),
       supplierFromNodeById: new Map<string, string>(),
       companionItemsByItemId,
+      itemUnitPriceUsdById: new Map(
+        allItems.map((i) => [i.id, Number(i.unitPriceUsd) || 0]),
+      ),
     };
     const generatedAt = new Date().toISOString();
 

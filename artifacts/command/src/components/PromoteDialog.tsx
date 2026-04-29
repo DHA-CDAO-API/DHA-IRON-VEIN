@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Loader2, Package } from "lucide-react";
+import { formatCurrency } from "@/lib/format";
 
 export type PromoteOverrides = {
   quantity: number;
@@ -147,6 +148,41 @@ export function PromoteDialog({
                 Suggested {Math.round(rec.quantity).toLocaleString()} units · ETA{" "}
                 {rec.etaDays.toFixed(0)}d
               </div>
+              {(() => {
+                // Recompute the estimate from the live quantity field so
+                // the operator sees the price update as they edit, and so
+                // the number on this row matches whatever the server will
+                // bill the PO at (server uses the same catalog unit price).
+                const unitPrice =
+                  typeof rec.estimatedUnitCostUsd === "number" &&
+                  rec.estimatedUnitCostUsd > 0
+                    ? rec.estimatedUnitCostUsd
+                    : rec.quantity > 0 &&
+                        typeof rec.estimatedCost === "number"
+                      ? rec.estimatedCost / rec.quantity
+                      : 0;
+                const liveQty = Number(qtyText);
+                const previewQty =
+                  Number.isFinite(liveQty) && liveQty > 0
+                    ? Math.round(liveQty)
+                    : Math.round(rec.quantity);
+                const estimate = unitPrice * previewQty;
+                if (!(unitPrice > 0)) return null;
+                return (
+                  <div
+                    className="text-[11px] mt-1 flex items-center justify-between gap-2"
+                    data-testid="promote-estimated-cost"
+                  >
+                    <span className="text-muted-foreground">
+                      Est. cost {formatCurrency(unitPrice)}/unit ×{" "}
+                      {previewQty.toLocaleString()}
+                    </span>
+                    <span className="font-mono font-semibold text-emerald-400">
+                      {formatCurrency(estimate)}
+                    </span>
+                  </div>
+                );
+              })()}
             </div>
 
             <div className="grid grid-cols-2 gap-3">

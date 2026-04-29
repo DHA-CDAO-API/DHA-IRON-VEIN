@@ -37,6 +37,7 @@ import {
   categoryLabel,
   categoryMatches,
   dosClass,
+  formatCurrency,
   formatDOS,
   formatNumber,
   inventoryStatusBadgeClasses,
@@ -947,7 +948,19 @@ export default function SiteDetail() {
                         <div className="text-xs text-muted-foreground mt-1 line-clamp-2">{rec.rationale}</div>
                       </div>
                       <div className="flex items-center justify-between mt-2 pt-2 border-t border-border/50">
-                        <div className="text-sm font-mono">Qty: {rec.quantity}</div>
+                        <div className="text-sm font-mono space-x-2">
+                          <span>Qty: {rec.quantity.toLocaleString()}</span>
+                          {typeof rec.estimatedCost === 'number' &&
+                          rec.estimatedCost > 0 ? (
+                            <span
+                              className="text-emerald-400"
+                              data-testid={`rec-cost-${rec.id}`}
+                              title={`Catalog price ${formatCurrency(rec.estimatedUnitCostUsd ?? 0)}/unit × ${rec.quantity.toLocaleString()} units`}
+                            >
+                              {formatCurrency(rec.estimatedCost)}
+                            </span>
+                          ) : null}
+                        </div>
                         <Button
                           size="sm"
                           onClick={() => setEditingRec(rec)}

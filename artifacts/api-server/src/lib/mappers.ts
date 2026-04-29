@@ -36,6 +36,16 @@ export type RecommendationLookups = {
    * `companionItems` so the UI can render the bundled-promotion toggle.
    */
   companionItemsByItemId?: Map<string, CompanionItemEntry[]>;
+  /**
+   * Catalog unit price (USD) per item. When provided, the mapper overrides
+   * the sim's supplier-derived `estimatedUnitCostUsd` with this value (and
+   * recomputes the total). This keeps the cost shown on a recommendation
+   * card in lock-step with what the order-create handler will charge when
+   * the operator promotes the rec — the same column (`items.unit_price_usd`)
+   * is the source of truth on both sides, so the rec card's "$X" matches
+   * the resulting PO's totalUsd to the cent.
+   */
+  itemUnitPriceUsdById?: Map<string, number>;
 };
 
 /**
@@ -62,6 +72,16 @@ export function mapRecommendationToApi(
         ? "URGENT"
         : "ROUTINE";
   const supplierId = rec.sourceSupplierId ?? null;
+  // Prefer the catalog unit price (the same column the order-create handler
+  // bills from) over the sim's supplier-derived cost so the dollar number on
+  // a rec card matches the PO total to the cent. Fall back to the sim cost
+  // only when no catalog price is available for this itemId.
+  const catalogUnitPrice = lookups.itemUnitPriceUsdById?.get(rec.itemId);
+  const unitCost =
+    typeof catalogUnitPrice === "number" && catalogUnitPrice > 0
+      ? catalogUnitPrice
+      : rec.estimatedUnitCostUsd ?? 0;
+  const totalCost = Number((unitCost * rec.suggestedQty).toFixed(2));
   return {
     id: rec.id,
     kind: rec.kind,
@@ -81,9 +101,9 @@ export function mapRecommendationToApi(
       : null,
     sourceChannel: rec.sourceChannel ?? null,
     etaDays: rec.etaDays,
-    estimatedCost: rec.estimatedTotalCostUsd ?? 0,
-    estimatedUnitCostUsd: rec.estimatedUnitCostUsd ?? 0,
-    estimatedTotalCostUsd: rec.estimatedTotalCostUsd ?? 0,
+    estimatedCost: totalCost,
+    estimatedUnitCostUsd: unitCost,
+    estimatedTotalCostUsd: totalCost,
     alternatives: Array.isArray(rec.alternatives) ? rec.alternatives : [],
     generatedAt: opts.generatedAt ?? new Date().toISOString(),
     confidenceScore: Math.max(

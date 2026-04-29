@@ -10,7 +10,7 @@ import {
   suppliers as suppliersTable,
   procedureSupplies,
 } from "@workspace/db";
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, inArray } from "drizzle-orm";
 import { loadSimContext } from "../lib/ctx";
 import {
   computeDailyDemand,
@@ -150,6 +150,9 @@ router.get("/predictive/recommendations", async (req, res, next) => {
       promoted.filter((p) => p.promotedOrderId).map((p) => [p.id, p]),
     );
     const itemNamesById = new Map(itemRows.map((i) => [i.id, i.name]));
+    const itemUnitPriceUsdById = new Map(
+      itemRows.map((i) => [i.id, Number(i.unitPriceUsd) || 0]),
+    );
 
     // Build companion-items index: for each itemId, list other items that
     // appear together in any procedure, tagged with the highest-priority
@@ -162,6 +165,7 @@ router.get("/predictive/recommendations", async (req, res, next) => {
       supplierNamesById: new Map(supplierRows.map((s) => [s.id, s.name])),
       supplierFromNodeById: new Map<string, string>(),
       companionItemsByItemId,
+      itemUnitPriceUsdById,
     };
     const generatedAt = new Date().toISOString();
 
@@ -254,6 +258,12 @@ router.post(
         if (persisted.promotedOrderId) {
           // Already promoted — return the existing order's promotion shape.
           // Already-promoted is final; overrides cannot be applied retroactively here.
+          // Read the real order so the returned `totalUsd` is the dollar
+          // value actually stored on the PO, not a stale estimate.
+          const [existingOrder] = await db
+            .select({ totalUsd: orders.totalUsd })
+            .from(orders)
+            .where(eq(orders.id, persisted.promotedOrderId));
           return res.status(200).json({
             id: persisted.promotedOrderId,
             orderNo: persisted.promotedOrderId,
@@ -270,7 +280,7 @@ router.post(
             requestedDeliveryAt: new Date(
               Date.now() + Math.max(1, persisted.etaDays) * 86400_000,
             ).toISOString(),
-            totalUsd: persisted.suggestedQty * 1.5,
+            totalUsd: Number(existingOrder?.totalUsd ?? 0),
             lineCount: 1,
           });
         }
@@ -369,12 +379,39 @@ router.post(
       const orderId = `o-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
       const orderNo = `PO-${new Date().getFullYear()}-${Math.floor(Math.random() * 90000 + 10000)}`;
       const requested = new Date(Date.now() + Math.max(1, finalEta) * 86400_000);
-      const primaryTotal = finalQty * 1.5;
-      const companionTotal = companionLines.reduce(
-        (acc, l) => acc + l.quantity * 1.5,
+      // Price every line off the catalog (`items.unit_price_usd`) so the
+      // PO total exactly matches the dollar number the operator just saw on
+      // the recommendation card / promote dialog. The dashboard reads the
+      // same column for its rec-card cost via the `itemUnitPriceUsdById`
+      // lookup wired into `mapRecommendationToApi`.
+      const lineItemIds = Array.from(
+        new Set([rec.itemId, ...companionLines.map((l) => l.itemId)]),
+      );
+      const priceRows = lineItemIds.length
+        ? await db
+            .select({ id: itemsTable.id, unitPriceUsd: itemsTable.unitPriceUsd })
+            .from(itemsTable)
+            .where(inArray(itemsTable.id, lineItemIds))
+        : [];
+      const priceById = new Map<string, number>();
+      for (const row of priceRows) {
+        priceById.set(row.id, Number(row.unitPriceUsd) || 0);
+      }
+      const primaryUnitPrice = priceById.get(rec.itemId) ?? 0;
+      const primaryTotal = Number((finalQty * primaryUnitPrice).toFixed(2));
+      const companionPriced = companionLines.map((l) => {
+        const unitPriceUsd = priceById.get(l.itemId) ?? 0;
+        return {
+          ...l,
+          unitPriceUsd,
+          lineTotalUsd: Number((l.quantity * unitPriceUsd).toFixed(2)),
+        };
+      });
+      const companionTotal = companionPriced.reduce(
+        (acc, l) => acc + l.lineTotalUsd,
         0,
       );
-      const totalUsd = primaryTotal + companionTotal;
+      const totalUsd = Number((primaryTotal + companionTotal).toFixed(2));
       await db.insert(orders).values({
         id: orderId,
         orderNo,
@@ -393,15 +430,15 @@ router.post(
         orderId,
         itemId: rec.itemId,
         quantity: finalQty,
-        unitPriceUsd: 1.5,
+        unitPriceUsd: primaryUnitPrice,
         lineTotalUsd: primaryTotal,
       };
-      const companionLineRows = companionLines.map((cl) => ({
+      const companionLineRows = companionPriced.map((cl) => ({
         orderId,
         itemId: cl.itemId,
         quantity: cl.quantity,
-        unitPriceUsd: 1.5,
-        lineTotalUsd: cl.quantity * 1.5,
+        unitPriceUsd: cl.unitPriceUsd,
+        lineTotalUsd: cl.lineTotalUsd,
       }));
       await db.insert(orderLines).values([primaryLine, ...companionLineRows]);
 
