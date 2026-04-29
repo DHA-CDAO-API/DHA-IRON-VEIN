@@ -1,0 +1,16 @@
+{
+  "name": "@workspace/e2e",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "playwright test",
+    "test:install": "playwright install --with-deps chromium",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.48.0",
+    "@types/node": "catalog:",
+    "typescript": "~5.9.2"
+  }
+}

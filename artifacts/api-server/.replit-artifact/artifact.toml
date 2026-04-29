@@ -9,6 +9,13 @@ localPort = 8080
 name = "API Server"
 paths = ["/api"]
 
+[services.env]
+# Mounts the test-only auth bypass router used by the @workspace/e2e
+# Playwright suite. The router itself also gates every endpoint behind
+# this same env var AND NODE_ENV !== "production", so even if this var
+# leaks into a production build the bypass still won't be exposed.
+E2E_TEST_HOOKS = "1"
+
 [services.development]
 run = "pnpm --filter @workspace/api-server run dev"
 
