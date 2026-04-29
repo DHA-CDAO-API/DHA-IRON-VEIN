@@ -543,10 +543,12 @@ type CuratedProblemSite = {
   shortageScaleByItem: Record<string, number>;
 };
 const CURATED_PROBLEM_SITES: Record<string, CuratedProblemSite> = {
-  // Forward BAS short on whole blood — drives the "blood at the FLOT"
-  // demo arc. The Walking Blood Bank gap surfaces as critical alerts on
-  // LTOWB / FDP / liquid plasma and feeds the recommendations rail with
-  // resupply suggestions from ASBP and Vitalant.
+  // ----- CRITICAL forward-edge sites -----
+  // The First Island Chain BAS / clinic line is supposed to read RED on
+  // the map at scenario open: contested SLOCs + Walking Blood Bank gap
+  // means the FLOT is the canonical "blood crisis" driver. Without
+  // multiple critical anchors the map looks unhealthily quiet and
+  // operators can't tell the threat tier system is working.
   basIron: {
     description:
       "Forward BAS Iron short on whole blood — Walking Blood Bank gap drives the FLOT-blood demo arc.",
@@ -559,6 +561,56 @@ const CURATED_PROBLEM_SITES: Record<string, CuratedProblemSite> = {
       prbc_o: 0.08,
     },
   },
+  basCopper: {
+    description:
+      "Forward BAS Copper — whole blood and FDP gap mirroring the Iron site, contested resupply.",
+    shortageScaleByItem: {
+      ltow_pos: 0.05,
+      ltow_neg: 0.05,
+      fdp: 0.06,
+      prbc_o: 0.08,
+      plasma_a: 0.08,
+    },
+  },
+  basZinc: {
+    description:
+      "Forward BAS Zinc — combined Class VIII and IV shortage from intermittent airlift.",
+    shortageScaleByItem: {
+      ltow_pos: 0.05,
+      prbc_o: 0.07,
+      ffp_ab: 0.07,
+      iv_set: 0.08,
+    },
+  },
+  basSteel: {
+    description:
+      "Forward BAS Steel — multi-day blood gap with cold-chain consumables short.",
+    shortageScaleByItem: {
+      ltow_pos: 0.04,
+      prbc_o: 0.06,
+      cooler: 0.08,
+      coolant: 0.08,
+    },
+  },
+  clinicAmber: {
+    description:
+      "Clinic Amber — small-footprint forward clinic with critical PRBC shortage.",
+    shortageScaleByItem: {
+      prbc_o: 0.05,
+      ffp_ab: 0.07,
+      ltow_pos: 0.06,
+    },
+  },
+  clinicBronze: {
+    description:
+      "Clinic Bronze — typing reagents and platelets short ahead of next surge.",
+    shortageScaleByItem: {
+      platelets: 0.05,
+      abo_kit: 0.07,
+      crossmatch: 0.06,
+    },
+  },
+  // ----- CRITICAL hub / large MTF -----
   // Large MTF caught by a cold-chain failure — liquid components are
   // condemned and the cold-chain consumables fall to <3 DOS. This is the
   // anchor for the cold-chain story (Yokosuka Cold-Storage Strike preset
@@ -573,6 +625,46 @@ const CURATED_PROBLEM_SITES: Record<string, CuratedProblemSite> = {
       cooler: 0.08,
       coolant: 0.08,
       chain_log: 0.07,
+    },
+  },
+  mtfFoxtrot: {
+    description:
+      "MTF Foxtrot — heavy trauma optempo has burned through PRBC and FFP buffers.",
+    shortageScaleByItem: {
+      prbc_o: 0.07,
+      ffp_ab: 0.07,
+      ltow_pos: 0.08,
+    },
+  },
+  // ----- HEIGHTENED warning tier -----
+  // These sites carry shortages that drag minDoS into the watch band
+  // (~5-10 days) without falling all the way to critical, so they
+  // surface as amber on the map and exercise the warning state of the
+  // tier system.
+  mtfDelta: {
+    description:
+      "MTF Delta — Class VIII watch band, blood inventory hovering above the critical floor.",
+    shortageScaleByItem: {
+      prbc_o: 0.18,
+      ltow_pos: 0.18,
+      platelets: 0.16,
+    },
+  },
+  mtfKilo: {
+    description:
+      "MTF Kilo — IV sets and crossmatch reagents in the watch band.",
+    shortageScaleByItem: {
+      iv_set: 0.18,
+      crossmatch: 0.18,
+      abo_kit: 0.20,
+    },
+  },
+  mtfRomeo: {
+    description:
+      "MTF Romeo — surge-driven PRBC drawdown without an open shortfall yet.",
+    shortageScaleByItem: {
+      prbc_o: 0.20,
+      ffp_ab: 0.20,
     },
   },
   // Regional hub running into a sole-source reagent backorder — the
