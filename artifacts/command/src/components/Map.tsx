@@ -220,8 +220,43 @@ function greatCircleWaypoints(
   return pts;
 }
 
-function NetworkFallback({ nodes = [], riskByNode = [], onNodeClick }: NetworkMapProps) {
+function NetworkFallback({
+  nodes = [],
+  riskByNode = [],
+  onNodeClick,
+  selectedCategories,
+  layerSelection,
+}: NetworkMapProps) {
   const riskMap = new Map(riskByNode.map((r) => [r.nodeId, r]));
+  // Mirror the GL map's layer-filter logic so the fallback list view
+  // hides/dims non-matching nodes the same way. Without this, clicking
+  // a "dim" card would still open a popover (the WebGL pickability
+  // guard is bypassed entirely in the fallback path).
+  const effectiveItemIds: Set<string> =
+    layerSelection?.itemIds ?? new Set<string>();
+  const effectiveCategories: Set<string> = (() => {
+    const out = new Set<string>();
+    if (layerSelection) for (const c of layerSelection.categories) out.add(c);
+    if (selectedCategories) for (const c of selectedCategories) out.add(c);
+    return out;
+  })();
+  const allLayersActive =
+    effectiveItemIds.size === 0 && effectiveCategories.size === 0;
+  const nodeMatchesLayerFilter = (r: any): boolean => {
+    if (allLayersActive) return true;
+    const dosByCategory: Record<string, number> = r?.dosByCategory ?? {};
+    for (const cat of effectiveCategories) {
+      const dos = dosByCategory[cat];
+      if (dos !== undefined && dos < 999) return true;
+    }
+    if (effectiveItemIds.size > 0) {
+      const top = (r?.topCriticalItems ?? []) as Array<{ itemId?: string }>;
+      for (const it of top) {
+        if (it?.itemId && effectiveItemIds.has(it.itemId)) return true;
+      }
+    }
+    return false;
+  };
   return (
     <div
       className="absolute inset-0 overflow-auto p-4"
@@ -250,15 +285,21 @@ function NetworkFallback({ nodes = [], riskByNode = [], onNodeClick }: NetworkMa
             ? r.riskScore.toFixed(0)
             : '—';
           const alertsLabel = r?.openAlerts ?? 0;
-          const hoverSummary =
-            `${n.name || n.id} (${n.type || 'site'}) — ` +
-            `${TIER_LABEL[tier]} · DOS ${dosLabel} · Risk ${riskLabel} · Alerts ${alertsLabel}`;
+          const matched = nodeMatchesLayerFilter(r);
+          const hoverSummary = matched
+            ? `${n.name || n.id} (${n.type || 'site'}) — ` +
+              `${TIER_LABEL[tier]} · DOS ${dosLabel} · Risk ${riskLabel} · Alerts ${alertsLabel}`
+            : `${n.name || n.id} — outside selected supply layers`;
           return (
             <button
               key={n.id}
-              onClick={() => onNodeClick?.(n, r ?? null)}
+              onClick={matched ? () => onNodeClick?.(n, r ?? null) : undefined}
+              disabled={!matched}
+              aria-disabled={!matched}
               title={hoverSummary}
-              className={`text-left border ${ring} bg-card/70 rounded p-2 hover:bg-card transition`}
+              className={`text-left border ${ring} bg-card/70 rounded p-2 transition ${
+                matched ? 'hover:bg-card cursor-pointer' : 'opacity-30 cursor-not-allowed pointer-events-none'
+              }`}
             >
               <div className="text-xs font-mono opacity-70">{n.type || 'NODE'}</div>
               <div className="text-sm font-semibold">{n.name || n.id}</div>
@@ -526,12 +567,22 @@ export default function NetworkGLMap(props: NetworkMapProps) {
     daysOfSupply: number;
     openAlerts: number;
     dosByCategory: Record<string, number>;
+    // Set of itemIds the node is known to carry, derived from the snapshot's
+    // per-node `topCriticalItems` (top 3 lowest-DOS items shipped on the
+    // wire). It's the only per-item-per-node signal exposed to the client
+    // today and is "best effort" — used by the layer-filter dimming logic
+    // to detect itemId-level matches when the operator picks a Custom
+    // layer that targets specific items.
+    topCriticalItemIds: Set<string>;
   };
 
   const decoratedNodes: DecoratedNode[] = useMemo(() => {
     return nodes.map((n: any) => {
       const r: any = riskByNodeMap.get(n.id);
       const tier: ThreatTier = (r?.tier as ThreatTier) ?? tierForRisk(r?.riskScore ?? 0, r?.openAlerts ?? 0);
+      const topItems = (r?.topCriticalItems ?? []) as Array<{ itemId?: string }>;
+      const topCriticalItemIds = new Set<string>();
+      for (const it of topItems) if (it?.itemId) topCriticalItemIds.add(it.itemId);
       return {
         raw: n,
         tier,
@@ -539,9 +590,34 @@ export default function NetworkGLMap(props: NetworkMapProps) {
         daysOfSupply: r?.daysOfSupply ?? 999,
         openAlerts: r?.openAlerts ?? 0,
         dosByCategory: r?.dosByCategory ?? {},
+        topCriticalItemIds,
       };
     });
   }, [nodes, riskByNodeMap]);
+
+  // Whether a node "carries" anything in the current layer filter. Used to
+  // dim and skip-pick non-matching nodes once any sub-layer is active. When
+  // no filter is active this is always true (full network is visible).
+  // - Categories path: the node is in scope if it has a finite DOS for any
+  //   selected category (i.e., it actually carries items in that class).
+  // - ItemIds path: best-effort match against the top-critical items the
+  //   snapshot exposes. Categories of selected sub-layers are also added to
+  //   `effectiveCategories`, so the categories check is the primary signal
+  //   for built-in layers; the item check tightens custom layers that
+  //   target specific itemIds within an otherwise-broad category.
+  const nodeMatchesLayerFilter = (d: DecoratedNode): boolean => {
+    if (allLayersActive) return true;
+    for (const cat of effectiveCategories) {
+      const dos = d.dosByCategory?.[cat];
+      if (dos !== undefined && dos < 999) return true;
+    }
+    if (effectiveItemIds.size > 0 && d.topCriticalItemIds.size > 0) {
+      for (const id of d.topCriticalItemIds) {
+        if (effectiveItemIds.has(id)) return true;
+      }
+    }
+    return false;
+  };
 
   // Decide colour: when exactly one category is active, recolour by that
   // category's DOS (green/amber/red bands). Otherwise use the threat tier.
@@ -564,6 +640,14 @@ export default function NetworkGLMap(props: NetworkMapProps) {
     if (tierFilter) {
       const inScope = !bloodNodeIds || bloodNodeIds.has(d.raw.id);
       if (inScope && d.tier !== tierFilter) alpha = 50;
+    }
+    // Layer-filter dim: when the operator has narrowed the map to a
+    // specific supply class (or custom item set), drop nodes that don't
+    // carry anything in that selection to the same low-opacity dim ramp
+    // used by the tier filter so geographic context is preserved while
+    // matching sites pop.
+    if (!allLayersActive && !nodeMatchesLayerFilter(d)) {
+      alpha = 50;
     }
     return [rgb[0], rgb[1], rgb[2], alpha];
   };
@@ -594,11 +678,16 @@ export default function NetworkGLMap(props: NetworkMapProps) {
       );
     }
 
-    // 2. Faint full route network (always visible, dimmed when filtered)
+    // 2. Route network. With no layer filter active, the full network is
+    //    rendered (matching/non-matching styling kept identical to today's
+    //    base behaviour). Once any sub-layer is selected we feed the layer
+    //    only the matching routes — the faint "ghost" routes for
+    //    non-matching corridors are dropped entirely so the operator's eye
+    //    lands exactly on the routes carrying the selected supply class.
     out.push(
       new PathLayer({
         id: 'route-network',
-        data: routePaths,
+        data: allLayersActive ? routePaths : routePaths.filter((r) => r.active),
         getPath: (d: any) => d.path,
         getColor: (d: any) =>
           d.id === hoveredRouteId
@@ -802,55 +891,128 @@ export default function NetworkGLMap(props: NetworkMapProps) {
     }
 
     // 7. 3D node columns. Extruded height encodes site importance + risk.
-    out.push(
-      new ColumnLayer({
-        id: 'nodes-columns',
-        data: decoratedNodes,
-        diskResolution: 24,
-        // Radius bumped from 22 km → 30 km so the projected disk
-        // gives operators a noticeably larger click target without
-        // overlapping neighbouring sites at our typical theater zoom.
-        radius: 30000,
-        extruded: true,
-        getPosition: (d: any) => [d.raw.longitude, d.raw.latitude],
-        getFillColor: nodeColor,
-        getElevation: (d: any) => {
-          const t = (d.raw.type || '').toLowerCase();
-          let base = 30000;
-          if (t.includes('strategic') || t.includes('theater')) base = 200000;
-          else if (t.includes('hub')) base = 130000;
-          else if (t.includes('large mtf')) base = 90000;
-          else if (t.includes('mtf')) base = 60000;
-          else if (t.includes('bas')) base = 40000;
-          else if (t.includes('clinic')) base = 30000;
-          else if (t.includes('forward')) base = 35000;
-          // Boost height when the site is in trouble so it pops visually
-          const tierBoost =
-            d.tier === 'critical' ? 1.6 : d.tier === 'heightened' ? 1.25 : 1;
-          return base * tierBoost;
-        },
-        elevationScale: 1,
-        material: { ambient: 0.55, diffuse: 0.7, shininess: 32, specularColor: [60, 64, 70] },
-        pickable: drawMode === null,
-        autoHighlight: drawMode === null,
-        highlightColor: [255, 255, 255, 200],
-        onClick: (info: any) => {
-          if (drawMode !== null) return;
-          if (info.object && onNodeClick) {
-            onNodeClick(info.object.raw, info.object);
-          }
-        },
-        updateTriggers: {
-          getFillColor: [
-            allLayersActive,
-            Array.from(effectiveCategories).join(','),
-            Array.from(effectiveItemIds).join(','),
-            tierFilter ?? '',
-            bloodNodeIds ? bloodNodeIds.size : 0,
-          ],
-        },
-      }),
-    );
+    //
+    // When a layer filter is active we split this into two ColumnLayer
+    // instances: the matching-nodes layer remains pickable + autoHighlight
+    // (so the operator's hover/click behaviour on relevant sites is
+    // unchanged), and the dim non-matching-nodes layer is rendered for
+    // geographic context only — not pickable, no autoHighlight, no
+    // tooltip, no click. With no filter active we keep a single layer
+    // exactly as before.
+    const columnElevation = (d: any) => {
+      const t = (d.raw.type || '').toLowerCase();
+      let base = 30000;
+      if (t.includes('strategic') || t.includes('theater')) base = 200000;
+      else if (t.includes('hub')) base = 130000;
+      else if (t.includes('large mtf')) base = 90000;
+      else if (t.includes('mtf')) base = 60000;
+      else if (t.includes('bas')) base = 40000;
+      else if (t.includes('clinic')) base = 30000;
+      else if (t.includes('forward')) base = 35000;
+      // Boost height when the site is in trouble so it pops visually
+      const tierBoost =
+        d.tier === 'critical' ? 1.6 : d.tier === 'heightened' ? 1.25 : 1;
+      return base * tierBoost;
+    };
+    const columnGetPosition = (d: any): [number, number] => [d.raw.longitude, d.raw.latitude];
+    const columnMaterial = {
+      ambient: 0.55,
+      diffuse: 0.7,
+      shininess: 32,
+      specularColor: [60, 64, 70] as [number, number, number],
+    };
+    const columnUpdateTriggers = {
+      getFillColor: [
+        allLayersActive,
+        Array.from(effectiveCategories).join(','),
+        Array.from(effectiveItemIds).join(','),
+        tierFilter ?? '',
+        bloodNodeIds ? bloodNodeIds.size : 0,
+      ],
+    };
+    if (allLayersActive) {
+      out.push(
+        new ColumnLayer({
+          id: 'nodes-columns',
+          data: decoratedNodes,
+          diskResolution: 24,
+          // Radius bumped from 22 km → 30 km so the projected disk
+          // gives operators a noticeably larger click target without
+          // overlapping neighbouring sites at our typical theater zoom.
+          radius: 30000,
+          extruded: true,
+          getPosition: columnGetPosition,
+          getFillColor: nodeColor,
+          getElevation: columnElevation,
+          elevationScale: 1,
+          material: columnMaterial,
+          pickable: drawMode === null,
+          autoHighlight: drawMode === null,
+          highlightColor: [255, 255, 255, 200],
+          onClick: (info: any) => {
+            if (drawMode !== null) return;
+            if (info.object && onNodeClick) {
+              onNodeClick(info.object.raw, info.object);
+            }
+          },
+          updateTriggers: columnUpdateTriggers,
+        }),
+      );
+    } else {
+      const matched: DecoratedNode[] = [];
+      const dimmed: DecoratedNode[] = [];
+      for (const d of decoratedNodes) {
+        if (nodeMatchesLayerFilter(d)) matched.push(d);
+        else dimmed.push(d);
+      }
+      // Dim context layer first so the matched layer composites on top
+      // (matched columns can occlude dimmed neighbours, never the other
+      // way around). The dim layer is intentionally not pickable so it
+      // can't catch hover tooltips, autoHighlight, or click picks.
+      if (dimmed.length > 0) {
+        out.push(
+          new ColumnLayer({
+            id: 'nodes-columns-dim',
+            data: dimmed,
+            diskResolution: 24,
+            radius: 30000,
+            extruded: true,
+            getPosition: columnGetPosition,
+            getFillColor: nodeColor,
+            getElevation: columnElevation,
+            elevationScale: 1,
+            material: columnMaterial,
+            pickable: false,
+            autoHighlight: false,
+            updateTriggers: columnUpdateTriggers,
+          }),
+        );
+      }
+      out.push(
+        new ColumnLayer({
+          id: 'nodes-columns',
+          data: matched,
+          diskResolution: 24,
+          radius: 30000,
+          extruded: true,
+          getPosition: columnGetPosition,
+          getFillColor: nodeColor,
+          getElevation: columnElevation,
+          elevationScale: 1,
+          material: columnMaterial,
+          pickable: drawMode === null,
+          autoHighlight: drawMode === null,
+          highlightColor: [255, 255, 255, 200],
+          onClick: (info: any) => {
+            if (drawMode !== null) return;
+            if (info.object && onNodeClick) {
+              onNodeClick(info.object.raw, info.object);
+            }
+          },
+          updateTriggers: columnUpdateTriggers,
+        }),
+      );
+    }
 
     return out;
   }, [
@@ -870,8 +1032,17 @@ export default function NetworkGLMap(props: NetworkMapProps) {
   // free. Layers are pushed via `deck.setProps` so React never re-renders.
   // ---------------------------------------------------------------------------
   const pulseNodes = useMemo(
-    () => decoratedNodes.filter((d) => d.tier !== 'nominal'),
-    [decoratedNodes],
+    () =>
+      decoratedNodes.filter((d) => {
+        if (d.tier === 'nominal') return false;
+        // When a layer filter is active, suppress the attention-grabbing
+        // pulse halo on nodes that don't carry anything in the selection
+        // — those nodes are rendered as dim context only.
+        if (!allLayersActive && !nodeMatchesLayerFilter(d)) return false;
+        return true;
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [decoratedNodes, allLayersActive, effectiveCategories, effectiveItemIds],
   );
 
   // Keep the per-trip fade pool in sync with the live shipment list. New
@@ -1221,6 +1392,11 @@ export default function NetworkGLMap(props: NetworkMapProps) {
     if (!info.layer || info.layer.id !== 'nodes-columns') return null;
     const d = obj as DecoratedNode | undefined;
     if (!d) return null;
+    // Suppress hover tooltips on dim non-matching nodes when a layer
+    // filter is active. The dim columns are present for geographic
+    // context only — they don't accept clicks (see ColumnLayer.onClick)
+    // and shouldn't catch hover picks either.
+    if (!allLayersActive && !nodeMatchesLayerFilter(d)) return null;
     const raw = d.raw ?? {};
     const tier = d.tier;
     const tierColor =
