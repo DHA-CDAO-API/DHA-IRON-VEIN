@@ -44,6 +44,14 @@ interface NetworkMapProps {
   riskByNode?: any[];
   aorBoundary?: number[][];
   /**
+   * When true, scroll-wheel zoom is enabled by default (no cmd/ctrl
+   * required). Use on full-page map views like /network where there is
+   * no surrounding scrollable content to fight with. Defaults to false
+   * so embedded maps (e.g. on the dashboard) keep their click-to-zoom-
+   * only behavior and don't hijack page scroll.
+   */
+  enableScrollZoom?: boolean;
+  /**
    * Operator-drawn theater zones rendered as filled polygons distinct from
    * the canonical THREAT overlays (those use a dashed outline style).
    */
@@ -360,6 +368,7 @@ export default function NetworkGLMap(props: NetworkMapProps) {
     onDraftChange,
     viewState,
     onViewStateChange,
+    enableScrollZoom = false,
   } = props;
 
   // Drawing buffer (in-progress polygon/rectangle vertices)
@@ -1415,7 +1424,7 @@ export default function NetworkGLMap(props: NetworkMapProps) {
   // map. Holding the cmd/ctrl key still lets you zoom on demand.
   const controllerOpts = drawMode !== null
     ? { dragPan: false, doubleClickZoom: false }
-    : ({ scrollZoom: false } as any);
+    : ({ scrollZoom: enableScrollZoom } as any);
 
   // Build a deck.gl tooltip object for the node currently under the
   // cursor. Returning a small HTML card here is much faster than
